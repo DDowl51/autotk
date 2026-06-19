@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "target": "es2020",
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "outDir": "dist",
+    "rootDir": ".."
+  },
+  "include": [
+    "**/*.ts",
+    "../src/engine/**/*.ts",
+    "../src/params/**/*.ts",
+    "../src/wda/**/*.ts"
+  ]
+}

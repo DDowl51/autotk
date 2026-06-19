@@ -1,0 +1,32 @@
+{
+  "name": "autotk",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "web": "expo start --web",
+    "wda:build": "tsc -p tools/tsconfig.json",
+    "wda": "tsc -p tools/tsconfig.json && node tools/dist/tools/wda-cli.js",
+    "wda:repl": "tsc -p tools/tsconfig.json && node tools/dist/tools/wda-cli.js repl"
+  },
+  "dependencies": {
+    "expo": "~54.0.34",
+    "expo-dev-client": "~6.0.21",
+    "expo-location": "~19.0.8",
+    "expo-status-bar": "~3.0.9",
+    "pako": "^2.1.0",
+    "react": "19.1.0",
+    "react-native": "0.81.5",
+    "tesseract.js": "^7.0.0",
+    "webdriverio": "^9.27.2"
+  },
+  "devDependencies": {
+    "@types/node": "^26.0.0",
+    "@types/pako": "^2.0.4",
+    "@types/react": "~19.1.0",
+    "typescript": "~5.9.2"
+  },
+  "private": true
+}
