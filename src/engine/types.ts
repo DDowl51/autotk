@@ -36,6 +36,11 @@ export interface RunContext {
   logger: Logger;
   /** 返回 true 表示用户/调度请求停止，模块应尽快安全退出。 */
   shouldStop(): boolean;
+  /**
+   * 当前是否仍在任务时间段内（全天模式恒 true）。
+   * 模块应在每条视频之间检查,出窗口即结束本批,使时间窗成为"硬边界"。
+   */
+  withinWindow(): boolean;
   /** 可被打断的休眠（秒）。一旦请求停止会立即返回，保证停止响应及时。 */
   sleep(seconds: number): Promise<void>;
 }

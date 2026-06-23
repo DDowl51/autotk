@@ -27,6 +27,10 @@ export async function runPersHome(
   const count = Math.min(available, mp.maxVideoCount);
   for (let i = 0; i < count; i++) {
     if (ctx.shouldStop()) break;
+    if (!ctx.withinWindow()) {
+      logger.log("info", "[个人主页] 已到时间段边界，结束本批");
+      break;
+    }
 
     await ui.openOwnVideo(i);
     const video = await ui.readCurrentVideo();

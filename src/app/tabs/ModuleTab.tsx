@@ -80,6 +80,12 @@ export function ModuleTab({
           onChange={(v) => set({ commentLikeMaxCount: v })}
           max={100}
         />
+        <PercentField
+          label="单条评论回复概率"
+          hint="对每条评论按此概率回复（与点赞独立）。回复比点赞更易触发风控，建议设低"
+          value={value.commentReplyProb}
+          onChange={(v) => set({ commentReplyProb: v })}
+        />
         <StepperField
           label="评论回复上限"
           hint="单个视频最多回复几条。回复太频繁易触发风控，建议 1~3"

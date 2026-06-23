@@ -28,6 +28,8 @@ export interface ModuleInteractionParams {
   videoFollowProb: number;
   /** 评论区中给单条评论点赞的概率。 */
   commentLikeProb: number;
+  /** 评论区中回复单条评论的概率（与点赞独立；回复风控风险更高，默认更低）。 */
+  commentReplyProb: number;
   /** 单个视频评论区最多给多少条评论点赞。 */
   commentLikeMaxCount: number;
   /** 单个视频评论区最多回复多少条评论。 */
@@ -65,6 +67,11 @@ export interface AutomationParams {
   };
 
   // —— 分时段调度 ——
-  /** 任务时间段（原版固定 4 段，这里允许 1..N 段，按时间排序、互不重叠）。 */
+  /**
+   * 全天运行：开启则不限时间段，启动后全天持续运行；
+   * 关闭则按 taskWindows 分时段执行。默认 false。
+   */
+  allDay?: boolean;
+  /** 任务时间段（原版固定 4 段，这里允许 1..N 段，按时间排序、互不重叠）。仅在非全天运行时生效。 */
   taskWindows: TaskWindow[];
 }

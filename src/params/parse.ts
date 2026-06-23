@@ -27,6 +27,10 @@ export interface LegacyParams {
   kw_search_comment_click_like_prob?: number;
   pers_home_vid_comment_click_like_prob?: number;
 
+  for_you_comment_reply_prob?: number;
+  kw_search_comment_reply_prob?: number;
+  pers_home_vid_comment_reply_prob?: number;
+
   for_you_video_like_prob?: number;
   for_you_video_save_to_favorites_prob?: number;
   for_you_video_follow_prob?: number;
@@ -95,6 +99,7 @@ export function fromLegacy(p: LegacyParams): AutomationParams {
       videoSaveProb: num(p.for_you_video_save_to_favorites_prob, 0.1),
       videoFollowProb: num(p.for_you_video_follow_prob, 0.1),
       commentLikeProb: num(p.for_you_comment_click_like_prob, 0.5),
+      commentReplyProb: num(p.for_you_comment_reply_prob, 0.2),
       commentLikeMaxCount: num(p.for_you_single_video_comment_click_like_count, 15),
       commentReplyMaxCount: num(p.for_you_single_video_comment_reply_count, 2),
     },
@@ -106,6 +111,7 @@ export function fromLegacy(p: LegacyParams): AutomationParams {
       videoSaveProb: num(p.kw_search_video_save_to_favorites_prob, 0.3),
       videoFollowProb: num(p.kw_search_video_follow_prob, 0.3),
       commentLikeProb: num(p.kw_search_comment_click_like_prob, 0.6),
+      commentReplyProb: num(p.kw_search_comment_reply_prob, 0.3),
       commentLikeMaxCount: num(p.kw_search_single_video_comment_click_like_count, 30),
       commentReplyMaxCount: num(p.kw_search_single_video_comment_reply_count, 2),
     },
@@ -118,6 +124,7 @@ export function fromLegacy(p: LegacyParams): AutomationParams {
       videoSaveProb: 0,
       videoFollowProb: 0,
       commentLikeProb: num(p.pers_home_vid_comment_click_like_prob, 0.5),
+      commentReplyProb: num(p.pers_home_vid_comment_reply_prob, 0.5),
       commentLikeMaxCount: num(p.pers_home_single_video_comment_click_like_count, 20),
       commentReplyMaxCount: num(p.pers_home_single_video_comment_reply_count, 2),
       maxVideoCount: num(p.pers_home_vid_int_max_count, 3),
@@ -150,13 +157,16 @@ export function validateParams(p: AutomationParams): string[] {
     ["推荐页收藏概率", p.forYou.videoSaveProb],
     ["推荐页关注概率", p.forYou.videoFollowProb],
     ["推荐页评论点赞概率", p.forYou.commentLikeProb],
+    ["推荐页评论回复概率", p.forYou.commentReplyProb],
     ["搜索页互动概率", p.kwSearch.interactProb],
     ["搜索页点赞概率", p.kwSearch.videoLikeProb],
     ["搜索页收藏概率", p.kwSearch.videoSaveProb],
     ["搜索页关注概率", p.kwSearch.videoFollowProb],
     ["搜索页评论点赞概率", p.kwSearch.commentLikeProb],
+    ["搜索页评论回复概率", p.kwSearch.commentReplyProb],
     ["个人主页互动概率", p.persHome.interactProb],
     ["个人主页评论点赞概率", p.persHome.commentLikeProb],
+    ["个人主页评论回复概率", p.persHome.commentReplyProb],
   ];
   for (const [name, v] of probs) {
     if (!isProb(v)) errors.push(`${name} 必须在 0~1 之间（当前 ${v}）`);

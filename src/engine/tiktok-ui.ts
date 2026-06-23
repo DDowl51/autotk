@@ -51,6 +51,14 @@ export interface TikTokUI {
   // —— 风控 ——
   /** 检测是否出现需要人工干预的弹窗/验证。 */
   detectPopup(): Promise<boolean>;
+
+  // —— 脱困 ——
+  /**
+   * 回到"基地"（推荐流干净状态）。每个批次开始前调用,保证从已知状态出发。
+   * 至少应:确保 App 在前台、关掉残留的评论区/面板。返回是否已就绪。
+   * 可选——未实现的 UI（mock/桩）由引擎跳过。
+   */
+  recoverToFeed?(): Promise<boolean>;
 }
 
 class NotAdaptedError extends Error {

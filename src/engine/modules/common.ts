@@ -49,7 +49,7 @@ export async function interactWithVideo(
         await ctx.sleep(jitter(params.clickWaitTime));
       }
 
-      if (replied < mp.commentReplyMaxCount) {
+      if (replied < mp.commentReplyMaxCount && chance(mp.commentReplyProb)) {
         const text = await gen.reply({
           videoCaption: video.caption,
           targetComment: c.text,

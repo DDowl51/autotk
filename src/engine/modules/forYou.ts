@@ -23,6 +23,10 @@ export async function runForYou(
 
   for (let i = 0; i < maxVideos; i++) {
     if (ctx.shouldStop()) break;
+    if (!ctx.withinWindow()) {
+      logger.log("info", "[推荐页] 已到时间段边界，结束本批");
+      break;
+    }
     if (await ui.detectPopup()) {
       logger.log("warn", "[推荐页] 检测到弹窗，等待人工干预");
       break;

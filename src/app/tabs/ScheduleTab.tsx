@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import type { AutomationParams, TaskWindow } from "../../params";
-import { COLORS, PercentField, Section, StepperField, TextField } from "../fields";
+import { COLORS, PercentField, Section, StepperField, SwitchField, TextField } from "../fields";
 import { TimePickerModal } from "../TimePicker";
 
 /** 全局节奏与分时段调度配置页。 */
@@ -68,50 +68,61 @@ export function ScheduleTab({
 
       <Section
         title="任务时间段"
-        hint="只在这些时间段内运行（手机本地时间）。各段不能重叠，按时间先后排列。点击时间可滑动设置。"
+        hint="设置在哪些时间段内运行（手机本地时间）。各段不能重叠，按时间先后排列。点击时间可滑动设置。"
       >
-        {params.taskWindows.map((w, i) => (
-          <View key={i} style={styles.windowRow}>
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>{i + 1}</Text>
-            </View>
+        <SwitchField
+          label="全天运行"
+          hint="开启后全天不间断运行；关闭则只在下方设置的时间段内运行"
+          value={params.allDay ?? false}
+          onChange={(v) => patch({ allDay: v })}
+        />
 
-            <TouchableOpacity
-              style={styles.timeBtn}
-              onPress={() => setEditing({ i, field: "start" })}
-            >
-              <Text style={styles.timeText}>{w.start}</Text>
+        {!(params.allDay ?? false) && (
+          <>
+            {params.taskWindows.map((w, i) => (
+              <View key={i} style={styles.windowRow}>
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText}>{i + 1}</Text>
+                </View>
+
+                <TouchableOpacity
+                  style={styles.timeBtn}
+                  onPress={() => setEditing({ i, field: "start" })}
+                >
+                  <Text style={styles.timeText}>{w.start}</Text>
+                </TouchableOpacity>
+
+                <Text style={styles.dash}>→</Text>
+
+                <TouchableOpacity
+                  style={styles.timeBtn}
+                  onPress={() => setEditing({ i, field: "end" })}
+                >
+                  <Text style={styles.timeText}>{w.end}</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.removeBtn}
+                  onPress={() => removeWindow(i)}
+                  disabled={params.taskWindows.length <= 1}
+                >
+                  <Text
+                    style={[
+                      styles.removeText,
+                      params.taskWindows.length <= 1 && styles.removeDisabled,
+                    ]}
+                  >
+                    ×
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            ))}
+
+            <TouchableOpacity style={styles.addBtn} onPress={addWindow}>
+              <Text style={styles.addText}>+ 添加时间段</Text>
             </TouchableOpacity>
-
-            <Text style={styles.dash}>→</Text>
-
-            <TouchableOpacity
-              style={styles.timeBtn}
-              onPress={() => setEditing({ i, field: "end" })}
-            >
-              <Text style={styles.timeText}>{w.end}</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.removeBtn}
-              onPress={() => removeWindow(i)}
-              disabled={params.taskWindows.length <= 1}
-            >
-              <Text
-                style={[
-                  styles.removeText,
-                  params.taskWindows.length <= 1 && styles.removeDisabled,
-                ]}
-              >
-                ×
-              </Text>
-            </TouchableOpacity>
-          </View>
-        ))}
-
-        <TouchableOpacity style={styles.addBtn} onPress={addWindow}>
-          <Text style={styles.addText}>+ 添加时间段</Text>
-        </TouchableOpacity>
+          </>
+        )}
       </Section>
 
       <TimePickerModal

@@ -7,7 +7,7 @@ import {
 } from "./scheduler";
 import { emptyStats, type CommentGenerator, type Logger, type RunContext, type RunStats } from "./types";
 import type { TikTokUI } from "./tiktok-ui";
-import { randInt } from "./random";
+import { jitter, randInt } from "./random";
 import { runForYou } from "./modules/forYou";
 import { runKwSearch } from "./modules/kwSearch";
 import { runPersHome } from "./modules/persHome";
@@ -28,6 +28,15 @@ export interface Engine {
 
 /** 不在时间段内时，每隔这么久重新检查一次（秒）。 */
 const IDLE_POLL_SECONDS = 30;
+
+/** 批次之间的最小间隔（秒，含抖动）。兜底,防止"空批次"零延迟热循环。 */
+const MIN_BATCH_GAP = 1.5;
+/** 单次批次失败后的退避封顶（秒）。 */
+const MAX_BACKOFF_SECONDS = 60;
+/** 连续失败达到此次数 → 进入长冷却（熔断），而非继续高频重试。 */
+const CIRCUIT_THRESHOLD = 5;
+/** 熔断后的长冷却时长（秒）。 */
+const CIRCUIT_COOLDOWN_SECONDS = 300;
 
 function todayKey(d = new Date()): string {
   return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
@@ -67,6 +76,7 @@ export function createEngine(deps: EngineDeps): Engine {
     stats,
     logger,
     shouldStop: () => stopped,
+    withinWindow: () => !!params.allDay || isWithinAnyWindow(params.taskWindows),
     sleep: interruptibleSleep,
   };
 
@@ -81,9 +91,10 @@ export function createEngine(deps: EngineDeps): Engine {
     logger.log("info", "引擎启动");
 
     let idleLogged = false;
+    let consecutiveErrors = 0;
     try {
       while (!stopped) {
-        if (!isWithinAnyWindow(params.taskWindows)) {
+        if (!params.allDay && !isWithinAnyWindow(params.taskWindows)) {
           if (!idleLogged) {
             logger.log("info", "当前不在任务时间段内，等待到点…");
             idleLogged = true;
@@ -97,19 +108,48 @@ export function createEngine(deps: EngineDeps): Engine {
         }
         idleLogged = false;
 
-        // 个人主页：每天仅一次，时间段内优先处理。
-        if (params.persHome.moduleEnable && persHomeRanOn !== todayKey()) {
-          await runPersHome(ctx, ui, gen);
-          persHomeRanOn = todayKey();
-          continue;
-        }
+        try {
+          // 脱困：每个批次开始前先回到"基地"（推荐流干净状态）。
+          // 失败/异常会被本 try 捕获 → 退避重试。
+          if (ui.recoverToFeed) await ui.recoverToFeed();
 
-        // 按搜索占比分发一个批次。
-        const kind = pickModule(params.kwSearchExecRatio);
-        if (kind === "kwSearch") {
-          await runKwSearch(ctx, ui, gen, randInt(3, 8));
-        } else {
-          await runForYou(ctx, ui, gen, randInt(5, 15));
+          // 个人主页：每天仅一次，时间段内优先处理。
+          // 先标记"今天已尝试"再执行：即便失败也不会整天反复重试（配合下方容错）。
+          if (params.persHome.moduleEnable && persHomeRanOn !== todayKey()) {
+            persHomeRanOn = todayKey();
+            await runPersHome(ctx, ui, gen);
+          } else {
+            // 按搜索占比分发一个批次。
+            const kind = pickModule(params.kwSearchExecRatio);
+            if (kind === "kwSearch") {
+              await runKwSearch(ctx, ui, gen, randInt(3, 8));
+            } else {
+              await runForYou(ctx, ui, gen, randInt(5, 15));
+            }
+          }
+
+          consecutiveErrors = 0;
+          // 批次间兜底间隔：防止"空批次"零延迟热循环 + 拟人化停顿。
+          await interruptibleSleep(jitter(MIN_BATCH_GAP));
+        } catch (e) {
+          // 单次批次失败不杀引擎：退避重试；连续失败过多 → 长冷却（熔断）。
+          consecutiveErrors++;
+          const msg = e instanceof Error ? e.message : String(e);
+          if (consecutiveErrors >= CIRCUIT_THRESHOLD) {
+            logger.log(
+              "error",
+              `连续 ${consecutiveErrors} 次失败，进入 ${CIRCUIT_COOLDOWN_SECONDS}s 冷却：${msg}`,
+            );
+            await interruptibleSleep(CIRCUIT_COOLDOWN_SECONDS);
+            consecutiveErrors = 0; // 冷却后清零，再给一次机会
+          } else {
+            const backoff = Math.min(MAX_BACKOFF_SECONDS, 2 ** consecutiveErrors);
+            logger.log(
+              "warn",
+              `批次出错（第 ${consecutiveErrors} 次），退避 ${backoff}s 后重试：${msg}`,
+            );
+            await interruptibleSleep(backoff);
+          }
         }
       }
     } finally {

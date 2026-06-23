@@ -4,6 +4,7 @@ import { createEngine, type Engine, type RunStats } from "../engine";
 import { emptyStats } from "../engine/types";
 import { createMockUI, createMockGenerator } from "../engine/mockUI";
 import { createRealUI } from "./realUI";
+import { startKeepAlive, stopKeepAlive } from "./keepalive";
 import type { TikTokUI } from "../engine/tiktok-ui";
 
 const MAX_LOGS = 200;
@@ -56,6 +57,7 @@ export function useEngine(): EngineState {
 
   const stop = useCallback(() => {
     engineRef.current?.stop();
+    stopKeepAlive().catch(() => {});
   }, []);
 
   const start = useCallback(() => {
@@ -67,29 +69,52 @@ export function useEngine(): EngineState {
 
     const picked = makeUI(pushLog);
     setMode(picked.mode);
-    const engine = createEngine({
-      params,
-      ui: picked.ui,
-      gen: createMockGenerator(),
-      logger: { log: (_lvl, msg) => pushLog(msg) },
-    });
-    engineRef.current = engine;
-    setRunning(true);
 
-    // 实时刷新日志与统计。
-    pollRef.current = setInterval(() => {
-      setLogs([...logBufRef.current]);
-      setStats(engine.getStats());
-      if (!engine.isRunning()) {
-        setRunning(false);
-        if (pollRef.current) clearInterval(pollRef.current);
-        pollRef.current = null;
+    const launch = async () => {
+      // 真机模式:先把后台保活权限处理完（弹窗要在 autotk 仍在前台时弹）,
+      // 再启动引擎切到 TikTok,否则切前台会把定位授权弹窗冲掉。
+      // 没有保活,App 退后台(TikTok 前台时)~30s 就被 iOS 挂起、自动化中断。
+      if (picked.mode === "real") {
+        try {
+          const ka = await startKeepAlive();
+          if (ka.always) {
+            pushLog("后台保活已开启（始终定位）");
+          } else {
+            pushLog(
+              "保活未生效：定位仅「使用App时」。请到 设置→隐私与安全性→定位服务→autotk 改为「始终」,再重新启动。",
+            );
+          }
+        } catch (e: unknown) {
+          pushLog(`后台保活未开启（后台会被挂起）：${e instanceof Error ? e.message : String(e)}`);
+        }
       }
-    }, 300);
 
-    engine.start().catch((e: unknown) => {
-      pushLog(`错误：${e instanceof Error ? e.message : String(e)}`);
-    });
+      const engine = createEngine({
+        params,
+        ui: picked.ui,
+        gen: createMockGenerator(),
+        logger: { log: (_lvl, msg) => pushLog(msg) },
+      });
+      engineRef.current = engine;
+      setRunning(true);
+
+      // 实时刷新日志与统计。
+      pollRef.current = setInterval(() => {
+        setLogs([...logBufRef.current]);
+        setStats(engine.getStats());
+        if (!engine.isRunning()) {
+          setRunning(false);
+          if (pollRef.current) clearInterval(pollRef.current);
+          pollRef.current = null;
+        }
+      }, 300);
+
+      engine.start().catch((e: unknown) => {
+        pushLog(`错误：${e instanceof Error ? e.message : String(e)}`);
+      });
+    };
+
+    void launch();
   }, [params, pushLog]);
 
   const clearLogs = useCallback(() => {

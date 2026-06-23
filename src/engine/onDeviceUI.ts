@@ -233,5 +233,27 @@ export function createOnDeviceUI(deps: {
     async detectPopup() {
       return false;
     },
+
+    /**
+     * 回到"基地"（推荐流干净状态）。保守可靠版:
+     *  1. 确保 TikTok 在前台（被切走/崩溃会重新拉起）;
+     *  2. 关掉残留的评论区/面板（最常见卡点,尤其空评论区会自动弹键盘）;
+     *  3. 复位页面状态机。
+     * 返回 true（尽力而为）。
+     * TODO(第2层,需真机调): 图像+OCR 识别并关闭 登录/广告/风控 弹窗;
+     *   点底部"首页"tab 从个人主页/搜索结果返回推荐流;用动作栏确认确实在推荐流。
+     */
+    async recoverToFeed(): Promise<boolean> {
+      await ensure();
+      for (let i = 0; i < 3; i++) {
+        const x = detectCommentCloseButton(await shot(), size.width, size.height);
+        if (!x) break;
+        await tap(x);
+        await sleep(450);
+      }
+      page = "feed";
+      log("已回到推荐流（基地）");
+      return true;
+    },
   };
 }
