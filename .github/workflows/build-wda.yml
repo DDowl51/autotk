@@ -1,0 +1,53 @@
+name: 编译 WDA (iOS16 兼容 · Xcode 14.3.1)
+
+# 用 GitHub 的 macOS 服务器，用 Xcode 14.3.1（和 iOS 16 同代）编译 WebDriverAgent，
+# 产出「未签名」的 WebDriverAgent.ipa；下载后用 Sideloadly 按你的设备重签安装即可。
+# 触发：仓库 Actions 页 → 选本工作流 → Run workflow。
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  build-wda:
+    runs-on: macos-13 # 这个镜像带 Xcode 14.3.1
+
+    steps:
+      - name: 选择 Xcode 14.3.1
+        run: |
+          sudo xcode-select -s /Applications/Xcode_14.3.1.app
+          xcodebuild -version
+
+      - name: 拉取 WebDriverAgent 源码
+        run: git clone --depth 1 https://github.com/appium/WebDriverAgent.git wda
+
+      - name: 编译 WebDriverAgentRunner（不签名）
+        working-directory: wda
+        run: |
+          set -eo pipefail
+          xcodebuild build-for-testing \
+            -project WebDriverAgent.xcodeproj \
+            -scheme WebDriverAgentRunner \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath ./build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY=""
+
+      - name: 打包成 IPA
+        working-directory: wda
+        run: |
+          set -e
+          APP=$(find build/Build/Products -maxdepth 2 -name '*-Runner.app' | head -1)
+          echo "找到 App：$APP"
+          test -n "$APP"
+          mkdir -p Payload
+          cp -R "$APP" Payload/
+          zip -qry WebDriverAgent.ipa Payload
+          ls -la WebDriverAgent.ipa
+
+      - name: 上传 IPA（在运行页 Artifacts 里下载）
+        uses: actions/upload-artifact@v4
+        with:
+          name: WebDriverAgent-ipa
+          path: wda/WebDriverAgent.ipa
+          if-no-files-found: error
