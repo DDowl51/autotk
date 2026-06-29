@@ -27,8 +27,9 @@ export async function runForYou(
       logger.log("info", "[推荐页] 已到时间段边界，结束本批");
       break;
     }
+    if (ui.recoverIfLost) await ui.recoverIfLost(); // 误点跳走/应用内浮层 → 自动脱困
     if (await ui.detectPopup()) {
-      logger.log("warn", "[推荐页] 检测到弹窗，等待人工干预");
+      logger.log("warn", "[推荐页] 浮层未能自动关闭，结束本轮");
       break;
     }
 

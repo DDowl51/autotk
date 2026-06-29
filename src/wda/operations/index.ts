@@ -27,3 +27,10 @@ export { windowSize } from "./window";
 export { activateApp } from "./activateApp";
 export { touchTap, touchSwipe } from "./touchPerform";
 export { getSettings, updateSettings } from "./settings";
+export {
+  alertText,
+  alertButtons,
+  alertClickButton,
+  alertDismiss,
+  alertAccept,
+} from "./alert";

@@ -16,6 +16,8 @@ export interface CommentInfo {
   /** 评论在当前可视列表中的索引。 */
   index: number;
   text: string;
+  /** 评论作者（#3：用于 @ 回复与 {user} 占位符；无则空）。 */
+  author?: string;
 }
 
 export interface TikTokUI {
@@ -59,6 +61,37 @@ export interface TikTokUI {
    * 可选——未实现的 UI（mock/桩）由引擎跳过。
    */
   recoverToFeed?(): Promise<boolean>;
+
+  /**
+   * 从搜索结果视频流退回推荐流（视频→结果网格→搜索输入→推荐流，需连点左上返回箭头）。
+   * 搜索批次结束时调用,避免停在搜索流里让后续推荐页在错的流上养号。可选。
+   */
+  returnToFeed?(): Promise<void>;
+
+  /**
+   * 从个人主页作品全屏退回推荐流（作品全屏→返回箭头→主页网格→点底部 Home tab→推荐流）。
+   * persHome 批次结束时调用。与 returnToFeed 路径不同（主页网格是底部 tab，非 pushed 页）。可选。
+   */
+  returnFromProfile?(): Promise<void>;
+
+  /** 从屏幕左边缘往右滑（iOS 返回手势），用于退出误入的页面。可选。 */
+  swipeBack?(): Promise<void>;
+
+  /**
+   * 脱困 watchdog：截图判断当前在不在"已知/正常"页面（视频流 / 评论区 / 已知弹窗）。
+   * 若是未知页面（误点导致跳走）→ 左滑返回 → 再判断，最多几次。每条视频前调用。可选。
+   */
+  recoverIfLost?(): Promise<void>;
+
+  /** 当前页面标识（feed/comments/search/profile…），供管理中心上报。可选。 */
+  getPage?(): string | undefined;
+
+  // —— 发布（阶段3 文件夹工作流）——
+  /**
+   * 把相册里的视频发布到 TikTok。assetUri=已入相册的资源标识，caption=文案。
+   * 真机实现需标定 TikTok 上传流程坐标（机型适配阶段）。可选——未实现则发布任务直接报失败。
+   */
+  publishVideo?(assetUri: string, caption: string): Promise<void>;
 }
 
 class NotAdaptedError extends Error {

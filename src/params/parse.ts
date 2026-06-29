@@ -11,7 +11,6 @@ export interface LegacyParams {
   neg_prompt?: string;
 
   kw_search_int_exec_prop?: number;
-  language?: string;
   click_wait_time?: number;
 
   is_run_pers_home_vid_int?: boolean;
@@ -87,9 +86,11 @@ export function fromLegacy(p: LegacyParams): AutomationParams {
     searchKeywords: splitList(p.search_kw),
     posPrompts: splitList(p.pos_prompt),
     negPrompts: splitList(p.neg_prompt),
+    commentMatchKeywords: [], // 原版无此字段，用户在设置里配
+
 
     kwSearchExecRatio: num(p.kw_search_int_exec_prop, 0.8),
-    language: p.language ?? "英文",
+    fixedReplies: [], // 原版扁平 JSON 无回复列表，用户在设置里配
     clickWaitTime: num(p.click_wait_time, 0.5),
 
     forYou: {

@@ -44,14 +44,24 @@ export interface AutomationParams {
   posPrompts: string[];
   /** 反向提示词：推荐页命中则立即划走。 */
   negPrompts: string[];
+  /**
+   * 评论匹配词（#3）：进评论区后，评论文字含任一词 → 回复该评论作者。
+   * 空数组 = 不按词筛选（按概率回复评论，沿用旧行为）。
+   */
+  commentMatchKeywords: string[];
 
   // —— 全局开关与占比 ——
   /** 搜索页互动的总运行时间占比 [0,1]，其余时间留给推荐页。 */
   kwSearchExecRatio: number;
-  /** 评论回复使用的语言（"英文" / "中文" / ... 支持任意语言）。 */
-  language: string;
+  /** 固定回复列表（一行一条；支持占位符 {emoji}/{user}/{a|b|c}/{kw}）。回复时随机取一条。 */
+  fixedReplies: string[];
   /** 每次点赞动作之间的间隔时间（秒）。 */
   clickWaitTime: number;
+  /**
+   * 是否真的发送评论回复。默认 false：只生成 + 在日志里预览回复内容、不发送，
+   * 便于先验证 AI 回复质量与语言而不污染真实评论区。确认无误后再设 true 真发。
+   */
+  postReplies?: boolean;
 
   // —— 三大互动模块 ——
   forYou: ModuleInteractionParams;

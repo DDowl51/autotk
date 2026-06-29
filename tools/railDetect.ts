@@ -80,7 +80,11 @@ async function grabRail(W: number, H: number): Promise<Rail> {
   return { grid, railX, railY, railW, railH };
 }
 
-/** 在 rail 网格里找红色质心，限制在 y < maxLocalY 的区域内。 */
+/**
+ * 在 rail 网格里找关注红 + 的质心，限制在 y < maxLocalY 的区域内。
+ * 用 isTkRed（TikTok 品牌红 #FE2C55，与 + 同色）而非宽松的 isRed，
+ * 以排除头像照片里的红色内容（红衣/红 logo 等多为纯红/深红，b<50，被排除）。
+ */
 function redCentroid(rail: Rail, maxLocalY: number): Point | null {
   let rx = 0;
   let ry = 0;
@@ -89,7 +93,7 @@ function redCentroid(rail: Rail, maxLocalY: number): Point | null {
     const row = rail.grid.get(y);
     if (!row) continue;
     for (const [x, p] of row) {
-      if (isRed(p)) {
+      if (isTkRed(p)) {
         rx += x;
         ry += y;
         n++;

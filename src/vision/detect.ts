@@ -74,7 +74,11 @@ export function detectRail(img: DecodedImage, W: number, H: number): RailIcons {
   return { like, comment, save, share, follow };
 }
 
-/** 在 rail 区域内、局部 y < maxLocalY 范围找红色质心。 */
+/**
+ * 在 rail 区域内、局部 y < maxLocalY 范围找关注红 + 的质心。
+ * 用 isTkRed（TikTok 品牌红 #FE2C55，与 + 同色）而非宽松的 isRed，
+ * 以排除头像照片里的红色内容（红衣/红 logo 等多为纯红/深红，b<50，被排除）。
+ */
 function redCentroid(
   img: DecodedImage,
   scale: number,
@@ -88,7 +92,7 @@ function redCentroid(
   let n = 0;
   for (let ly = 0; ly < maxLocalY; ly++) {
     for (let lx = 0; lx < railW; lx++) {
-      if (isRed(lp(img, scale, railX + lx, railY + ly))) {
+      if (isTkRed(lp(img, scale, railX + lx, railY + ly))) {
         rx += railX + lx;
         ry += railY + ly;
         n++;

@@ -6,12 +6,18 @@ import type { AutomationParams } from "./types";
  */
 export const DEFAULT_PARAMS: AutomationParams = {
   searchKeywords: [],
-  posPrompts: [],
+  posPrompts: ["*"], // 默认全互动；填具体词则只互动命中文案的视频（需 OCR 读到文案）
   negPrompts: [],
+  commentMatchKeywords: [], // 空=不按词筛选评论；填词则只回复命中该词的评论作者（#3）
 
   kwSearchExecRatio: 0.8,
-  language: "英文",
-  clickWaitTime: 0.5,
+  fixedReplies: [
+    "{love this|so true|needed this} {emoji}",
+    "this is everything {emoji}",
+    "facts {emoji}",
+  ],
+  clickWaitTime: 1, // 每次点击之间的间隔（秒）。0.5 太快、偏机械，1s 更像真人
+  postReplies: false, // 默认只预览回复、不真发（见 types 注释）
 
   forYou: {
     interactEnable: true,
@@ -21,19 +27,19 @@ export const DEFAULT_PARAMS: AutomationParams = {
     videoFollowProb: 0.1,
     commentLikeProb: 0.5,
     commentReplyProb: 0.2,
-    commentLikeMaxCount: 15,
+    commentLikeMaxCount: 4, // 原为 15，单视频赞太多条评论易触发风控，降到 4
     commentReplyMaxCount: 2,
   },
 
   kwSearch: {
     interactEnable: true,
-    interactProb: 0.8,
+    interactProb: 0.45, // 原为 0.8，进评论区做深度互动的比例太高，降到 ~0.45
     videoLikeProb: 0.5,
     videoSaveProb: 0.3,
     videoFollowProb: 0.3,
-    commentLikeProb: 0.6,
+    commentLikeProb: 0.5,
     commentReplyProb: 0.3,
-    commentLikeMaxCount: 30,
+    commentLikeMaxCount: 5, // 原为 30，太夸张，降到 5
     commentReplyMaxCount: 2,
   },
 
@@ -46,7 +52,7 @@ export const DEFAULT_PARAMS: AutomationParams = {
     videoFollowProb: 0,
     commentLikeProb: 0.5,
     commentReplyProb: 0.5,
-    commentLikeMaxCount: 20,
+    commentLikeMaxCount: 4, // 原为 20
     commentReplyMaxCount: 2,
     maxVideoCount: 3,
   },

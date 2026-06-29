@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import type { AutomationParams, TaskWindow } from "../../params";
-import { COLORS, PercentField, Section, StepperField, SwitchField, TextField } from "../fields";
+import { COLORS, PercentField, Section, StepperField, SwitchField } from "../fields";
 import { TimePickerModal } from "../TimePicker";
 
 /** 全局节奏与分时段调度配置页。 */
@@ -48,12 +48,6 @@ export function ScheduleTab({
           value={params.kwSearchExecRatio}
           onChange={(v) => patch({ kwSearchExecRatio: v })}
         />
-        <TextField
-          label="评论回复语言"
-          hint="评论区回复用什么语言，如：英文 / 中文 / 日文"
-          value={params.language}
-          onChange={(v) => patch({ language: v })}
-        />
         <StepperField
           label="点赞间隔"
           hint="每次点赞动作之间的停顿，太快不像真人"
@@ -63,6 +57,12 @@ export function ScheduleTab({
           min={0}
           max={10}
           suffix=" 秒"
+        />
+        <SwitchField
+          label="真实发送评论回复"
+          hint="关闭时只在日志里预览回复、不发送（先验证内容）；确认无误再打开真发"
+          value={params.postReplies ?? false}
+          onChange={(v) => patch({ postReplies: v })}
         />
       </Section>
 

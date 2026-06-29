@@ -22,6 +22,10 @@ import {
   activateApp,
   applyFastSettings,
   createSession,
+  alertText,
+  alertButtons,
+  alertClickButton,
+  alertDismiss,
   deleteSession,
   getSessionId,
   getSettings,
@@ -57,7 +61,8 @@ import {
 } from "./deviceProfile";
 import { createWdaUI } from "../src/engine/wdaUI";
 import { createEngine } from "../src/engine";
-import type { CommentGenerator } from "../src/engine/types";
+import { createFixedReplyGenerator } from "../src/gen";
+import { chooseAlertButton } from "../src/engine/alertIntent";
 import {
   DEFAULT_PARAMS,
   fromLegacy,
@@ -82,12 +87,6 @@ function resolveUrl(): string {
   }
   return url;
 }
-
-/** 演示版评论生成器（接 Claude API 前的占位）。 */
-const stubGenerator: CommentGenerator = {
-  reply: async ({ targetComment, language }) =>
-    `[${language}] re: ${targetComment.slice(0, 20)}`,
-};
 
 /** run 命令的默认配置：仅推荐页养号，不做评论/搜索/主页（尚未适配）。 */
 function defaultRunParams(): AutomationParams {
@@ -341,6 +340,53 @@ async function dispatch(
       );
       break;
     }
+    case "alert": {
+      // 读当前 iOS 系统弹窗的文字+按钮+将点的按钮；`alert go` 真的关掉。
+      await ensureSession();
+      const text = await alertText();
+      if (text === null) {
+        log("当前无系统弹窗");
+        break;
+      }
+      const buttons = await alertButtons();
+      const choice = chooseAlertButton(text, buttons);
+      log(`弹窗文字：${text}`);
+      log(`按钮：${buttons.join(" | ") || "(读不到)"}`);
+      log(`意图：将点「${"label" in choice ? choice.label : "dismiss(默认取消)"}」`);
+      if (arg === "go") {
+        if ("label" in choice) await alertClickButton(choice.label);
+        else await alertDismiss();
+        log("已处理");
+      } else {
+        log("（加 `alert go` 真的关掉）");
+      }
+      break;
+    }
+    case "whereami": {
+      // 判断当前页面是不是"已知/正常"页（视频流/评论区），用于验证脱困判定。
+      await ensureTikTok();
+      const { width, height } = await windowSize();
+      let where = "未知页面（recoverIfLost 会左滑返回）";
+      if (await detectCommentCloseButton(width, height)) {
+        where = "评论区（有关闭✕）";
+      } else {
+        try {
+          await detectRail(width, height);
+          where = "视频流（有动作栏）";
+        } catch {
+          /* 无动作栏 */
+        }
+      }
+      log(`当前页面判定：${where}`);
+      break;
+    }
+    case "swipeback": {
+      await ensureTikTok();
+      const { width, height } = await windowSize();
+      await swipe({ x: 3, y: height * 0.5 }, { x: width * 0.78, y: height * 0.5 }, 0.2);
+      log("已左滑返回");
+      break;
+    }
     case "calibrate": {
       // 在干净的未点赞视频上检测一次 → 存进 devices.json（按逻辑分辨率归类）。
       await ensureTikTok();
@@ -533,7 +579,7 @@ async function dispatch(
       const engine = createEngine({
         params,
         ui: createCalibratedUI(log), // 用标定坐标驱动，快且稳
-        gen: stubGenerator,
+        gen: createFixedReplyGenerator(params.fixedReplies),
         logger: { log: (_lvl, m) => log(m) },
       });
       process.on("SIGINT", () => {

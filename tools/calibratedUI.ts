@@ -1,5 +1,9 @@
 import {
   activateApp,
+  alertButtons,
+  alertClickButton,
+  alertDismiss,
+  alertText,
   applyFastSettings,
   createSession,
   getSessionId,
@@ -11,8 +15,10 @@ import {
   type Point,
 } from "../src/wda";
 import type { TikTokUI, VideoInfo, CommentInfo } from "../src/engine/tiktok-ui";
+import { chooseAlertButton } from "../src/engine/alertIntent";
 import { deviceKey, loadProfile, type DeviceProfile } from "./deviceProfile";
 import {
+  detectRail,
   detectFollow,
   detectCommentCloseButton,
   detectCommentHearts,
@@ -21,10 +27,6 @@ import {
 import { readCaption } from "./ocr";
 
 type Log = (msg: string) => void;
-
-const NOT_ADAPTED = (name: string): never => {
-  throw new Error(`${name} 尚未适配（需要对应界面标定/读取能力）`);
-};
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -45,6 +47,8 @@ export function createCalibratedUI(log: Log): TikTokUI {
   let page: Page = "feed";
   // listComments 检测到的评论爱心坐标，供 likeComment 按 index 点击。
   let heartCache: Point[] = [];
+  // 连续"不在正常页面"的次数；避免横屏/图文帖偶发漏检导致在正常视频上误返回。
+  let lostStreak = 0;
 
   const ensure = async () => {
     if (!getSessionId()) {
@@ -230,9 +234,120 @@ export function createCalibratedUI(log: Log): TikTokUI {
       // 结果视频流里无需返回网格（靠上滑前进），空操作。
     },
 
-    openOwnProfile: () => NOT_ADAPTED("openOwnProfile"),
-    listOwnVideos: () => NOT_ADAPTED("listOwnVideos"),
-    openOwnVideo: () => NOT_ADAPTED("openOwnVideo"),
+    async swipeBack() {
+      await swipe(
+        { x: 3, y: size.height * 0.5 },
+        { x: size.width * 0.78, y: size.height * 0.5 },
+        0.2,
+      );
+      await sleep(800);
+    },
+
+    async recoverIfLost() {
+      // 先处理 iOS 系统权限弹窗（WDA alert 接口，按意图表点）。
+      const text = await alertText();
+      if (text !== null) {
+        const choice = chooseAlertButton(text, await alertButtons());
+        try {
+          if ("label" in choice) await alertClickButton(choice.label);
+          else await alertDismiss();
+        } catch {
+          await alertDismiss().catch(() => {});
+        }
+        log(`关闭系统弹窗（${"label" in choice ? choice.label : "dismiss"}）`);
+        await sleep(500);
+        lostStreak = 0;
+        return;
+      }
+      // 已知页面：评论区（关闭✕）或视频流（动作栏）。
+      const known = async (): Promise<boolean> => {
+        if (await detectCommentCloseButton(size.width, size.height)) return true;
+        try {
+          await detectRail(size.width, size.height); // 仅作布尔判断
+          return true;
+        } catch {
+          return false;
+        }
+      };
+      const back = async () => {
+        await swipe(
+          { x: 3, y: size.height * 0.5 },
+          { x: size.width * 0.78, y: size.height * 0.5 },
+          0.2,
+        );
+        await sleep(800);
+      };
+
+      if (await known()) {
+        lostStreak = 0;
+        return;
+      }
+      lostStreak++;
+      // 防误伤：只出现一次很可能是横屏/图文帖漏检 → 先观察、不返回。
+      if (lostStreak < 2) {
+        log("可能离开正常页面（观察中，暂不返回）");
+        return;
+      }
+      // 连续 ≥2 次 → 确实卡住 → 左滑返回脱困（回到已知页即停，最多 3 下）。
+      for (let i = 0; i < 3; i++) {
+        log("⚠ 连续多次未在正常页面，左滑返回脱困");
+        await back();
+        if (await known()) {
+          lostStreak = 0;
+          return;
+        }
+      }
+    },
+
+    async returnToFeed() {
+      await ensure();
+      // 视频→结果网格→搜索输入→推荐流：连点 3 次左上返回箭头（坐标待 REPL 核实）。
+      for (let i = 0; i < 3; i++) {
+        await tap({ x: size.width * 0.06, y: size.height * 0.08 });
+        await sleep(800);
+      }
+      page = "feed";
+      log("已返回推荐流");
+    },
+
+    async returnFromProfile() {
+      await ensure();
+      // 作品全屏 →(返回箭头)→ 主页网格 →(底部 Home tab)→ 推荐流。
+      await tap({ x: size.width * 0.06, y: size.height * 0.08 }); // 返回箭头
+      await sleep(800);
+      await tap({ x: size.width * 0.1, y: size.height * 0.96 }); // 底部 Home tab
+      await sleep(1000);
+      page = "feed";
+      log("已从个人主页返回推荐流");
+    },
+
+    async openOwnProfile() {
+      await ensure();
+      // 底部导航最右「Profile」tab（390x844 量得 ≈ 屏宽90%、屏高96%；坐标待 REPL 核实）。
+      await tap({ x: size.width * 0.9, y: size.height * 0.96 });
+      await sleep(1500);
+      page = "feed";
+      log("已进入个人主页");
+    },
+    // 主页作品为 3 列网格；真实数未知，返回首屏可见数，由 maxVideoCount 裁剪。
+    listOwnVideos: async () => 6,
+    async openOwnVideo(index: number) {
+      await ensure();
+      if (index === 0) {
+        // 点作品网格左上第一格 → 进全屏作品流（≈ 屏宽17%、屏高55%；待 REPL 核实）。
+        await tap({ x: size.width * 0.17, y: size.height * 0.55 });
+        await sleep(1500);
+        page = "feed";
+      } else {
+        await goTo("feed");
+        await swipe(
+          { x: size.width * 0.5, y: size.height * 0.72 },
+          { x: size.width * 0.5, y: size.height * 0.26 },
+          0.25,
+        );
+      }
+      log(`打开第 ${index + 1} 条作品`);
+    },
 
     async detectPopup() {
       return false;

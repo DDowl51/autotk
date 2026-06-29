@@ -41,5 +41,7 @@ export async function runPersHome(
     await ui.back();
   }
 
+  // 退出个人主页作品流，返回推荐流（路径与搜索不同）。
+  if (ui.returnFromProfile) await ui.returnFromProfile();
   logger.log("info", `[个人主页] 结束，互动 ${count} 条作品`);
 }

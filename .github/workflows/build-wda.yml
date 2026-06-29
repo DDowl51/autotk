@@ -29,9 +29,12 @@ jobs:
             -scheme WebDriverAgentRunner \
             -destination 'generic/platform=iOS' \
             -derivedDataPath ./build \
+            PRODUCT_BUNDLE_IDENTIFIER=com.ddowl.WebDriverAgentRunner \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY=""
+          # 产出的 Runner app bundle id 会是 com.ddowl.WebDriverAgentRunner.xctrunner
+          # （Xcode 给 UI test runner 自动加 .xctrunner 后缀），通配符 com.ddowl.* 可覆盖。
 
       - name: 打包成 IPA
         working-directory: wda

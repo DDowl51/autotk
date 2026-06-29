@@ -11,6 +11,10 @@ export function KeywordsTab({
   setPos,
   neg,
   setNeg,
+  reply,
+  setReply,
+  match,
+  setMatch,
 }: {
   kw: string;
   setKw: (v: string) => void;
@@ -18,6 +22,10 @@ export function KeywordsTab({
   setPos: (v: string) => void;
   neg: string;
   setNeg: (v: string) => void;
+  reply: string;
+  setReply: (v: string) => void;
+  match: string;
+  setMatch: (v: string) => void;
 }) {
   return (
     <>
@@ -57,6 +65,32 @@ export function KeywordsTab({
           onChange={setNeg}
           multiline
           placeholder="car, pet, food, kids, asmr"
+        />
+      </Section>
+
+      <Section
+        title="评论匹配词"
+        hint="进评论区后，评论文字含这些词的，才回复其作者（@他）。留空=不按词筛选、按概率回复。逗号或换行分隔。"
+      >
+        <TextField
+          label="评论匹配词列表"
+          value={match}
+          onChange={setMatch}
+          multiline
+          placeholder="where, link, how much, want one"
+        />
+      </Section>
+
+      <Section
+        title="固定回复列表"
+        hint="评论回复从这里随机取一条（一行一条）。占位符：{emoji} 随机表情、{a|b|c} 随机择一、{user} @评论作者、{kw} 命中词。例：{user} {love this|so true} {emoji}"
+      >
+        <TextField
+          label="回复列表（一行一条）"
+          value={reply}
+          onChange={setReply}
+          multiline
+          placeholder={"this is everything {emoji}\nfacts {emoji}\n{love this|so true} {emoji}"}
         />
       </Section>
     </>

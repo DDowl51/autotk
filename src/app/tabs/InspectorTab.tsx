@@ -14,7 +14,8 @@ import {
   status,
   TIKTOK_BUNDLE_ID,
 } from "../../wda";
-import { createWdaUI } from "../../engine/wdaUI";
+import { createRealUI } from "../realUI";
+import type { TikTokUI } from "../../engine/tiktok-ui";
 import { COLORS, Section } from "../fields";
 
 /**
@@ -55,8 +56,25 @@ export function InspectorTab() {
     }
   };
 
-  // 真机版 UI，用于单步验证选择器（每个动作单次往返，前台宽限期内可完成）。
-  const ui = useMemo(() => createWdaUI((m) => setMsg(m)), []);
+  // 真机版 UI（onDeviceUI：标定坐标 + 图像检测），与正式运行同一路径。
+  // 元素树版 wdaUI 因 snapshotMaxDepth=1 在真机 TikTok 不可用，故不再用于单步测试。
+  const ui = useMemo<TikTokUI | null>(() => {
+    try {
+      return createRealUI((m) => setMsg(m));
+    } catch {
+      return null;
+    }
+  }, []);
+
+  // 单步动作：真机 UI 不可用时提示而非崩溃。
+  const act = (label: string, fn: (u: TikTokUI) => Promise<unknown>) => {
+    const u = ui;
+    if (!u) {
+      setMsg("真机 UI 不可用（需 dev build + 标定坐标）");
+      return;
+    }
+    void run(label, () => fn(u));
+  };
 
   return (
     <>
@@ -107,17 +125,17 @@ export function InspectorTab() {
         hint="在 TikTok 推荐页停在某视频，逐个测试真机动作是否生效。每次只做一个动作。"
       >
         <View style={styles.btnRow}>
-          <DebugBtn label="打开推荐页" disabled={busy} onPress={() => run("打开推荐页", () => ui.openForYou())} />
-          <DebugBtn label="读取文案" disabled={busy} onPress={() => run("读取文案", () => ui.readCurrentVideo())} />
+          <DebugBtn label="打开推荐页" disabled={busy} onPress={() => act("打开推荐页", (u) => u.openForYou())} />
+          <DebugBtn label="读取文案" disabled={busy} onPress={() => act("读取文案", (u) => u.readCurrentVideo())} />
         </View>
         <View style={styles.btnRow}>
-          <DebugBtn label="点赞" disabled={busy} onPress={() => run("点赞", () => ui.likeVideo())} />
-          <DebugBtn label="收藏" disabled={busy} onPress={() => run("收藏", () => ui.saveVideo())} />
-          <DebugBtn label="关注" disabled={busy} onPress={() => run("关注", () => ui.followAuthor())} />
+          <DebugBtn label="点赞" disabled={busy} onPress={() => act("点赞", (u) => u.likeVideo())} />
+          <DebugBtn label="收藏" disabled={busy} onPress={() => act("收藏", (u) => u.saveVideo())} />
+          <DebugBtn label="关注" disabled={busy} onPress={() => act("关注", (u) => u.followAuthor())} />
         </View>
         <View style={styles.btnRow}>
-          <DebugBtn label="打开评论" disabled={busy} onPress={() => run("打开评论", () => ui.openComments())} />
-          <DebugBtn label="上滑下一个" primary disabled={busy} onPress={() => run("上滑下一个", () => ui.swipeToNextVideo())} />
+          <DebugBtn label="打开评论" disabled={busy} onPress={() => act("打开评论", (u) => u.openComments())} />
+          <DebugBtn label="上滑下一个" primary disabled={busy} onPress={() => act("上滑下一个", (u) => u.swipeToNextVideo())} />
         </View>
       </Section>
 

@@ -45,11 +45,14 @@ export interface RunContext {
   sleep(seconds: number): Promise<void>;
 }
 
-/** 生成单条评论回复的内容（接 Claude/GPT API），暂以接口形式占位。 */
+/** 生成单条评论回复的内容（固定回复列表 + 占位符）。 */
 export interface CommentGenerator {
   reply(input: {
     videoCaption: string;
     targetComment: string;
-    language: string;
+    /** 评论作者 @用户名（#3 针对性回复用；现阶段空）。 */
+    author?: string;
+    /** 命中的关键词（#3 用；现阶段空）。 */
+    keyword?: string;
   }): Promise<string>;
 }

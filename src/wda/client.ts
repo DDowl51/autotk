@@ -77,5 +77,6 @@ export async function request<T>(
     throw new WdaError(msg, res.status, path);
   }
 
-  return body!.value;
+  // 2xx 但无 JSON 体（少见，如某些空响应）：返回 undefined，避免 body!.value 抛 TypeError。
+  return body ? body.value : (undefined as unknown as T);
 }

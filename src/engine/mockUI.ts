@@ -1,5 +1,4 @@
 import type { TikTokUI, VideoInfo, CommentInfo } from "./tiktok-ui";
-import type { CommentGenerator } from "./types";
 import { jitterSleep, pick, randInt } from "./random";
 
 type Log = (msg: string) => void;
@@ -60,13 +59,7 @@ export function createMockUI(log: Log): TikTokUI {
     listOwnVideos: async () => randInt(1, 5),
     openOwnVideo: (i) => act(`打开自己的第 ${i + 1} 条作品`),
     detectPopup: async () => false,
+    publishVideo: (assetUri, caption) => act(`发布视频「${caption}」(${assetUri})`, 1),
   };
 }
 
-/** 演示版评论生成器：直接返回一句占位文案（真实环境接 Claude API）。 */
-export function createMockGenerator(): CommentGenerator {
-  return {
-    reply: async ({ targetComment, language }) =>
-      `[${language}] 针对「${targetComment}」的亮点回复`,
-  };
-}

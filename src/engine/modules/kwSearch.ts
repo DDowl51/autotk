@@ -34,8 +34,9 @@ export async function runKwSearch(
       logger.log("info", "[搜索页] 已到时间段边界，结束本批");
       break;
     }
+    if (ui.recoverIfLost) await ui.recoverIfLost(); // 误点跳走/应用内浮层 → 自动脱困
     if (await ui.detectPopup()) {
-      logger.log("warn", "[搜索页] 检测到弹窗，等待人工干预");
+      logger.log("warn", "[搜索页] 浮层未能自动关闭，结束本轮");
       break;
     }
 
@@ -50,5 +51,7 @@ export async function runKwSearch(
     await ui.back();
   }
 
+  // 退出搜索结果流，返回推荐流（否则下一轮推荐页会在搜索流里养号）。
+  if (ui.returnToFeed) await ui.returnToFeed();
   logger.log("info", "[搜索页] 结束");
 }

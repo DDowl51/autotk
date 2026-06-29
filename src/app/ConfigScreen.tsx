@@ -47,8 +47,13 @@ export default function ConfigScreen() {
   const [kwText, setKwText] = useState(params.searchKeywords.join(", "));
   const [posText, setPosText] = useState(params.posPrompts.join(", "));
   const [negText, setNegText] = useState(params.negPrompts.join(", "));
+  // 固定回复一行一条（回复内容可能含逗号，故只按换行拆）。
+  const [replyText, setReplyText] = useState(params.fixedReplies.join("\n"));
+  const [matchText, setMatchText] = useState(params.commentMatchKeywords.join(", "));
   const splitWords = (t: string) =>
     t.split(/[,\n]/).map((s) => s.trim()).filter(Boolean);
+  const splitLines = (t: string) =>
+    t.split(/\n+/).map((s) => s.trim()).filter(Boolean);
 
   const patch = (p: Partial<AutomationParams>) => setParams({ ...params, ...p });
 
@@ -68,6 +73,8 @@ export default function ConfigScreen() {
       searchKeywords: splitWords(kwText),
       posPrompts: splitWords(posText),
       negPrompts: splitWords(negText),
+      fixedReplies: splitLines(replyText),
+      commentMatchKeywords: splitWords(matchText),
     };
     const errors = validateParams(merged);
     if (errors.length > 0) {
@@ -155,6 +162,10 @@ export default function ConfigScreen() {
             setPos={setPosText}
             neg={negText}
             setNeg={setNegText}
+            reply={replyText}
+            setReply={setReplyText}
+            match={matchText}
+            setMatch={setMatchText}
           />
         )}
 

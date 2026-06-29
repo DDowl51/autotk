@@ -1,0 +1,7 @@
+{
+  "name": "keepalive-native",
+  "version": "1.0.0",
+  "description": "Continuous background location keepalive (local Expo module)",
+  "main": "index.ts",
+  "private": true
+}

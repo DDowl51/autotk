@@ -24,6 +24,8 @@ export interface Engine {
   stop(): void;
   getStats(): RunStats;
   isRunning(): boolean;
+  /** 当前正在跑的模块（forYou/kwSearch/persHome），未跑则 undefined。 */
+  getModule(): string | undefined;
 }
 
 /** 不在时间段内时，每隔这么久重新检查一次（秒）。 */
@@ -52,6 +54,7 @@ export function createEngine(deps: EngineDeps): Engine {
   let running = false;
   const stats = emptyStats();
   let persHomeRanOn: string | null = null;
+  let currentModule: string | undefined;
 
   // 可被打断的休眠：停止时立即唤醒，无需等满整个间隔。
   // 空转等待与模块内的拟人化停顿都走这里，保证停止响应及时。
@@ -117,13 +120,16 @@ export function createEngine(deps: EngineDeps): Engine {
           // 先标记"今天已尝试"再执行：即便失败也不会整天反复重试（配合下方容错）。
           if (params.persHome.moduleEnable && persHomeRanOn !== todayKey()) {
             persHomeRanOn = todayKey();
+            currentModule = "persHome";
             await runPersHome(ctx, ui, gen);
           } else {
             // 按搜索占比分发一个批次。
             const kind = pickModule(params.kwSearchExecRatio);
             if (kind === "kwSearch") {
+              currentModule = "kwSearch";
               await runKwSearch(ctx, ui, gen, randInt(3, 8));
             } else {
+              currentModule = "forYou";
               await runForYou(ctx, ui, gen, randInt(5, 15));
             }
           }
@@ -166,6 +172,7 @@ export function createEngine(deps: EngineDeps): Engine {
     },
     getStats: () => ({ ...stats }),
     isRunning: () => running,
+    getModule: () => currentModule,
   };
 }
 
