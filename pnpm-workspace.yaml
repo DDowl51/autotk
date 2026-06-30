@@ -1,0 +1,14 @@
+packages:
+  - apps/*
+  - services/*
+  - packages/*
+
+# Native binaries that need their install scripts to run (approve once via `pnpm approve-builds`).
+onlyBuiltDependencies:
+  - edgedriver
+  - geckodriver
+  - tesseract.js
+  - esbuild
+  - electron
+  - "@prisma/client"
+  - prisma
