@@ -1,5 +1,10 @@
 packages:
   - apps/*
+  # apps/mobile (autotk, RN/Expo) is intentionally NOT a root workspace member yet:
+  # Metro/native autolinking needs dedicated monorepo config + on-device verification.
+  # It keeps its own self-contained install (apps/mobile/pnpm-workspace.yaml) until that
+  # "phase 4" integration. Re-include it (drop this exclusion) once Metro config is added.
+  - "!apps/mobile"
   - services/*
   - packages/*
 

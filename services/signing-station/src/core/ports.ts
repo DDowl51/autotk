@@ -18,6 +18,11 @@ export interface AppConfig {
   version: string;
   /** 未签名母包路径（apps/wda.ipa 等）。 */
   motherIpaPath: string;
+  /**
+   * 该 App 是否是 XCTest 运行器（如 WDA）。为 true 时母包必须含 XCTest 框架 + .xctest 插件，
+   * 否则签出来装上是个点不开的空壳。autotk 这类普通 App 不设/为 false。
+   */
+  requiresXctest?: boolean;
 }
 
 /** 重生成后的 ad-hoc 描述文件引用，喂给重签。 */
