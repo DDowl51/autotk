@@ -1,0 +1,37 @@
+# 一条龙：signing-station（装机服务）+ Caddy（自动 TLS 反代）。
+# 准备：① 把 config.example.json 复制成 config.json 并填好；② 把 .p8/.p12/证书放进 ./data/secrets/；
+#       ③ 把母包放进 ./apps/（wda.ipa / autotk.ipa）；④ Caddyfile 改成你的子域名；⑤ docker compose up -d。
+services:
+  signing-station:
+    build: .
+    restart: unless-stopped
+    environment:
+      - CONFIG_PATH=/app/config.json
+      - WORK_DIR=/app/data/work
+      # 可选：用环境变量覆盖（也可写在 config.json 里）
+      # - BASE_URL=https://install.example.com
+      # - COLLECTOR_URL=https://telemetry.example.com
+      # - STATION_ID=station-1
+    volumes:
+      - ./config.json:/app/config.json:ro
+      - ./apps:/app/apps:ro
+      - ./data:/app/data # 含 secrets/ 与 work/（设备集落盘 ota-devices.json 也在这里）
+    expose:
+      - "4100"
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - signing-station
+
+volumes:
+  caddy_data:
+  caddy_config:

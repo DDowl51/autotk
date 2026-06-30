@@ -1,0 +1,25 @@
+{
+  "name": "@mc/hub",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "start": "tsx src/main.ts",
+    "mock": "tsx src/mock-device.ts",
+    "test": "vitest run",
+    "test:e2e": "vitest run test/e2e",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@mc/shared": "*",
+    "socket.io": "^4.8.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.16.10",
+    "socket.io-client": "^4.8.1",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.2",
+    "vitest": "^2.1.2"
+  }
+}

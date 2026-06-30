@@ -1,0 +1,41 @@
+
+以下参数是我养号2天后的参数设置,比较适合拉数据,各位可以进行参考
+{
+    "search_kw": "sexy,sexybeachgirl,bikini,mianiswimweek",         #搜索关键词--和我发的作品标签是一致的
+    "pos_prompt": "bikinilove,swimwearmodel,bikinibabe,beachykeen,sexy,sexybeachgirl,bikini,mianiswimweek",     #正向提示词,可以在视频标签的基础上进行扩充
+    "neg_prompt": "car,pet,animal,making,crafting,asmr,sleep,kids,cat,dog,food,history,kitchen,business,government,house,city",     #反向提示词,做一些常规的不想看到的视频就行
+    "kw_search_int_exec_prop": 0.5,     #搜索互动占比    此时我的账号已经过了2天养号期,开始发作品并且拉数据,所以我讲搜索占比调整到0.5
+    "is_run_pers_home_vid_int": False,      #关闭个人主页互动模块
+    "language": "英文",
+    "for_you_video_int_enable": True,       #进行推荐页的视频互动
+    "for_you_video_int_prob": 1,            #100%对推荐页命中的视频进行互动
+    "kw_search_video_int_enable": True,     #进行关键词搜索页视频的互动
+    "kw_search_video_int_prob": 0.7,        #70%对关键词搜索页命中的视频进行互动    
+    "pers_home_video_int_enable": True,     #进行个人主页视频互动
+    "pers_home_video_int_prob": 0.5,        #50%对个人主页命中的视频进行互动
+    "click_wait_time": 1,                   #点赞间隔时间1秒
+    "kw_search_comment_click_like_prob": 0.3,   #搜索页评论区点赞概率0.3  为了能够在不提高点赞数量的前提下踩更多人的主页
+    "for_you_comment_click_like_prob": 0.3,     #同理
+    "pers_home_vid_comment_click_like_prob": 0.5,
+    "for_you_video_like_prob": 0.8,        #推荐页视频点赞概率0.8
+    "for_you_video_save_to_favorites_prob": 0.8,     #推荐页视频收藏概率0.8,通过此处强化账号兴趣标签
+    "for_you_video_follow_prob": 0.03,          #推荐页视频关注概率0.03
+    "kw_search_video_like_prob": 0.6,        #关键词搜索页视频点赞概率0.6,这里不用太高,因为在视频搜索页中大概率都是你的精准对标视频
+    "kw_search_video_save_to_favorites_prob": 0.1,   #关键词搜索页视频收藏概率0.1
+    "kw_search_video_follow_prob": 0.03,     #关键词搜索页视频关注概率0.03
+    "for_you_single_video_comment_click_like_count": 15,     #推荐页视频评论区点赞最大数量15,在推荐页评论区中最多给15条评论点赞
+    "for_you_single_video_comment_reply_count": 3,           #推荐页视频评论区回复最大数量3,在推荐页评论区中最多给3条评论回复
+    "kw_search_single_video_comment_click_like_count": 16,   #关键词搜索页视频评论区点赞最大数量16,在关键词搜索页评论区中最多给16条评论点赞
+    "kw_search_single_video_comment_reply_count": 3,        #关键词搜索页视频评论区回复最大数量3,在关键词搜索页评论区中最多给3条评论回复
+    "pers_home_single_video_comment_click_like_count": 5,   #个人主页视频评论区点赞最大数量5,在个人主页评论区中最多给5条评论点赞
+    "pers_home_single_video_comment_reply_count": 1,        #个人主页视频评论区回复最大数量1,在个人主页评论区中最多给1条评论回复
+    "pers_home_vid_int_max_count": 1,                       #只对1条个人主页的作品进行互动
+    "task_plan1_starttime": "12:00:00",         #以下时间分为了3段  ,如果是1机3号则意味着每个账号能跑4个小时
+    "task_plan1_endtime": "16:00:00",
+    "task_plan2_starttime": "17:00:00",
+    "task_plan2_endtime": "21:00:00",
+    "task_plan3_starttime": "22:00:00",
+    "task_plan3_endtime": "23:50:00",
+    "task_plan4_starttime": "23:52:00",
+    "task_plan4_endtime": "23:59:00"
+}

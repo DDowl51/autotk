@@ -1,0 +1,22 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: telemetry
+      POSTGRES_USER: telemetry
+      POSTGRES_PASSWORD: telemetry
+    volumes:
+      - telem-pg:/var/lib/postgresql/data
+
+  collector:
+    build: .
+    environment:
+      DATABASE_URL: postgres://telemetry:telemetry@db:5432/telemetry
+      PORT: "4100"
+    ports:
+      - "4100:4100"
+    depends_on:
+      - db
+
+volumes:
+  telem-pg: {}

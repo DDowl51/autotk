@@ -1,0 +1,7 @@
+{
+  "name": "vision-ocr",
+  "version": "1.0.0",
+  "description": "On-device OCR via Apple Vision (local Expo module)",
+  "main": "index.ts",
+  "private": true
+}

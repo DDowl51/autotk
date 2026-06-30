@@ -1,0 +1,47 @@
+{
+  "baseUrl": "https://install.example.com",
+  "organization": "ddowl",
+  "enrollIdentifier": "com.ddowl.signing-station.enroll",
+  "workDir": "./data/work",
+  "port": 4100,
+  "collectorUrl": "https://telemetry.example.com",
+  "mobileconfigSigner": {
+    "signerCertPath": "data/secrets/mc-cert.pem",
+    "keyPath": "data/secrets/mc-key.pem",
+    "certChainPath": "data/secrets/mc-chain.pem"
+  },
+  "apps": {
+    "wda": {
+      "bundleId": "com.ddowl.WebDriverAgentRunner.xctrunner",
+      "title": "WebDriverAgent",
+      "version": "5.15.5",
+      "motherIpaPath": "apps/wda.ipa"
+    },
+    "autotk": {
+      "bundleId": "com.ddowl.autotk",
+      "title": "autotk",
+      "version": "1.0.0",
+      "motherIpaPath": "apps/autotk.ipa"
+    }
+  },
+  "accounts": [
+    {
+      "name": "acct-1",
+      "capacity": 100,
+      "asc": {
+        "issuerId": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+        "keyId": "XXXXXXXXXX",
+        "p8Path": "data/secrets/acct1.p8",
+        "profileType": "IOS_APP_DEVELOPMENT"
+      },
+      "signing": {
+        "p12Path": "data/secrets/acct1.p12",
+        "p12Password": "你的p12密码"
+      },
+      "bundleIds": {
+        "wda": "com.ddowl.WebDriverAgentRunner.xctrunner",
+        "autotk": "com.ddowl.autotk"
+      }
+    }
+  ]
+}

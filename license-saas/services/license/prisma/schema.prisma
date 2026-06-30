@@ -1,0 +1,107 @@
+// 通用激活码 SaaS 数据模型。多产品隔离、设备绑定、用量。
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// 接入的产品（autotk、未来产品…）。各自 key+secret，数据按 product 隔离。
+model Product {
+  id        String   @id @default(cuid())
+  key       String   @unique // 公开标识，客户端用
+  secret    String // HMAC 签名密钥（仅服务端）
+  name      String
+  createdAt DateTime @default(now())
+
+  codes       ActivationCode[]
+  activations DeviceActivation[]
+  allowedBy   AccountProduct[] // 哪些分销账号被授权可见/发码本产品
+}
+
+enum Role {
+  ADMIN // 超级管理员（你）
+  USER // 客户/分销
+}
+
+/// 登录账号（与 #1 管理中心共用同一套账号体系）。
+model Account {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  passwordHash String // bcrypt
+  role         Role     @default(USER)
+  codeQuota    Int? // 经销商可发码总数上限；null=不限
+  disabled     Boolean  @default(false) // 停用账号（禁止登录）
+  createdAt    DateTime @default(now())
+
+  codes           ActivationCode[] // 该账号名下的激活码
+  allowedProducts AccountProduct[] // 该分销被授权可见/发码的产品白名单
+}
+
+/// 分销账号-产品白名单（多对多）。仅对 USER 生效；ADMIN 不受限。
+/// 空集 = 该分销看不到任何产品、不能发码（显式授权）。
+model AccountProduct {
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  accountId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productId String
+
+  @@id([accountId, productId])
+  @@index([productId])
+}
+
+enum CodeStatus {
+  UNUSED // 未激活
+  ACTIVE // 已激活（至少绑过一台）
+  DISABLED // 停用（手动）
+}
+
+/// 激活码。属于某产品，可归属某账号。
+model ActivationCode {
+  id         String     @id @default(cuid())
+  code       String     @unique // 规范化后的码（大写无分隔），展示时再加分隔
+  product    Product    @relation(fields: [productId], references: [id])
+  productId  String
+  owner      Account?   @relation(fields: [ownerId], references: [id])
+  ownerId    String?
+  status     CodeStatus @default(UNUSED)
+  maxDevices Int        @default(1) // 可绑定设备数（可配）
+  expiresAt  DateTime? // 有效期；null=永久
+  note       String?
+  createdAt  DateTime   @default(now())
+
+  activations DeviceActivation[]
+
+  @@index([productId])
+  @@index([ownerId])
+}
+
+/// 一次"码-设备"绑定。用于"使用情况"看板与设备数限制。
+model DeviceActivation {
+  id               String   @id @default(cuid())
+  code             ActivationCode @relation(fields: [codeId], references: [id])
+  codeId           String
+  product          Product  @relation(fields: [productId], references: [id])
+  productId        String
+  deviceId         String // 设备稳定标识（iOS identifierForVendor）
+  deviceName       String? // 给人看的别名（同 #1 设备名）
+  firstActivatedAt DateTime @default(now())
+  lastHeartbeatAt  DateTime @default(now())
+  revoked          Boolean  @default(false) // 远程封禁
+
+  @@unique([codeId, deviceId]) // 同一码+设备只一条
+  @@index([productId, deviceId])
+}
+
+/// 用量/在线日志（给"使用情况"看板）。
+model UsageLog {
+  id        String   @id @default(cuid())
+  productId String
+  deviceId  String
+  event     String // activate | heartbeat | ...
+  ts        DateTime @default(now())
+
+  @@index([productId, deviceId, ts])
+}

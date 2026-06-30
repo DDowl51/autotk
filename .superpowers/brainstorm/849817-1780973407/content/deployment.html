@@ -1,0 +1,149 @@
+<h2>自动化引擎运行在哪里？</h2>
+<p class="subtitle">选择核心 TypeScript 引擎的部署位置</p>
+
+<div class="section">
+  <h3>三种部署架构对比</h3>
+</div>
+
+<div class="options">
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>混合模式（推荐）</h3>
+      <div class="mockup">
+        <div class="mockup-body" style="padding:16px;font-size:13px;line-height:1.6;">
+          <div style="text-align:center;margin-bottom:12px;">
+            <span class="label">架构总览</span>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;">
+            <div style="border:2px solid #4f46e5;border-radius:8px;padding:8px 12px;text-align:center;min-width:90px;">
+              <div style="font-weight:700;color:#4f46e5;">🖥 Mac/Linux</div>
+              <div style="font-size:11px;color:#6b7280;">主控引擎</div>
+              <div style="margin-top:4px;background:#eef2ff;border-radius:4px;padding:4px;font-size:11px;">
+                Node.js 常驻进程<br>
+                WDA Client · ADB<br>
+                调度器 · AI Pipeline
+              </div>
+            </div>
+            <div style="font-size:20px;align-self:center;">⇄</div>
+            <div style="border:2px solid #d97706;border-radius:8px;padding:8px 12px;text-align:center;min-width:90px;">
+              <div style="font-weight:700;color:#d97706;">📱 iOS</div>
+              <div style="font-size:11px;color:#6b7280;">WDA Agent</div>
+              <div style="margin-top:4px;background:#fffbeb;border-radius:4px;padding:4px;font-size:11px;">
+                WebDriverAgent<br>
+                接收 HTTP 指令<br>
+                执行点击/滑动/输入
+              </div>
+            </div>
+            <div style="font-size:20px;align-self:center;">⇄</div>
+            <div style="border:2px solid #059669;border-radius:8px;padding:8px 12px;text-align:center;min-width:90px;">
+              <div style="font-weight:700;color:#059669;">📱 Android</div>
+              <div style="font-size:11px;color:#6b7280;">ADB Agent</div>
+              <div style="margin-top:4px;background:#ecfdf5;border-radius:4px;padding:4px;font-size:11px;">
+                UIAutomator2<br>
+                接收 ADB 指令<br>
+                执行点击/滑动/输入
+              </div>
+            </div>
+            <div style="font-size:20px;align-self:center;">⇄</div>
+            <div style="border:2px solid #7c3aed;border-radius:8px;padding:8px 12px;text-align:center;min-width:90px;">
+              <div style="font-weight:700;color:#7c3aed;">🌐 服务器</div>
+              <div style="font-size:11px;color:#6b7280;">管理后台</div>
+              <div style="margin-top:4px;background:#f5f3ff;border-radius:4px;padding:4px;font-size:11px;">
+                Web UI (React)<br>
+                REST API<br>
+                数据库
+              </div>
+            </div>
+          </div>
+          <div style="margin-top:10px;font-size:11px;color:#6b7280;text-align:center;">
+            每台电脑可连多台手机 · 支持 USB + WiFi · 管理后台可部署本地或云端
+          </div>
+        </div>
+      </div>
+      <div class="pros-cons">
+        <div class="pros"><h4>优势</h4>
+          <ul>
+            <li>电脑算力强，AI 不受手机限制</li>
+            <li>一机控多设备，成本最低</li>
+            <li>Web 后台可远程管理</li>
+            <li>TypeScript 全栈统一</li>
+          </ul>
+        </div>
+        <div class="cons"><h4>劣势</h4>
+          <ul>
+            <li>需电脑常驻运行</li>
+            <li>USB/WiFi 断连需容错</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>桌面 Agent 模式</h3>
+      <div class="mockup">
+        <div class="mockup-body" style="padding:16px;font-size:13px;line-height:1.6;">
+          <div style="text-align:center;">
+            <div style="display:inline-block;border:2px solid #4f46e5;border-radius:8px;padding:12px 20px;text-align:center;">
+              <div style="font-weight:700;color:#4f46e5;">🖥 电脑端（全部逻辑）</div>
+              <div style="font-size:11px;color:#6b7280;margin-top:4px;">
+                Node.js 引擎 · 调度器 · AI · 管理后台
+              </div>
+            </div>
+            <div style="font-size:24px;">⇅</div>
+            <div style="display:flex;gap:12px;justify-content:center;">
+              <div style="border:2px dashed #d97706;border-radius:8px;padding:8px 16px;">
+                📱 iOS<br><span style="font-size:11px;color:#6b7280;">WDA 被动执行</span>
+              </div>
+              <div style="border:2px dashed #059669;border-radius:8px;padding:8px 16px;">
+                📱 Android<br><span style="font-size:11px;color:#6b7280;">ADB 被动执行</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="pros-cons">
+        <div class="pros"><h4>优势</h4>
+          <ul><li>架构简单，所有逻辑集中</li><li>手机零负担</li></ul>
+        </div>
+        <div class="cons"><h4>劣势</h4>
+          <ul><li>断连即停，容错差</li><li>手机不强依赖即可</li></ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>纯手机端模式</h3>
+      <div class="mockup">
+        <div class="mockup-body" style="padding:16px;font-size:13px;line-height:1.6;">
+          <div style="text-align:center;">
+            <div style="display:inline-block;border:2px solid #7c3aed;border-radius:8px;padding:12px 20px;">
+              <div style="font-weight:700;color:#7c3aed;">📱 手机端（全部逻辑）</div>
+              <div style="font-size:11px;color:#6b7280;margin-top:4px;">
+                Node.js (Termux/iSH) · 引擎 · AI · 管理后台
+              </div>
+            </div>
+            <div style="font-size:24px;">⇅</div>
+            <div style="display:inline-block;border:2px solid #6b7280;border-radius:8px;padding:8px 16px;">
+              🖥 电脑<br><span style="font-size:11px;color:#6b7280;">仅浏览器访问管理后台</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="pros-cons">
+        <div class="pros"><h4>优势</h4>
+          <ul><li>无需电脑常驻</li><li>移动性强</li></ul>
+        </div>
+        <div class="cons"><h4>劣势</h4>
+          <ul><li>手机算力受限，AI 推理困难</li><li>Node.js 在手机端稳定性和生态差（Termux 仅 Android）</li><li>iOS 基本不可行</li></ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

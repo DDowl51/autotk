@@ -1,0 +1,5 @@
+# 把 install.example.com 换成你的子域名（DNS 指向本机）。
+# Caddy 自动申请并续期 Let's Encrypt 证书 —— itms-services 要求受信任 HTTPS，这一步满足它。
+install.example.com {
+	reverse_proxy signing-station:4100
+}

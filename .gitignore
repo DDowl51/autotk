@@ -1,0 +1,36 @@
+# ---- dependencies / build output ----
+node_modules/
+dist/
+build/
+.expo/
+tools/dist/
+*.tsbuildinfo
+
+# ---- native (RN/Expo) ----
+ios/
+android/
+
+# ---- env / local config ----
+.env
+.env.*
+*.log
+# signing-station real config carries credential paths; only the example is tracked
+config.json
+
+# ---- secrets / signing material (NEVER commit) ----
+**/secrets/
+data/
+*.p8
+*.p12
+*.cer
+*.key
+*.mobileprovision
+*.ipa
+
+# ---- large media / binaries (tutorials & tools, not source) ----
+*.mp4
+*.exe
+*.ips
+*.docx
+*.PNG
+*.pdf

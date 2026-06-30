@@ -1,0 +1,18 @@
+{
+  "name": "@telemetry/collector",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "start": "tsx src/main.ts",
+    "test": "bash tests/run.sh"
+  },
+  "dependencies": {
+    "pg": "^8.12.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.16.10",
+    "@types/pg": "^8.11.0",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.2"
+  }
+}

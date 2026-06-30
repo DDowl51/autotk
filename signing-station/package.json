@@ -1,0 +1,28 @@
+{
+  "name": "signing-station",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "iOS 应用 OTA 自助分发 + 自动 UDID 注册 + ad-hoc 重签（超级签后台）。扫码即装 WDA / autotk。",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "start": "tsx src/main.ts",
+    "check": "tsx src/preflight.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "fastify": "^4.28.1",
+    "node-app-store-connect-api": "^2.0.0",
+    "plist": "^3.1.0",
+    "qrcode": "^1.5.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20.16.10",
+    "@types/plist": "^3.0.5",
+    "@types/qrcode": "^1.5.5",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.2",
+    "vitest": "^2.1.2"
+  }
+}

@@ -1,0 +1,13 @@
+node_modules/
+dist/
+# 真实配置含凭据路径/口令，只提交 config.example.json
+config.json
+# 凭据与产物，永不入库
+data/
+secrets/
+apps/*.ipa
+*.p12
+*.p8
+*.mobileprovision
+*.cer
+*.key

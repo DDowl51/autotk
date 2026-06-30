@@ -1,0 +1,161 @@
+<h2>系统架构总览</h2>
+<p class="subtitle">TK 自动化运营系统 v1 — 全栈 TypeScript · iOS 专版</p>
+
+<div class="section">
+  <h3>核心架构</h3>
+</div>
+
+<div class="mockup">
+  <div class="mockup-body" style="padding:24px;font-size:13px;line-height:1.7;">
+    <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:center;max-width:700px;margin:0 auto;">
+
+      <!-- iPhone -->
+      <div style="border:3px solid #4f46e5;border-radius:12px;padding:16px;">
+        <div style="font-weight:700;color:#4f46e5;text-align:center;margin-bottom:10px;">📱 iPhone（每台）</div>
+
+        <div style="background:#eef2ff;border-radius:6px;padding:10px;margin-bottom:8px;">
+          <div style="font-weight:600;font-size:12px;color:#4338ca;">🧠 TK Automation App</div>
+          <div style="font-size:11px;color:#6b7280;margin-top:4px;">
+            React Native (TypeScript)<br>
+            ┣ 任务调度引擎<br>
+            ┣ 决策引擎（概率/规则）<br>
+            ┣ AI Pipeline<br>
+            ┣ SQLite 本地存储<br>
+            ┗ 管理 UI
+          </div>
+        </div>
+
+        <div style="background:#fef3c7;border-radius:6px;padding:10px;margin-bottom:8px;">
+          <div style="font-weight:600;font-size:12px;color:#b45309;">🔧 原生模块 (Swift)</div>
+          <div style="font-size:11px;color:#6b7280;margin-top:4px;">
+            ┣ OverlayManager（浮层）<br>
+            ┣ OCRService（Vision 识别）<br>
+            ┗ KeepAlive（后台保活）
+          </div>
+        </div>
+
+        <div style="background:#f0fdf4;border-radius:6px;padding:10px;">
+          <div style="font-weight:600;font-size:12px;color:#047857;">🤖 WDA</div>
+          <div style="font-size:11px;color:#6b7280;margin-top:4px;">
+            WebDriverAgent (HTTP :8100)<br>
+            → 操控 TikTok
+          </div>
+        </div>
+      </div>
+
+      <!-- Arrow -->
+      <div style="text-align:center;font-size:24px;color:#9ca3af;">
+        ⇄<br>
+        <span style="font-size:10px;">WS</span>
+      </div>
+
+      <!-- Cloud -->
+      <div style="border:3px solid #7c3aed;border-radius:12px;padding:16px;">
+        <div style="font-weight:700;color:#7c3aed;text-align:center;margin-bottom:10px;">☁️ 云服务器</div>
+
+        <div style="background:#f5f3ff;border-radius:6px;padding:10px;margin-bottom:8px;">
+          <div style="font-weight:600;font-size:12px;color:#6d28d9;">🌐 管理后台 API</div>
+          <div style="font-size:11px;color:#6b7280;margin-top:4px;">
+            Node.js + NestJS (TypeScript)<br>
+            ┣ WebSocket 服务器<br>
+            ┣ REST API<br>
+            ┣ JWT 鉴权<br>
+            ┗ PostgreSQL
+          </div>
+        </div>
+
+        <div style="background:#faf5ff;border-radius:6px;padding:10px;">
+          <div style="font-weight:600;font-size:12px;color:#7c3aed;">🖥 Web 管理面板</div>
+          <div style="font-size:11px;color:#6b7280;margin-top:4px;">
+            React + Vite (TypeScript)<br>
+            ┣ 设备列表/状态<br>
+            ┣ 参数配置<br>
+            ┣ 运行日志<br>
+            ┗ 数据统计
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- AI Cloud -->
+    <div style="text-align:center;margin-top:16px;padding:10px;background:#fff7ed;border-radius:8px;border:1px solid #fdba74;max-width:700px;margin-inline:auto;">
+      <span style="font-weight:600;color:#c2410c;">🧠 AI API</span>
+      <span style="font-size:12px;color:#6b7280;margin-left:8px;">
+        Claude / GPT / 可配置 · 从 iPhone 直接调用
+      </span>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>功能模块清单（v1）</h3>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:13px;">
+  <div style="background:#f9fafb;border-radius:8px;padding:14px;">
+    <div style="font-weight:600;margin-bottom:6px;">📱 iPhone App 模块</div>
+    <ul style="margin:0;padding-left:18px;color:#374151;line-height:1.8;">
+      <li>推荐页视频浏览与互动</li>
+      <li>关键词搜索视频互动</li>
+      <li>个人主页评论区互动</li>
+      <li>分时段任务调度</li>
+      <li>AI 评论生成与回复</li>
+      <li>浮层提示 & 安全退出</li>
+      <li>本地参数配置 UI</li>
+      <li>WDA 连接管理</li>
+    </ul>
+  </div>
+  <div style="background:#f9fafb;border-radius:8px;padding:14px;">
+    <div style="font-weight:600;margin-bottom:6px;">☁️ 云端 & 管理面板</div>
+    <ul style="margin:0;padding-left:18px;color:#374151;line-height:1.8;">
+      <li>多设备注册 & 心跳</li>
+      <li>远程参数下发</li>
+      <li>实时运行日志</li>
+      <li>任务启停控制</li>
+      <li>互动数据统计</li>
+      <li>用户登录 & 权限</li>
+    </ul>
+  </div>
+</div>
+
+<div class="section">
+  <h3>技术栈</h3>
+</div>
+
+<div style="overflow-x:auto;">
+  <table style="width:100%;border-collapse:collapse;font-size:13px;">
+    <tr style="background:#f9fafb;">
+      <th style="padding:8px 12px;text-align:left;border-bottom:2px solid #e5e7eb;">层</th>
+      <th style="padding:8px 12px;text-align:left;border-bottom:2px solid #e5e7eb;">技术</th>
+      <th style="padding:8px 12px;text-align:left;border-bottom:2px solid #e5e7eb;">语言</th>
+    </tr>
+    <tr><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;">移动端</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;">React Native + Expo (managed 或 bare)</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;">TypeScript</td></tr>
+    <tr style="background:#f9fafb;"><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;">原生桥接</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;">Swift (轻量，仅3个模块)</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;">Swift</td></tr>
+    <tr><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;">自动化协议</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;">WDA REST API (HTTP)</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;">—</td></tr>
+    <tr style="background:#f9fafb;"><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;">本地存储</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;">SQLite (watermelondb 或 expo-sqlite)</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;">TypeScript</td></tr>
+    <tr><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;">OCR</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;">Apple Vision Framework (本地)</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;">Swift</td></tr>
+    <tr style="background:#f9fafb;"><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;">后端</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;">Node.js + NestJS</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;">TypeScript</td></tr>
+    <tr><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;">数据库</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;">PostgreSQL</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;">—</td></tr>
+    <tr style="background:#f9fafb;"><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;">实时通信</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;">WebSocket (ws / socket.io)</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;">TypeScript</td></tr>
+    <tr><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;">Web 前端</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;">React + Vite + Tailwind</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;">TypeScript</td></tr>
+    <tr style="background:#f9fafb;"><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;">AI SDK</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;">Vercel AI SDK (统一多模型接口)</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;">TypeScript</td></tr>
+  </table>
+</div>
+
+<div class="section">
+  <h3>项目结构预览</h3>
+</div>
+
+<div style="background:#1e1e1e;border-radius:8px;padding:16px;font-family:monospace;font-size:12px;color:#d4d4d4;line-height:1.8;">
+<span style="color:#569cd6;">tk-automation/</span>
+├── <span style="color:#569cd6;">apps/</span>
+│   ├── <span style="color:#569cd6;">mobile/</span>          <span style="color:#6a9955;"># React Native (iOS App)</span>
+│   ├── <span style="color:#569cd6;">server/</span>          <span style="color:#6a9955;"># NestJS 后端 API</span>
+│   └── <span style="color:#569cd6;">web/</span>             <span style="color:#6a9955;"># React 管理面板</span>
+├── <span style="color:#569cd6;">packages/</span>
+│   ├── <span style="color:#569cd6;">shared/</span>          <span style="color:#6a9955;"># 共享类型/常量/工具</span>
+│   └── <span style="color:#569cd6;">wda-client/</span>      <span style="color:#6a9955;"># WDA HTTP 客户端库</span>
+├── <span style="color:#569cd6;">native-modules/</span>     <span style="color:#6a9955;"># Swift 原生模块</span>
+├── turbo.json
+└── package.json
+</div>

@@ -1,0 +1,77 @@
+import { describe, it, expect } from "vitest";
+import { DeviceRegistry, statsProgressed } from "../src/domain/registry";
+import { MemoryDeviceStore } from "../src/adapters/memory-store";
+
+function mk() {
+  let t = 1000;
+  const reg = new DeviceRegistry(new MemoryDeviceStore(), () => t);
+  return { reg, setTime: (n: number) => (t = n) };
+}
+
+describe("DeviceRegistry", () => {
+  it("注册 → 在线 + 进快照", async () => {
+    const { reg } = mk();
+    const info = await reg.register({ deviceId: "d1", deviceName: "手机A", version: "1.0" });
+    expect(info).toMatchObject({ deviceId: "d1", deviceName: "手机A", online: true, lastSeen: 1000 });
+    const snap = await reg.snapshot();
+    expect(snap).toHaveLength(1);
+    expect(snap[0].online).toBe(true);
+  });
+
+  it("上报状态：已注册更新，未注册返回 null", async () => {
+    const { reg } = mk();
+    expect(await reg.updateStatus("ghost", { running: true, ts: 1 })).toBe(null);
+    await reg.register({ deviceId: "d1", deviceName: "A" });
+    const info = await reg.updateStatus("d1", {
+      running: true,
+      module: "forYou",
+      stats: { likes: 3, follows: 1, comments: 0, videos: 5 },
+      ts: 2000,
+    });
+    expect(info?.status?.module).toBe("forYou");
+    expect(info?.status?.stats?.likes).toBe(3);
+  });
+
+  it("断开 → 离线但仍在快照", async () => {
+    const { reg } = mk();
+    await reg.register({ deviceId: "d1", deviceName: "A" });
+    const off = await reg.disconnect("d1");
+    expect(off?.online).toBe(false);
+    expect(reg.isOnline("d1")).toBe(false);
+    const snap = await reg.snapshot();
+    expect(snap[0].online).toBe(false);
+  });
+
+  it("statsProgressed：任一增长算进展", () => {
+    const s = (v: number) => ({ likes: 0, follows: 0, comments: 0, videos: v });
+    expect(statsProgressed(undefined, s(0))).toBe(true); // 首次
+    expect(statsProgressed(s(3), s(3))).toBe(false); // 不变
+    expect(statsProgressed(s(3), s(4))).toBe(true); // 增长
+    expect(statsProgressed(s(3), undefined)).toBe(false); // 无新数据
+  });
+
+  it("lastProgressAt：进展时更新，停滞时保持", async () => {
+    const { reg, setTime } = mk();
+    await reg.register({ deviceId: "d1", deviceName: "A" });
+    setTime(2000);
+    let info = await reg.updateStatus("d1", { running: true, stats: { likes: 0, follows: 0, comments: 0, videos: 1 }, ts: 0 });
+    expect(info?.lastProgressAt).toBe(2000);
+    setTime(5000);
+    info = await reg.updateStatus("d1", { running: true, stats: { likes: 0, follows: 0, comments: 0, videos: 1 }, ts: 0 }); // 停滞
+    expect(info?.lastProgressAt).toBe(2000); // 不变
+    setTime(9000);
+    info = await reg.updateStatus("d1", { running: true, stats: { likes: 0, follows: 0, comments: 0, videos: 2 }, ts: 0 }); // 又进展
+    expect(info?.lastProgressAt).toBe(9000);
+  });
+
+  it("重连 → 重新在线 + 更新名字", async () => {
+    const { reg } = mk();
+    await reg.register({ deviceId: "d1", deviceName: "A" });
+    await reg.disconnect("d1");
+    await reg.register({ deviceId: "d1", deviceName: "A改名" });
+    expect(reg.isOnline("d1")).toBe(true);
+    const snap = await reg.snapshot();
+    expect(snap[0].deviceName).toBe("A改名");
+    expect(snap[0].online).toBe(true);
+  });
+});
