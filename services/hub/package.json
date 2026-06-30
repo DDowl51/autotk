@@ -12,7 +12,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@mc/shared": "*",
+    "@mc/shared": "workspace:*",
     "socket.io": "^4.8.1"
   },
   "devDependencies": {
