@@ -1,4 +1,7 @@
-import { Section, TextField } from "../fields";
+import { useEffect, useState } from "react";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Section, TextField, COLORS } from "../fields";
+import { createFixedReplyGenerator } from "../../gen";
 
 /**
  * 关键词与提示词配置页。
@@ -27,6 +30,42 @@ export function KeywordsTab({
   match: string;
   setMatch: (v: string) => void;
 }) {
+  // 占位符插入按钮：追加到回复文本末尾（免记语法）。
+  const insert = (ph: string) => {
+    const sep = reply === "" || reply.endsWith("\n") || reply.endsWith(" ") ? "" : " ";
+    setReply(reply + sep + ph);
+  };
+  // 实时预览：把首行模板展开一条示例（复用回复生成器）。
+  const [preview, setPreview] = useState("");
+  useEffect(() => {
+    const lines = reply.split(/\n+/).map((s) => s.trim()).filter(Boolean);
+    if (lines.length === 0) {
+      setPreview("");
+      return;
+    }
+    let alive = true;
+    Promise.resolve(
+      createFixedReplyGenerator(lines).reply({
+        videoCaption: "",
+        targetComment: "",
+        author: "@某用户",
+        keyword: "关键词",
+      }),
+    )
+      .then((t) => alive && setPreview(t))
+      .catch(() => alive && setPreview(""));
+    return () => {
+      alive = false;
+    };
+  }, [reply]);
+
+  const PLACEHOLDERS: { ph: string; tip: string }[] = [
+    { ph: "{emoji}", tip: "随机表情" },
+    { ph: "{user}", tip: "@作者" },
+    { ph: "{a|b|c}", tip: "随机择一" },
+    { ph: "{kw}", tip: "命中词" },
+  ];
+
   return (
     <>
       <Section
@@ -92,7 +131,32 @@ export function KeywordsTab({
           multiline
           placeholder={"this is everything {emoji}\nfacts {emoji}\n{love this|so true} {emoji}"}
         />
+        <View style={styles.chips}>
+          {PLACEHOLDERS.map((p) => (
+            <TouchableOpacity key={p.ph} style={styles.chip} onPress={() => insert(p.ph)} activeOpacity={0.7}>
+              <Text style={styles.chipText}>
+                {p.ph} <Text style={styles.chipTip}>{p.tip}</Text>
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+        {preview ? <Text style={styles.preview}>预览：{preview}</Text> : null}
       </Section>
     </>
   );
 }
+
+const styles = StyleSheet.create({
+  chips: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 10 },
+  chip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 14,
+    backgroundColor: COLORS.cardAlt,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  chipText: { color: COLORS.text, fontSize: 12, fontWeight: "600" },
+  chipTip: { color: COLORS.faint, fontSize: 11, fontWeight: "400" },
+  preview: { color: COLORS.cyan, fontSize: 12, marginTop: 10, lineHeight: 17 },
+});

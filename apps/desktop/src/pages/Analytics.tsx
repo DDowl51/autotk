@@ -13,6 +13,7 @@ import {
 import { loadSettings } from "../settings";
 import { fetchSummary, fetchSeries, toChart, systemLabel, type Summary, type ChartPoint } from "../analytics";
 import { StatTile, SectionCard, PageHeader, EmptyHint, Mono } from "../ui";
+import { humanizeError } from "../errors";
 import { C } from "../theme";
 
 type Range = "24h" | "7d";
@@ -41,7 +42,7 @@ export function Analytics({ goSettings }: { goSettings: () => void }) {
       setSummary(s);
       setChart(toChart(ser.points, ser.bucketMs));
     } catch (e) {
-      message.error(`读取失败：${e instanceof Error ? e.message : String(e)}`);
+      message.error(humanizeError(e, "analytics"));
     } finally {
       setLoading(false);
     }

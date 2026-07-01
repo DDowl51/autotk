@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Layout, Menu } from "antd";
+import { Layout, Menu, Modal, Steps, Button } from "antd";
 import {
   DashboardOutlined,
   MobileOutlined,
@@ -30,9 +30,26 @@ type View = "overview" | "devices" | "alerts" | "history" | "analytics" | "publi
 
 export default function App() {
   const [view, setView] = useState<View>("overview");
-  const { connected, summary, hubUrl } = useHub();
+  const { connected, summary, hubUrl, embedded } = useHub();
   const goGuide = () => setView("guide");
   const shellRef = useRef<HTMLDivElement>(null);
+
+  // 首启欢迎（只弹一次）。
+  const [welcome, setWelcome] = useState(() => {
+    try {
+      return localStorage.getItem("mc.welcome_seen") !== "1";
+    } catch {
+      return false;
+    }
+  });
+  const closeWelcome = () => {
+    try {
+      localStorage.setItem("mc.welcome_seen", "1");
+    } catch {
+      /* ignore */
+    }
+    setWelcome(false);
+  };
 
   useEffect(() => {
     track("page_view", { page: view });
@@ -154,8 +171,8 @@ export default function App() {
         >
           <span className="chip">
             <span className={`pulse ${connected ? "on" : "off"}`} />
-            {connected ? "已连接" : "未连接"}
-            <span style={{ color: C.faint }}>{hubUrl.replace(/^https?:\/\//, "")}</span>
+            {connected ? "控制中心运行中" : "控制中心启动中…"}
+            {!embedded && <span style={{ color: C.faint }}>{hubUrl.replace(/^https?:\/\//, "")}</span>}
           </span>
           <div style={{ marginLeft: "auto", display: "flex", gap: 10 }}>
             <span className="chip">
@@ -177,6 +194,33 @@ export default function App() {
         </Layout.Content>
       </Layout>
       </Layout>
+
+      <Modal
+        open={welcome}
+        onCancel={closeWelcome}
+        title="欢迎使用"
+        centered
+        footer={[
+          <Button key="guide" onClick={() => { setView("guide"); closeWelcome(); }}>
+            查看使用说明
+          </Button>,
+          <Button key="ok" type="primary" onClick={closeWelcome}>
+            知道了
+          </Button>,
+        ]}
+      >
+        <p style={{ color: C.dim, marginTop: 4 }}>本软件已内置控制中心，按下面三步即可连上手机：</p>
+        <Steps
+          direction="vertical"
+          size="small"
+          current={-1}
+          items={[
+            { title: "打开本软件", description: "控制中心已自动开启，无需任何配置。" },
+            { title: "手机扫码连接", description: "手机 App 里扫「设置」页的二维码（需同一 WiFi）。" },
+            { title: "设备自动出现", description: "连上后自动出现在「总览 / 设备」。" },
+          ]}
+        />
+      </Modal>
     </div>
   );
 }

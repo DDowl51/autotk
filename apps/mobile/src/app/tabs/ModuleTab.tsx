@@ -26,6 +26,13 @@ export function ModuleTab({
   const set = (patch: Partial<ModuleInteractionParams>) =>
     onChange({ ...value, ...patch });
 
+  // 概率快捷预设：克制 / 自然 / 频繁，免去猜数字。
+  const P = (a: number, b: number, c: number) => [
+    { label: "克制", value: a },
+    { label: "自然", value: b },
+    { label: "频繁", value: c },
+  ];
+
   return (
     <>
       <Section title={title} hint={intro}>
@@ -41,6 +48,7 @@ export function ModuleTab({
           hint="命中的视频里，有多少比例会进评论区互动"
           value={value.interactProb}
           onChange={(v) => set({ interactProb: v })}
+          presets={P(0.3, 0.5, 0.8)}
         />
       </Section>
 
@@ -50,18 +58,21 @@ export function ModuleTab({
             label="点赞概率"
             value={value.videoLikeProb}
             onChange={(v) => set({ videoLikeProb: v })}
+            presets={P(0.2, 0.35, 0.6)}
           />
           <PercentField
             label="收藏概率"
             hint="收藏能强化兴趣标签，让算法更懂你的赛道"
             value={value.videoSaveProb}
             onChange={(v) => set({ videoSaveProb: v })}
+            presets={P(0.05, 0.15, 0.3)}
           />
           <PercentField
             label="关注概率"
             hint="建议设低一些，过高不像真人"
             value={value.videoFollowProb}
             onChange={(v) => set({ videoFollowProb: v })}
+            presets={P(0.05, 0.1, 0.2)}
           />
         </Section>
       )}
@@ -72,6 +83,7 @@ export function ModuleTab({
           hint="页面有 10 条评论时，70% 约给 7 条点赞。别设到 100%，不像真人"
           value={value.commentLikeProb}
           onChange={(v) => set({ commentLikeProb: v })}
+          presets={P(0.3, 0.5, 0.7)}
         />
         <StepperField
           label="评论点赞上限"
@@ -85,6 +97,7 @@ export function ModuleTab({
           hint="对每条评论按此概率回复（与点赞独立）。回复比点赞更易触发风控，建议设低"
           value={value.commentReplyProb}
           onChange={(v) => set({ commentReplyProb: v })}
+          presets={P(0.1, 0.3, 0.5)}
         />
         <StepperField
           label="评论回复上限"

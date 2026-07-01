@@ -20,6 +20,7 @@ import { ScheduleTab } from "./tabs/ScheduleTab";
 import { LogsTab } from "./tabs/LogsTab";
 import { InspectorTab } from "./tabs/InspectorTab";
 import { HubConnectScreen } from "./HubConnectScreen";
+import { HelpScreen } from "./HelpScreen";
 import { isDeveloperMode } from "./devtools";
 
 type TabKey =
@@ -49,6 +50,7 @@ export default function ConfigScreen({ initialParams }: { initialParams?: Automa
   const [tab, setTab] = useState<TabKey>("kw");
   const [wdaMsg, setWdaMsg] = useState("未测试");
   const [showHubConnect, setShowHubConnect] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   // 发行版隐藏「调试」Tab（非技术买家看不到）；dev 或 EXPO_PUBLIC_DEV_TOOLS=1 才显示。
   const showDev = isDeveloperMode(__DEV__, process.env.EXPO_PUBLIC_DEV_TOOLS);
   const visibleTabs = showDev ? TABS : TABS.filter((t) => t.key !== "debug");
@@ -122,6 +124,10 @@ export default function ConfigScreen({ initialParams }: { initialParams?: Automa
     );
   }
 
+  if (showHelp) {
+    return <HelpScreen onDone={() => setShowHelp(false)} />;
+  }
+
   return (
     <SafeAreaView style={styles.safe}>
       <StatusBar style="light" />
@@ -145,6 +151,9 @@ export default function ConfigScreen({ initialParams }: { initialParams?: Automa
                 {hubConnected ? "已连接控制中心" : "未连接控制中心 · 点此连接"}
               </Text>
             </TouchableOpacity>
+            <TouchableOpacity onPress={() => setShowHelp(true)} activeOpacity={0.7}>
+              <Text style={styles.helpLink}>使用说明</Text>
+            </TouchableOpacity>
           </View>
           <TouchableOpacity
             style={[styles.runBtn, running ? styles.stopBtn : styles.startBtn]}
@@ -164,6 +173,12 @@ export default function ConfigScreen({ initialParams }: { initialParams?: Automa
           <Stat label="回复" v={stats.commentReplies} />
         </View>
       </View>
+
+      {mode === "mock" && (
+        <View style={styles.demoBanner}>
+          <Text style={styles.demoBannerText}>演示模式 · 未连真机，界面数据为模拟</Text>
+        </View>
+      )}
 
       {/* 标签栏 */}
       <View style={styles.tabBarWrap}>
@@ -317,6 +332,7 @@ const styles = StyleSheet.create({
   dotOn: { backgroundColor: COLORS.green },
   dotOff: { backgroundColor: COLORS.faint },
   statusText: { color: COLORS.sub, fontSize: 12 },
+  helpLink: { color: COLORS.cyan, fontSize: 12, marginTop: 5, textDecorationLine: "underline" },
   runBtn: {
     paddingHorizontal: 24,
     paddingVertical: 11,
@@ -333,6 +349,14 @@ const styles = StyleSheet.create({
   stat: { alignItems: "center", flex: 1 },
   statV: { color: COLORS.text, fontSize: 17, fontWeight: "800" },
   statL: { color: COLORS.sub, fontSize: 11, marginTop: 3 },
+  demoBanner: {
+    backgroundColor: "#3a2f0b",
+    borderBottomWidth: 1,
+    borderBottomColor: "#5c4a10",
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+  },
+  demoBannerText: { color: "#fcd34d", fontSize: 12.5, fontWeight: "600", textAlign: "center" },
   tabBarWrap: {
     backgroundColor: COLORS.bg,
     borderBottomWidth: 1,

@@ -169,12 +169,15 @@ export function PercentField({
   onChange,
   hint,
   step = 0.05,
+  presets,
 }: {
   label: string;
   value: number;
   onChange: (v: number) => void;
   hint?: string;
   step?: number;
+  /** 可选快捷预设（如 克制/自然/频繁），点选即设定，免去猜数字。 */
+  presets?: Array<{ label: string; value: number }>;
 }) {
   const clamp = (v: number) => Math.min(1, Math.max(0, Math.round(v * 100) / 100));
   const pct = Math.round(value * 100);
@@ -202,6 +205,23 @@ export function PercentField({
       <View style={styles.track}>
         <View style={[styles.trackFill, { width: `${pct}%` }]} />
       </View>
+      {presets && presets.length > 0 ? (
+        <View style={styles.presets}>
+          {presets.map((p) => {
+            const active = pct === Math.round(p.value * 100);
+            return (
+              <TouchableOpacity
+                key={p.label}
+                style={[styles.presetBtn, active && styles.presetBtnActive]}
+                onPress={() => onChange(clamp(p.value))}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.presetText, active && styles.presetTextActive]}>{p.label}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -322,4 +342,16 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   trackFill: { height: 5, borderRadius: 3, backgroundColor: COLORS.accent },
+  presets: { flexDirection: "row", gap: 8, marginTop: 10 },
+  presetBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 14,
+    backgroundColor: COLORS.cardAlt,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  presetBtnActive: { backgroundColor: COLORS.accent, borderColor: COLORS.accent },
+  presetText: { color: COLORS.sub, fontSize: 12, fontWeight: "600" },
+  presetTextActive: { color: "#fff" },
 });

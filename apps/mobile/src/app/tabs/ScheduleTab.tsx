@@ -36,6 +36,14 @@ export function ScheduleTab({
 
   const current = editing ? params.taskWindows[editing.i] : null;
 
+  const tz = (() => {
+    try {
+      return Intl.DateTimeFormat().resolvedOptions().timeZone;
+    } catch {
+      return "";
+    }
+  })();
+
   return (
     <>
       <Section
@@ -76,6 +84,8 @@ export function ScheduleTab({
           value={params.allDay ?? false}
           onChange={(v) => patch({ allDay: v })}
         />
+
+        <Text style={styles.tz}>当前设备时区：{tz || "未知"} · 下面的时间段按此手机的时间</Text>
 
         {!(params.allDay ?? false) && (
           <>
@@ -144,6 +154,7 @@ export function ScheduleTab({
 }
 
 const styles = StyleSheet.create({
+  tz: { color: COLORS.sub, fontSize: 12, marginTop: 4, marginBottom: 12, lineHeight: 17 },
   windowRow: { flexDirection: "row", alignItems: "center", marginBottom: 10 },
   badge: {
     width: 24,

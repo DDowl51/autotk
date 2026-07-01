@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import QRCode from "qrcode";
 import { getHubApi } from "../hub-ipc";
+import { humanizeError } from "../errors";
 import { C } from "../theme";
 
 /** 「手机扫码连本机控制中心」二维码，编码 http://<局域网IP>:<端口>。 */
@@ -22,7 +23,7 @@ export function QrPanel() {
         setAddr(url);
         setDataUrl(png);
       } catch (e) {
-        if (alive) setErr(e instanceof Error ? e.message : String(e));
+        if (alive) setErr(humanizeError(e, "qr"));
       }
     })();
     return () => {
@@ -30,7 +31,7 @@ export function QrPanel() {
     };
   }, []);
 
-  if (err) return <div style={{ color: "#fca5a5", fontSize: 13 }}>二维码生成失败：{err}</div>;
+  if (err) return <div style={{ color: "#fca5a5", fontSize: 13 }}>{err}</div>;
   if (!dataUrl) return <div style={{ color: C.faint, fontSize: 13 }}>生成二维码中…</div>;
 
   return (

@@ -13,6 +13,24 @@ import {
  */
 
 const STORAGE_KEY = "autotk.params.v1";
+const HELP_SEEN_KEY = "autotk.help_seen.v1";
+
+/** 是否看过首次使用说明（首启只弹一次）。 */
+export async function getHelpSeen(): Promise<boolean> {
+  try {
+    return (await AsyncStorage.getItem(HELP_SEEN_KEY)) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export async function setHelpSeen(): Promise<void> {
+  try {
+    await AsyncStorage.setItem(HELP_SEEN_KEY, "1");
+  } catch {
+    /* ignore */
+  }
+}
 
 /** 读取并还原设置；无存档/损坏 → 默认参数（hydrate 内部兜底，绝不抛）。 */
 export async function loadParams(): Promise<AutomationParams> {

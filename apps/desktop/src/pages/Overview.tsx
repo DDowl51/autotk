@@ -100,13 +100,15 @@ export function Overview({ goGuide }: { goGuide: () => void }) {
         <div style={{ marginTop: 16 }}>
           <SectionCard>
             <EmptyHint
-              title={connected ? "已连上 Hub，但还没有设备" : "尚未连上 Hub"}
-              lines={[
+              title={connected ? "控制中心已就绪，还没有手机连上来" : "控制中心启动中…"}
+              lines={
                 connected
-                  ? "手机端激活后会自动出现在这里"
-                  : "请到「设置」确认 Hub 地址，并确保 Hub 已启动",
-                "没有真机？用模拟手机演示：在 Hub 目录运行  npm run mock -- d1 手机1",
-              ]}
+                  ? [
+                      "手机装好 App 后，在 App 里扫「设置」页的二维码即可连上（需与本电脑同一个 WiFi）",
+                      "连上后设备会自动出现在这里",
+                    ]
+                  : ["请稍候；若长时间无反应，重启本软件"]
+              }
               actionText="查看使用说明"
               onAction={goGuide}
             />

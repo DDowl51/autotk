@@ -11,8 +11,8 @@ export function Guide() {
 
       <SectionCard title="这是什么">
         <p style={{ color: "#9fb0c0", lineHeight: 1.9, margin: 0 }}>
-          autotk 控制中心：集中盯几百台手机的运行状态、看实时日志、批量改设置、用文件夹工作流自动发视频。
-          手机端（autotk）和本应用都连到同一个云 Hub 通信。
+          本软件是「控制中心」：集中盯几百台手机的运行状态、看实时日志、批量改设置、用文件夹工作流自动发视频。
+          <b>打开本软件就自动开启了控制中心，无需任何配置</b>；手机连到本电脑（同一个 WiFi）即可。
         </p>
       </SectionCard>
 
@@ -24,29 +24,17 @@ export function Guide() {
           current={-1}
           items={[
             {
-              title: "启动 Hub",
-              description: (
-                <span>
-                  在 <Mono>services/hub</Mono> 运行 <Mono>npm start</Mono>（默认 :4000）。
-                </span>
-              ),
-            },
-            {
-              title: "填 Hub 地址",
-              description: "到「设置」填入 Hub 地址并保存重连，顶部状态变「已连接」（柠檬色脉冲）。",
+              title: "打开本软件",
+              description: "控制中心已随软件自动开启，不用启动任何东西、也不用填地址。",
             },
             {
               title: "让手机连上来",
-              description: "手机端 autotk 激活后会自动连 Hub、上报状态，出现在「总览 / 设备」。",
+              description:
+                "手机装好 App，在 App 里点「连接控制中心」，扫本软件「设置」页显示的二维码即可；手机和本电脑在同一个 WiFi 下，也会自动连上。",
             },
             {
-              title: "没真机？先用模拟手机",
-              description: (
-                <span>
-                  在 <Mono>services/hub</Mono> 运行 <Mono>npm run mock -- d1 手机1</Mono>，看板立刻出现一台「手机1」，
-                  会模拟运行状态与日志。
-                </span>
-              ),
+              title: "设备自动出现",
+              description: "手机激活并连上后，会自动出现在「总览 / 设备」，开始上报运行状态和日志。",
             },
           ]}
         />
@@ -68,7 +56,7 @@ export function Guide() {
             <b>发布</b>：文件夹工作流。在「设置」选好视频根目录后，每台设备对应一个<Mono>以设备名命名</Mono>的子文件夹；
             把视频放进去 → 在本页「扫描」→ 逐台/逐条发布到对应手机的 TikTok。
           </li>
-          <li><b>设置</b>：Hub 地址、疑似卡住阈值、视频根文件夹、关于。</li>
+          <li><b>设置</b>：连接手机的二维码、疑似卡住阈值、视频根文件夹、关于。</li>
         </ul>
       </SectionCard>
 
@@ -81,7 +69,7 @@ export function Guide() {
           items={[
             {
               title: "选根目录",
-              description: "「设置」→ 视频根文件夹 → 选择文件夹（桌面应用内可直接选）。",
+              description: "「设置」→ 视频根文件夹 → 选择文件夹（桌面软件内可直接选）。",
             },
             {
               title: "按设备名建子文件夹、放视频",
@@ -104,8 +92,8 @@ export function Guide() {
               title: "扫描并发布",
               description: (
                 <span style={TXT}>
-                  「发布」页点「扫描」→ 各设备列出待发视频与计划时间。选「传输方式」（同网用<b>局域网直传</b>、
-                  跨网用<b>Hub 中转</b>）→ 单条「发布」或「全部发布」。发过的会自动去重，不重复发。
+                  「发布」页点「扫描」→ 各设备列出待发视频与计划时间 → 选「立即发送」或「定时发送」→
+                  单条「发布」或「全部发布」。视频经局域网直传到手机，发过的会自动去重、不重复发。
                 </span>
               ),
             },
@@ -121,10 +109,11 @@ export function Guide() {
           items={[
             {
               key: "1",
-              label: "看板一直「未连接」？",
+              label: "手机连不上控制中心？",
               children: (
                 <span style={{ color: C.dim }}>
-                  确认 Hub 已启动、「设置」里的地址正确（本机默认 http://localhost:4000），防火墙未拦截。
+                  确认手机和本电脑连的是<b>同一个 WiFi</b>；用手机 App 扫「设置」页的二维码；电脑防火墙别拦本软件。
+                  控制中心随本软件自动运行，无需单独启动。
                 </span>
               ),
             },
@@ -132,7 +121,7 @@ export function Guide() {
               key: "2",
               label: "设备显示离线但手机在跑？",
               children: (
-                <span style={{ color: C.dim }}>手机网络或与 Hub 的连接断了；恢复网络后会自动重连并重新上报。</span>
+                <span style={{ color: C.dim }}>手机网络或与控制中心的连接断了；恢复网络后会自动重连并重新上报。</span>
               ),
             },
             {
@@ -149,8 +138,8 @@ export function Guide() {
               label: "发布点了没反应 / 失败？",
               children: (
                 <span style={{ color: C.dim }}>
-                  确认目标设备<b>在线</b>且已连 Hub；同网用「局域网直传」、跨网用「Hub 中转」；本功能需在<b>桌面应用</b>内使用
-                  （浏览器预览无法访问本地文件夹）。失败原因见「发布进度」表。
+                  确认目标设备<b>在线</b>且已连上控制中心；本功能需在<b>桌面软件</b>内使用（浏览器预览无法访问本地文件夹）。
+                  失败原因见「发布进度」表，把鼠标移到状态标签上有说明。
                 </span>
               ),
             },

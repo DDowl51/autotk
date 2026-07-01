@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Button, Table, Tag, Space, Segmented, Input, Alert, DatePicker, message, type TableColumnsType } from "antd";
+import { Button, Table, Tag, Space, Segmented, Input, Alert, DatePicker, Tooltip, message, type TableColumnsType } from "antd";
 import { FolderOpenOutlined, ReloadOutlined, SendOutlined } from "@ant-design/icons";
 import dayjs, { type Dayjs } from "dayjs";
 import type { PublishSource, PublishTask } from "@mc/shared";
@@ -8,6 +8,7 @@ import { loadSettings, saveSettings } from "../settings";
 import { getPublisherApi, type DevicePlan, type PublishPlanItem } from "../publish-ipc";
 import { publishRows, isPublishDone, type RowStatus } from "../publishState";
 import { PageHeader, SectionCard, Mono, EmptyHint, RoadmapCard } from "../ui";
+import { humanizeError } from "../errors";
 import { C } from "../theme";
 
 const SCHEDULE = { allDay: true, taskWindows: [] as Array<{ start: string; end: string }>, jitterSec: 1800 };
@@ -16,17 +17,17 @@ const hhmm = (ts: number) => {
   const p = (n: number) => String(n).padStart(2, "0");
   return `${p(d.getHours())}:${p(d.getMinutes())}`;
 };
-const STATUS_TAG: Record<RowStatus, { color: string; label: string }> = {
-  queued: { color: "default", label: "排队中" },
-  scheduled: { color: "processing", label: "待发" },
-  sent: { color: "processing", label: "已下发" },
-  downloading: { color: "processing", label: "下载中" },
-  downloaded: { color: "processing", label: "已入相册" },
-  publishing: { color: "processing", label: "发布中" },
-  published: { color: "success", label: "已发布" },
-  failed: { color: "error", label: "失败" },
-  offline: { color: "default", label: "离线" },
-  timeout: { color: "warning", label: "超时" },
+const STATUS_TAG: Record<RowStatus, { color: string; label: string; help: string }> = {
+  queued: { color: "default", label: "排队中", help: "在队列里等待，稍后自动处理，不用操作。" },
+  scheduled: { color: "processing", label: "待发", help: "已排期，到设定时间自动发送（本电脑需保持开启）。" },
+  sent: { color: "processing", label: "已下发", help: "已发送到手机，手机正在准备下载。" },
+  downloading: { color: "processing", label: "下载中", help: "手机正在下载视频。" },
+  downloaded: { color: "processing", label: "已入相册", help: "视频已存进手机相册，即将发布。" },
+  publishing: { color: "processing", label: "发布中", help: "手机正在 TikTok 里发布。" },
+  published: { color: "success", label: "已发布", help: "发布成功。" },
+  failed: { color: "error", label: "失败", help: "发布失败。看「说明」列的原因，检查手机后可点「发布」重试。" },
+  offline: { color: "default", label: "离线", help: "手机当前不在线，等它上线后重试。" },
+  timeout: { color: "warning", label: "超时", help: "长时间没响应，手机可能离线或卡住，可重试。" },
 };
 
 export function Publish() {
@@ -48,7 +49,7 @@ export function Publish() {
     try {
       setPlans(await api.refresh({ rootDir: root, schedule: SCHEDULE }));
     } catch (e) {
-      message.error(`扫描失败：${e instanceof Error ? e.message : String(e)}`);
+      message.error(humanizeError(e, "scan"));
     } finally {
       setBusy(false);
     }
@@ -119,7 +120,7 @@ export function Publish() {
           : `已发起：${item.fileName} → ${deviceName}`,
       );
     } catch (e) {
-      message.error(`发布失败：${e instanceof Error ? e.message : String(e)}`);
+      message.error(humanizeError(e, "publish"));
     }
   }
 
@@ -299,7 +300,11 @@ export function Publish() {
               {
                 title: "状态",
                 dataIndex: "status",
-                render: (s: RowStatus) => <Tag color={STATUS_TAG[s].color}>{STATUS_TAG[s].label}</Tag>,
+                render: (s: RowStatus) => (
+                  <Tooltip title={STATUS_TAG[s].help}>
+                    <Tag color={STATUS_TAG[s].color}>{STATUS_TAG[s].label}</Tag>
+                  </Tooltip>
+                ),
               },
               {
                 title: "说明",
