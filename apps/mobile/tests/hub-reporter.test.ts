@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildStatus, LogBuffer } from "../src/hub/reporter";
+import { buildStatus, mapBattery, LogBuffer } from "../src/hub/reporter";
 
 test("buildStatus：映射 + alert 默认 null + ts", () => {
   const s = buildStatus(
@@ -13,6 +13,25 @@ test("buildStatus：映射 + alert 默认 null + ts", () => {
   assert.equal(s.alert, null);
   assert.equal(s.ts, 123);
   assert.equal(s.stats?.videos, 2);
+});
+
+test("mapBattery：0..1 → 百分比 + 充电判定（2/3 视作接电）", () => {
+  assert.deepEqual(mapBattery({ level: 0.85, state: 2 }), { level: 85, charging: true });
+  assert.deepEqual(mapBattery({ level: 0.5, state: 1 }), { level: 50, charging: false });
+  assert.deepEqual(mapBattery({ level: 1, state: 3 }), { level: 100, charging: true });
+  assert.deepEqual(mapBattery({ level: 0.004, state: 0 }), { level: 0, charging: false });
+});
+
+test("mapBattery：未知/读取失败 → undefined（上报省略）", () => {
+  assert.equal(mapBattery({ level: -1, state: 0 }), undefined);
+  assert.equal(mapBattery({ level: NaN, state: 2 }), undefined);
+  assert.equal(mapBattery(null), undefined);
+  assert.equal(mapBattery(undefined), undefined);
+});
+
+test("buildStatus：透传 battery", () => {
+  const s = buildStatus({ running: false, battery: { level: 42, charging: false } }, 1);
+  assert.deepEqual(s.battery, { level: 42, charging: false });
 });
 
 test("LogBuffer：合并相邻重复为 ×N", () => {

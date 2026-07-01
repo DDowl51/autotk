@@ -7,12 +7,19 @@ export interface DeviceStats {
   videos: number;
 }
 
+/** 设备电量（level 0~100 百分比；charging 是否接着电）。读不到则整个字段省略。 */
+export interface DeviceBattery {
+  level: number;
+  charging: boolean;
+}
+
 export interface DeviceStatus {
   running: boolean;
   module?: string; // forYou / kwSearch / persHome
   page?: string; // feed / comments / search / profile
   stats?: DeviceStats;
   alert?: string | null;
+  battery?: DeviceBattery;
   ts: number;
 }
 

@@ -1,13 +1,25 @@
 import { useEffect, useMemo, useState } from "react";
 import { Table, Drawer, Descriptions, Input, Select, Space, Button, Divider, Typography, type TableColumnsType } from "antd";
 import { SearchOutlined, SettingOutlined } from "@ant-design/icons";
-import { moduleLabel, pageLabel, type DeviceInfo } from "@mc/shared";
+import { moduleLabel, pageLabel, type DeviceInfo, type DeviceBattery } from "@mc/shared";
 import { useHub } from "../hubState";
-import { statusKind, filterDevices, STATUS_LABEL, type StatusKind } from "../devices";
+import { statusKind, filterDevices, batteryTone, STATUS_LABEL, type StatusKind } from "../devices";
 import { renamesFor } from "../renameHistory";
 import { PageHeader, StatusDot, Mono, EmptyHint, LogPanel } from "../ui";
 import { C } from "../theme";
 import { BatchConfigModal } from "./BatchConfigModal";
+
+/** 电量单元格：读不到显示「—」；否则按电量高低着色，充电加 ⚡。 */
+function BatteryCell({ battery }: { battery?: DeviceBattery }) {
+  if (!battery) return <>—</>;
+  const tone = batteryTone(battery.level);
+  const color = tone === "danger" ? "#f87171" : tone === "warn" ? "#fbbf24" : "#4ade80";
+  return (
+    <span style={{ color }}>
+      {battery.level}%{battery.charging ? " ⚡" : ""}
+    </span>
+  );
+}
 
 export function Devices({ goGuide }: { goGuide: () => void }) {
   const { devices, connected, stalledMs, logsOf, watch, renameDevice, renameHistory } = useHub();
@@ -52,6 +64,12 @@ export function Devices({ goGuide }: { goGuide: () => void }) {
         const s = r.status?.stats;
         return s ? <Mono>{`${s.likes}/${s.follows}/${s.comments}/${s.videos}`}</Mono> : "—";
       },
+    },
+    {
+      title: "电量",
+      width: 90,
+      sorter: (a, b) => (a.status?.battery?.level ?? -1) - (b.status?.battery?.level ?? -1),
+      render: (_v, r) => <BatteryCell battery={r.status?.battery} />,
     },
     {
       title: "最近在线",
@@ -147,6 +165,10 @@ export function Devices({ goGuide }: { goGuide: () => void }) {
               {selected.status?.stats
                 ? `${selected.status.stats.likes} / ${selected.status.stats.follows} / ${selected.status.stats.comments} / ${selected.status.stats.videos}`
                 : "—"}
+            </Descriptions.Item>
+            <Descriptions.Item label="电量">
+              <BatteryCell battery={selected.status?.battery} />
+              {selected.status?.battery?.charging ? "（充电中）" : ""}
             </Descriptions.Item>
             <Descriptions.Item label="告警">
               {selected.status?.alert ? <span style={{ color: "#fca5a5" }}>{selected.status.alert}</span> : "—"}

@@ -1,5 +1,6 @@
 // 原子操作 barrel。
 export { default as status } from "./status";
+export { default as batteryInfo, type WdaBattery } from "./batteryInfo";
 export { default as go_home } from "./go_home";
 export { default as tap } from "./tap";
 export { default as swipe } from "./swipe";

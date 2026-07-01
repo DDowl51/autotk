@@ -10,9 +10,10 @@ import type { TikTokUI } from "../engine/tiktok-ui";
 import { HubClient } from "../hub/client";
 import { hubEnabled, HUB_CONFIG } from "../hub/config";
 import { resolveDeviceName } from "../hub/deviceName";
-import { buildStatus } from "../hub/reporter";
+import { buildStatus, mapBattery } from "../hub/reporter";
 import { applyConfigPatch } from "../hub/configInbox";
-import type { PublishTaskMsg } from "../hub/protocol";
+import { batteryInfo } from "../wda";
+import type { PublishTaskMsg, DeviceBattery } from "../hub/protocol";
 import { PublishQueue, runPublish } from "../publish/publishQueue";
 import { downloadToAlbum } from "../publish/downloader";
 import { saveBytesToAlbum } from "../publish/album";
@@ -61,6 +62,8 @@ export function useEngine(): EngineState {
   const engineRef = useRef<Engine | null>(null);
   const uiRef = useRef<TikTokUI | null>(null);
   const hubRef = useRef<HubClient | null>(null);
+  // 最近一次读到的电量（每 ~60s 刷新，随状态一起上报）；读不到时为 undefined、上报省略。
+  const batteryRef = useRef<DeviceBattery | undefined>(undefined);
   // 让 Hub 配置下发回调读到「最新」params（避免一次性 effect 的闭包过期）。
   const paramsRef = useRef(params);
   paramsRef.current = params;
@@ -209,7 +212,17 @@ export function useEngine(): EngineState {
     if (!hubEnabled()) return;
     let client: HubClient | null = null;
     let statusTimer: ReturnType<typeof setInterval> | null = null;
+    let batteryTimer: ReturnType<typeof setInterval> | null = null;
     let alive = true;
+
+    // 每 ~60s 读一次设备电量（需 WDA session；读不到就保持上次/清空，静默）。
+    const refreshBattery = async () => {
+      try {
+        batteryRef.current = mapBattery(await batteryInfo());
+      } catch {
+        batteryRef.current = undefined; // 无 session / 演示模式 / 读取失败 → 不上报电量
+      }
+    };
     void (async () => {
       try {
         const deviceId = await resolveDeviceId();
@@ -235,6 +248,8 @@ export function useEngine(): EngineState {
         });
         client.connect();
         hubRef.current = client;
+        void refreshBattery();
+        batteryTimer = setInterval(() => void refreshBattery(), 60000);
         statusTimer = setInterval(() => {
           const eng = engineRef.current;
           const st = eng?.getStats();
@@ -247,6 +262,7 @@ export function useEngine(): EngineState {
                 ? { likes: st.likes, follows: st.follows, comments: st.commentReplies, videos: st.videosWatched }
                 : undefined,
               alert: null,
+              battery: batteryRef.current,
             }),
           );
         }, 5000);
@@ -257,6 +273,7 @@ export function useEngine(): EngineState {
     return () => {
       alive = false;
       if (statusTimer) clearInterval(statusTimer);
+      if (batteryTimer) clearInterval(batteryTimer);
       client?.disconnect();
       hubRef.current = null;
     };

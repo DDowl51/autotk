@@ -8,6 +8,7 @@ import {
   filterDevices,
   collectAlerts,
   pushSample,
+  batteryTone,
 } from "./devices";
 import type { DeviceInfo } from "@mc/shared";
 
@@ -17,6 +18,17 @@ const dev = (id: string, over: Partial<DeviceInfo> = {}): DeviceInfo => ({
   online: true,
   lastSeen: 0,
   ...over,
+});
+
+describe("batteryTone", () => {
+  it("<20% 危险、<50% 偏低、否则正常", () => {
+    expect(batteryTone(0)).toBe("danger");
+    expect(batteryTone(19)).toBe("danger");
+    expect(batteryTone(20)).toBe("warn");
+    expect(batteryTone(49)).toBe("warn");
+    expect(batteryTone(50)).toBe("ok");
+    expect(batteryTone(100)).toBe("ok");
+  });
 });
 
 describe("devices reducer", () => {

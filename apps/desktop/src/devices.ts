@@ -51,6 +51,14 @@ export const STATUS_LABEL: Record<StatusKind, string> = {
   offline: "离线",
 };
 
+/** 电量色调：<20% 危险、<50% 偏低、否则正常。纯函数，便于单测。 */
+export type BatteryTone = "danger" | "warn" | "ok";
+export function batteryTone(level: number): BatteryTone {
+  if (level < 20) return "danger";
+  if (level < 50) return "warn";
+  return "ok";
+}
+
 export interface Summary {
   total: number;
   online: number;

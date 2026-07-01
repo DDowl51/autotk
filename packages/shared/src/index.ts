@@ -5,6 +5,7 @@ export {
   moduleLabel,
   pageLabel,
   type DeviceStatus,
+  type DeviceBattery,
   type DeviceInfo,
   type DeviceRegisterMsg,
   type DeviceLogMsg,

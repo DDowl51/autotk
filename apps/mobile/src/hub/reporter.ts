@@ -1,4 +1,4 @@
-import type { DeviceStatus, DeviceStats, DeviceLogMsg } from "./protocol";
+import type { DeviceStatus, DeviceStats, DeviceBattery, DeviceLogMsg } from "./protocol";
 
 /** 引擎当前状态快照（由 useEngine 采集）。 */
 export interface EngineSnapshot {
@@ -7,6 +7,7 @@ export interface EngineSnapshot {
   page?: string;
   stats?: DeviceStats;
   alert?: string | null;
+  battery?: DeviceBattery;
 }
 
 /** 引擎状态 → 上报用 DeviceStatus（纯映射，便于单测）。 */
@@ -17,8 +18,24 @@ export function buildStatus(s: EngineSnapshot, now: number = Date.now()): Device
     page: s.page,
     stats: s.stats,
     alert: s.alert ?? null,
+    battery: s.battery,
     ts: now,
   };
+}
+
+/**
+ * WDA 原始电量（level 0..1，state 0未知/1未充/2充电/3满）→ 上报用 DeviceBattery。
+ * 纯映射，便于单测。读不到 / 未知（level<0 或非有限数）→ undefined（上报时省略该字段）。
+ */
+export function mapBattery(
+  raw: { level: number; state: number } | null | undefined,
+): DeviceBattery | undefined {
+  if (!raw || typeof raw.level !== "number" || !Number.isFinite(raw.level) || raw.level < 0) {
+    return undefined;
+  }
+  const level = Math.round(Math.min(1, raw.level) * 100);
+  // state 2=充电中、3=已充满，都视作「接着电」。
+  return { level, charging: raw.state === 2 || raw.state === 3 };
 }
 
 interface Entry {

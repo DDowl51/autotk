@@ -1,5 +1,11 @@
 // Hub ↔ 手机 / Hub ↔ Electron 的实时协议（socket.io 事件 + 消息体）。
 
+/** 设备电量（level 0~100 百分比；charging 是否接着电）。读不到则整个字段省略。 */
+export interface DeviceBattery {
+  level: number;
+  charging: boolean;
+}
+
 /** 手机上报的运行状态。 */
 export interface DeviceStatus {
   running: boolean;
@@ -12,6 +18,7 @@ export interface DeviceStatus {
     videos: number;
   };
   alert?: string | null; // 告警文字（脱困失败/卡死等），null=无
+  battery?: DeviceBattery; // 当前电量，读不到则省略
   ts: number; // 上报时间（ms）
 }
 
