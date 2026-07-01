@@ -31,10 +31,9 @@ const STATUS_TAG: Record<RowStatus, { color: string; label: string }> = {
 
 export function Publish() {
   const api = useMemo(() => getPublisherApi(), []);
-  const { devices, hubUrl, publishTasks, enqueuePublish, connected } = useHub();
+  const { devices, publishTasks, enqueuePublish, connected } = useHub();
   const [root, setRoot] = useState(() => loadSettings().videoRoot);
   const [plans, setPlans] = useState<DevicePlan[]>([]);
-  const [mode, setMode] = useState<"lan" | "relay">("lan");
   // 发送时机：立即 or 定时（定时用 `at`，Hub 到点再下发）。
   const [when, setWhen] = useState<"now" | "scheduled">("now");
   const [at, setAt] = useState<Dayjs | null>(null);
@@ -102,8 +101,8 @@ export function Publish() {
       const source: PublishSource = await api.prepareSource({
         deviceName,
         fileName: item.fileName,
-        mode,
-        hubBase: mode === "relay" ? hubUrl : undefined,
+        mode: "lan", // 只走局域网直传（手机机房与电脑同网）；跨网中转能力保留但不从界面暴露
+        hubBase: undefined,
       });
       const task: PublishTask = {
         taskId: `pt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -179,18 +178,11 @@ export function Publish() {
             扫描
           </Button>
         </Space.Compact>
-        <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 12 }}>
-          <span style={{ color: C.dim, fontSize: 13 }}>传输方式</span>
-          <Segmented
-            value={mode}
-            onChange={(v) => setMode(v as "lan" | "relay")}
-            options={[
-              { label: "局域网直传", value: "lan" },
-              { label: "Hub 中转（跨网）", value: "relay" },
-            ]}
-          />
-          {!connected && <Tag color="warning">未连接 Hub，无法下发</Tag>}
-        </div>
+        {!connected && (
+          <div style={{ marginTop: 12 }}>
+            <Tag color="warning">未连接 Hub，无法下发</Tag>
+          </div>
+        )}
         <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <span style={{ color: C.dim, fontSize: 13 }}>发送时机</span>
           <Segmented

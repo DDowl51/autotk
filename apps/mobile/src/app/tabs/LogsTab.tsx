@@ -1,5 +1,6 @@
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { COLORS, Section } from "../fields";
+import { isDeveloperMode } from "../devtools";
 
 /** 运行日志页，实时显示引擎每一步动作。 */
 export function LogsTab({
@@ -11,17 +12,21 @@ export function LogsTab({
   wdaMsg: string;
   onTestWda: () => void;
 }) {
+  // WDA 连接诊断是技术调试功能，发行版隐藏（dev 或 EXPO_PUBLIC_DEV_TOOLS=1 才显示）。
+  const showDev = isDeveloperMode(__DEV__, process.env.EXPO_PUBLIC_DEV_TOOLS);
   return (
     <>
-      <Section
-        title="WDA 连接"
-        hint="测试与被控手机上 WDA 框架（localhost:8100）的连接。演示模式下不影响运行。"
-      >
-        <TouchableOpacity style={styles.testBtn} onPress={onTestWda}>
-          <Text style={styles.testBtnText}>测试连接</Text>
-        </TouchableOpacity>
-        <Text style={styles.wdaMsg}>{wdaMsg}</Text>
-      </Section>
+      {showDev && (
+        <Section
+          title="WDA 连接"
+          hint="测试与被控手机上 WDA 框架（localhost:8100）的连接。演示模式下不影响运行。"
+        >
+          <TouchableOpacity style={styles.testBtn} onPress={onTestWda}>
+            <Text style={styles.testBtnText}>测试连接</Text>
+          </TouchableOpacity>
+          <Text style={styles.wdaMsg}>{wdaMsg}</Text>
+        </Section>
+      )}
 
       <Section title="运行日志" hint="启动后实时滚动，最新在最上面。">
         {logs.length === 0 ? (

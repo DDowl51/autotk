@@ -1,3 +1,5 @@
+import { releaseConfigErrors } from "./releaseCheck";
+
 // 激活码系统接入配置。
 // productKey/secret 在 license 管理后台「产品」页创建产品时拿到（secret 只显示一次）。
 // 注意：secret 会被打进客户端包内，属可被提取的明文——这是纯客户端方案的固有上限，
@@ -10,11 +12,7 @@ export const LICENSE_CONFIG = {
   productSecret: process.env.EXPO_PUBLIC_LICENSE_PRODUCT_SECRET ?? "FILL_PRODUCT_SECRET",
 };
 
-/** 配置是否已填好（未填时门禁会提示）。 */
+/** 配置是否已填好（未填时门禁会提示）。校验规则见 releaseCheck（构建期脚本共用）。 */
 export function licenseConfigured(): boolean {
-  return (
-    !LICENSE_CONFIG.baseUrl.includes("your-license-server") &&
-    !LICENSE_CONFIG.productKey.startsWith("FILL_") &&
-    !LICENSE_CONFIG.productSecret.startsWith("FILL_")
-  );
+  return releaseConfigErrors(LICENSE_CONFIG).length === 0;
 }

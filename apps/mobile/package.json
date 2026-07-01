@@ -8,6 +8,7 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "test": "bash tests/run.sh",
+    "check:release": "node scripts/check-release.mjs",
     "wda:build": "tsc -p tools/tsconfig.json",
     "wda": "tsc -p tools/tsconfig.json && node tools/dist/tools/wda-cli.js",
     "wda:repl": "tsc -p tools/tsconfig.json && node tools/dist/tools/wda-cli.js repl"

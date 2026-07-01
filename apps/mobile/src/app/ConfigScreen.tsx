@@ -19,6 +19,7 @@ import { FollowingTab } from "./tabs/FollowingTab";
 import { ScheduleTab } from "./tabs/ScheduleTab";
 import { LogsTab } from "./tabs/LogsTab";
 import { InspectorTab } from "./tabs/InspectorTab";
+import { isDeveloperMode } from "./devtools";
 
 type TabKey =
   | "kw"
@@ -45,6 +46,9 @@ export default function ConfigScreen({ initialParams }: { initialParams?: Automa
   const { params, setParams, running, mode, logs, stats, start, stop } = useEngine(initialParams);
   const [tab, setTab] = useState<TabKey>("kw");
   const [wdaMsg, setWdaMsg] = useState("未测试");
+  // 发行版隐藏「调试」Tab（非技术买家看不到）；dev 或 EXPO_PUBLIC_DEV_TOOLS=1 才显示。
+  const showDev = isDeveloperMode(__DEV__, process.env.EXPO_PUBLIC_DEV_TOOLS);
+  const visibleTabs = showDev ? TABS : TABS.filter((t) => t.key !== "debug");
 
   // 关键词三个字段用本地文本，保证输入流畅；存入 params 时按逗号/换行拆分。
   const [kwText, setKwText] = useState(params.searchKeywords.join(", "));
@@ -149,7 +153,7 @@ export default function ConfigScreen({ initialParams }: { initialParams?: Automa
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.tabBar}
         >
-          {TABS.map((t) => {
+          {visibleTabs.map((t) => {
             const active = t.key === tab;
             return (
               <TouchableOpacity
@@ -258,7 +262,7 @@ export default function ConfigScreen({ initialParams }: { initialParams?: Automa
           <LogsTab logs={logs} wdaMsg={wdaMsg} onTestWda={testWda} />
         )}
 
-        {tab === "debug" && <InspectorTab />}
+        {showDev && tab === "debug" && <InspectorTab />}
       </ScrollView>
     </SafeAreaView>
   );

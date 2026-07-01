@@ -47,8 +47,7 @@ export function ActivationScreen({ onActivate }: { onActivate: (code: string) =>
 
         {!configured && (
           <Text style={styles.warn}>
-            ⚠️ 激活服务未配置：请在 src/license/config.ts 或 .env 填入 baseUrl / productKey /
-            productSecret
+            ⚠️ 激活服务暂未就绪，请联系服务商开通后再激活。
           </Text>
         )}
 

@@ -188,8 +188,7 @@ export function Settings() {
 
       <SectionCard title="关于">
         <div style={{ color: "#9fb0c0", lineHeight: 2 }}>
-          <div>autotk 控制中心 · v0.1.0</div>
-          <div>实时传输：socket.io</div>
+          <div>控制中心 · v1.0.0</div>
         </div>
       </SectionCard>
     </>
