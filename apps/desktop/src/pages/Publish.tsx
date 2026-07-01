@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Button, Table, Tag, Space, Segmented, Input, Alert, DatePicker, Tooltip, message, type TableColumnsType } from "antd";
+import { Button, Table, Tag, Space, Input, Alert, DatePicker, Tooltip, message, type TableColumnsType } from "antd";
 import { FolderOpenOutlined, ReloadOutlined, SendOutlined } from "@ant-design/icons";
 import dayjs, { type Dayjs } from "dayjs";
 import type { PublishSource, PublishTask } from "@mc/shared";
@@ -7,6 +7,7 @@ import { useHub } from "../hubState";
 import { loadSettings, saveSettings } from "../settings";
 import { getPublisherApi, type DevicePlan, type PublishPlanItem } from "../publish-ipc";
 import { publishRows, isPublishDone, type RowStatus } from "../publishState";
+import { spreadTimesFor, initTimes } from "../publishSchedule";
 import { PageHeader, SectionCard, Mono, EmptyHint, RoadmapCard } from "../ui";
 import { humanizeError } from "../errors";
 import { C } from "../theme";
@@ -35,9 +36,8 @@ export function Publish() {
   const { devices, publishTasks, enqueuePublish, connected } = useHub();
   const [root, setRoot] = useState(() => loadSettings().videoRoot);
   const [plans, setPlans] = useState<DevicePlan[]>([]);
-  // 发送时机：立即 or 定时（定时用 `at`，Hub 到点再下发）。
-  const [when, setWhen] = useState<"now" | "scheduled">("now");
-  const [at, setAt] = useState<Dayjs | null>(null);
+  // 每条视频各自的发送时间（键=absPath）：null/缺省＝立即发送；有值＝到点由本电脑自动下发。
+  const [times, setTimes] = useState<Record<string, Dayjs | null>>({});
   const [busy, setBusy] = useState(false);
   const markedRef = useRef<Set<string>>(new Set());
 
@@ -47,7 +47,9 @@ export function Publish() {
     if (!api || !root) return;
     setBusy(true);
     try {
-      setPlans(await api.refresh({ rootDir: root, schedule: SCHEDULE }));
+      const next = await api.refresh({ rootDir: root, schedule: SCHEDULE });
+      setPlans(next);
+      setTimes((prev) => initTimes(next, prev)); // 新视频填错峰建议，已改过的沿用
     } catch (e) {
       message.error(humanizeError(e, "scan"));
     } finally {
@@ -84,11 +86,26 @@ export function Publish() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [publishTasks]);
 
-  /** 定时模式下解析目标时刻；未选/已过则返回 "invalid"（调用方拦下并提示）。 */
-  function resolveScheduledAt(): number | undefined | "invalid" {
-    if (when !== "scheduled") return undefined;
-    if (!at || at.valueOf() <= Date.now()) return "invalid";
-    return at.valueOf();
+  /** 解析某条视频的发送时刻：无值＝立即（undefined）；已过＝"invalid"（调用方拦下提示）；否则返回目标 ms。 */
+  function resolveRowAt(absPath: string): number | undefined | "invalid" {
+    const t = times[absPath];
+    if (!t) return undefined;
+    if (t.valueOf() <= Date.now()) return "invalid";
+    return t.valueOf();
+  }
+
+  /** 把某设备所有待发视频重置为错峰建议时间（相对当前时刻重新铺开）。 */
+  function fillSpread(plan: DevicePlan) {
+    setTimes((m) => ({ ...m, ...spreadTimesFor(plan.pending) }));
+  }
+
+  /** 清空某设备所有待发视频的发送时间（＝改为立即发送）。 */
+  function clearTimes(plan: DevicePlan) {
+    setTimes((m) => {
+      const next = { ...m };
+      for (const it of plan.pending) next[it.absPath] = null;
+      return next;
+    });
   }
 
   async function publishOne(deviceName: string, item: PublishPlanItem, scheduledAtMs?: number) {
@@ -125,12 +142,18 @@ export function Publish() {
   }
 
   async function publishAll(plan: DevicePlan) {
-    const sched = resolveScheduledAt();
-    if (sched === "invalid") {
-      message.warning("请先选择一个将来的发送时间");
-      return;
+    let past = 0;
+    for (const item of plan.pending) {
+      const sched = resolveRowAt(item.absPath);
+      if (sched === "invalid") {
+        past++; // 时间已过的先跳过，避免误当立即发出
+        continue;
+      }
+      await publishOne(plan.deviceName, item, sched);
     }
-    for (const item of plan.pending) await publishOne(plan.deviceName, item, sched);
+    if (past > 0) {
+      message.warning(`有 ${past} 条视频的发送时间已过，已跳过；请改时间或点「全部立即」后重试`);
+    }
   }
 
   if (!api) {
@@ -184,29 +207,8 @@ export function Publish() {
             <Tag color="warning">未连接 Hub，无法下发</Tag>
           </div>
         )}
-        <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-          <span style={{ color: C.dim, fontSize: 13 }}>发送时机</span>
-          <Segmented
-            value={when}
-            onChange={(v) => setWhen(v as "now" | "scheduled")}
-            options={[
-              { label: "立即发送", value: "now" },
-              { label: "定时发送", value: "scheduled" },
-            ]}
-          />
-          {when === "scheduled" && (
-            <DatePicker
-              showTime={{ format: "HH:mm" }}
-              format="YYYY-MM-DD HH:mm"
-              value={at}
-              onChange={setAt}
-              placeholder="选择发送时间"
-              disabledDate={(d) => !!d && d.isBefore(dayjs().startOf("day"))}
-            />
-          )}
-          {when === "scheduled" && (
-            <span style={{ color: C.faint, fontSize: 12 }}>到点由电脑自动发送，电脑需保持开启</span>
-          )}
+        <div style={{ marginTop: 12, color: C.faint, fontSize: 12, lineHeight: 1.7 }}>
+          每条视频可<b style={{ color: C.dim }}>单独设置发送时间</b>：<b style={{ color: C.dim }}>留空＝立即发送</b>；填了时间＝到点由本电脑自动发送（电脑需保持开启）。扫描后已按错峰规则自动填好，可逐条修改。
         </div>
       </SectionCard>
 
@@ -229,27 +231,45 @@ export function Publish() {
           const cols: TableColumnsType<PublishPlanItem> = [
             { title: "文件", dataIndex: "fileName", render: (v: string) => <Mono>{v}</Mono> },
             { title: "文案", dataIndex: "caption", ellipsis: true },
-            { title: "计划", dataIndex: "scheduledAt", width: 70, render: (t: number) => <Mono>{hhmm(t)}</Mono> },
+            {
+              title: "发送时间",
+              width: 178,
+              render: (_v, item) => (
+                <DatePicker
+                  size="small"
+                  showTime={{ format: "HH:mm" }}
+                  format="MM-DD HH:mm"
+                  value={times[item.absPath] ?? null}
+                  onChange={(d) => setTimes((m) => ({ ...m, [item.absPath]: d }))}
+                  placeholder="立即发送"
+                  disabledDate={(d) => !!d && d.isBefore(dayjs().startOf("day"))}
+                  style={{ width: 158 }}
+                />
+              ),
+            },
             {
               title: "操作",
               width: 96,
-              render: (_v, item) => (
-                <Button
-                  size="small"
-                  icon={<SendOutlined />}
-                  disabled={!online || !connected}
-                  onClick={() => {
-                    const sched = resolveScheduledAt();
-                    if (sched === "invalid") {
-                      message.warning("请先选择一个将来的发送时间");
-                      return;
-                    }
-                    void publishOne(plan.deviceName, item, sched);
-                  }}
-                >
-                  {when === "scheduled" ? "定时" : "发布"}
-                </Button>
-              ),
+              render: (_v, item) => {
+                const scheduled = !!times[item.absPath];
+                return (
+                  <Button
+                    size="small"
+                    icon={<SendOutlined />}
+                    disabled={!online || !connected}
+                    onClick={() => {
+                      const sched = resolveRowAt(item.absPath);
+                      if (sched === "invalid") {
+                        message.warning("该视频的发送时间已过，请改时间或清空为「立即发送」");
+                        return;
+                      }
+                      void publishOne(plan.deviceName, item, sched);
+                    }}
+                  >
+                    {scheduled ? "定时" : "发布"}
+                  </Button>
+                );
+              },
             },
           ];
           return (
@@ -265,15 +285,27 @@ export function Publish() {
                   </span>
                 }
                 extra={
-                  <Button
-                    type="primary"
-                    size="small"
-                    icon={<SendOutlined />}
-                    disabled={!online || !connected || plan.pending.length === 0}
-                    onClick={() => publishAll(plan)}
-                  >
-                    全部发布（{plan.pending.length}）
-                  </Button>
+                  <Space size={8}>
+                    <Tooltip title="按错峰规则重新为本设备每条视频填入发送时间（相对现在）">
+                      <Button size="small" disabled={plan.pending.length === 0} onClick={() => fillSpread(plan)}>
+                        错峰时间
+                      </Button>
+                    </Tooltip>
+                    <Tooltip title="清空本设备所有视频的发送时间，改为立即发送">
+                      <Button size="small" disabled={plan.pending.length === 0} onClick={() => clearTimes(plan)}>
+                        全部立即
+                      </Button>
+                    </Tooltip>
+                    <Button
+                      type="primary"
+                      size="small"
+                      icon={<SendOutlined />}
+                      disabled={!online || !connected || plan.pending.length === 0}
+                      onClick={() => publishAll(plan)}
+                    >
+                      全部发布（{plan.pending.length}）
+                    </Button>
+                  </Space>
                 }
               >
                 {plan.pending.length === 0 ? (
