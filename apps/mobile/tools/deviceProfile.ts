@@ -1,10 +1,12 @@
 import * as fs from "fs";
 import * as path from "path";
 import type { Point } from "../src/wda";
+import type { AnchorName } from "../src/engine/anchors";
 
 /**
  * 按设备标定的坐标档案，存于 adaptation/devices.json。
  * 以逻辑分辨率（如 "390x844"）为 key——屏幕几何决定 TikTok 布局。
+ * ⚠️ 与 src/engine/onDeviceUI.ts 的 DeviceProfile 是耦合缝，改一处两处同步。
  */
 export interface DeviceProfile {
   screen: { w: number; h: number };
@@ -14,6 +16,8 @@ export interface DeviceProfile {
   share: Point;
   /** 关注按钮（红色 +）；检测不到则为 null。 */
   follow?: Point | null;
+  /** 各页面导航/输入/发布锚点的按机型覆盖（缺省用 anchors.ts 的比例默认）。 */
+  anchors?: Partial<Record<AnchorName, Point>>;
 }
 
 const FILE = path.resolve(__dirname, "..", "..", "..", "adaptation", "devices.json");

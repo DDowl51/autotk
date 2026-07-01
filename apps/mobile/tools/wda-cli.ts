@@ -51,6 +51,8 @@ import {
   detectCommentCloseButton,
 } from "./railDetect";
 import { createCalibratedUI } from "./calibratedUI";
+import { validateRail } from "../src/engine/railCheck";
+import { computeAnchors, resolveAnchor, type AnchorName } from "../src/engine/anchors";
 import { readCaption, terminateOcr } from "./ocr";
 import {
   deviceKey,
@@ -392,7 +394,14 @@ async function dispatch(
       await ensureTikTok();
       const { width, height } = await windowSize();
       const r = await detectRail(width, height);
-      const prof: DeviceProfile = { screen: { w: width, h: height }, ...r };
+      // 正确性校验：靠右缘/同列/y 递增/间距均匀，避免凑够 4 白带却认错图标静默存错坐标。
+      const v = validateRail(r, width, height);
+      if (!v.ok) {
+        log(`⚠ 标定被拒：${v.reason}。请确认停在干净的未点赞视频页后重试，本次未写盘。`);
+        break;
+      }
+      // 记录各页面锚点默认（占位比例）到档案，便于逐点手改覆盖；右栏坐标为检测值。
+      const prof: DeviceProfile = { screen: { w: width, h: height }, ...r, anchors: computeAnchors(width, height) };
       const key = deviceKey(width, height);
       saveProfile(key, prof);
       log(`已标定 [${key}] 并保存 → ${DEVICES_FILE}`);
@@ -539,14 +548,16 @@ async function dispatch(
       }
       await ensureTikTok();
       const { width: W, height: H } = await windowSize();
+      const sProf = loadProfile(deviceKey(W, H)) ?? {};
+      const a = (n: AnchorName) => resolveAnchor(sProf, W, H, n);
       const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
-      await tap({ x: W - 28, y: 69 }); // 放大镜
+      await tap(a("searchIcon")); // 放大镜
       await wait(1000);
       await typeText(arg);
       await wait(700);
-      await tap({ x: W - 43, y: 69 }); // 红色 Search 提交
+      await tap(a("searchSubmit")); // 红色 Search 提交
       await wait(10000); // 等结果加载（网络慢时缩略图未就绪会点空，故留足时间）
-      await tap({ x: W * 0.25, y: H * 0.255 }); // 第一个结果缩略图
+      await tap(a("searchFirstResult")); // 第一个结果缩略图
       await wait(1500);
       log(`已搜索「${arg}」并打开第一个结果（之后可用 like/save/follow/comment/swipe 互动）`);
       break;

@@ -29,6 +29,7 @@ import {
 import { captionFromBoxes, type OcrBox } from "../vision/caption";
 import { detectAppPopup } from "./popupDetect";
 import { planDismiss } from "./popupDismiss";
+import { resolveAnchor, type AnchorName } from "./anchors";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -40,6 +41,8 @@ export interface DeviceProfile {
   save: Point;
   share: Point;
   follow?: Point | null;
+  /** 各页面导航/输入/发布锚点的按机型覆盖（缺省用 anchors.ts 的比例默认）。 */
+  anchors?: Partial<Record<AnchorName, Point>>;
 }
 
 /** 注入的 OCR：整屏 base64 PNG → 文字框列表（手机端接 Apple Vision 模块）。 */
@@ -61,6 +64,8 @@ export function createOnDeviceUI(deps: {
 }): TikTokUI {
   const { profile: prof, ocr, log, onEvent } = deps;
   let size = { width: prof.screen.w, height: prof.screen.h };
+  // 解析某页面锚点：优先标定档覆盖值，否则用比例默认（anchors.ts 单一真源）。
+  const A = (name: AnchorName): Point => resolveAnchor(prof, size.width, size.height, name);
   let sized = false; // 屏幕尺寸只查一次（竖屏锁定，运行期不变），避免每个动作都往返 WDA
   let page: Page = "feed";
   let heartCache: Point[] = [];
@@ -96,8 +101,7 @@ export function createOnDeviceUI(deps: {
       const text = boxes.map((b) => b.text).join(" ");
       if (!POPUP_RE.test(text)) return;
       if (i === 0) {
-        // 先点弹窗右上 ✕（坐标待 REPL 核实）。
-        await tap({ x: size.width * 0.92, y: size.height * 0.6 });
+        await tap(A("popupClose")); // 弹窗右上 ✕
       } else {
         // 仍在 → 下滑关掉底部 sheet 兜底。
         await swipe(
@@ -224,8 +228,7 @@ export function createOnDeviceUI(deps: {
     async openFollowingFeed() {
       await ensure();
       await goTo("feed"); // 先确保在主 feed（顶部才有「关注 / 推荐」切换）
-      // 顶部「关注」tab 在「推荐」左侧、顶部居中偏左（坐标待 REPL 标定）。
-      await tap({ x: size.width * 0.38, y: size.height * 0.065 });
+      await tap(A("followTab")); // 顶部「关注」tab
       await sleep(1200);
       await dismissPopup(); // 切流概率弹登录/passkey 窗
       page = "feed"; // 关注流与推荐流操作一致，视作 feed
@@ -323,10 +326,10 @@ export function createOnDeviceUI(deps: {
       // #3：有该评论的解析位置 → 点它的"Reply"入口（@该作者）；否则回退底部输入框（顶层评论）。
       const pc = commentCache[c.index];
       if (pc) {
-        // "Reply" 在该评论行下方、左侧（≈ 屏宽 25%）。坐标待 REPL 调。
-        await tap({ x: size.width * 0.25, y: pc.y * size.height + size.height * 0.02 });
+        // "Reply" 在该评论行下方、左侧：x 用锚点，y 随该评论行。
+        await tap({ x: A("replyEntry").x, y: pc.y * size.height + size.height * 0.02 });
       } else {
-        await tap({ x: size.width * 0.28, y: size.height * 0.944 });
+        await tap(A("commentInput"));
       }
       await sleep(800);
       await typeText(text);
@@ -340,14 +343,13 @@ export function createOnDeviceUI(deps: {
     async search(keyword: string) {
       await ensure();
       await goTo("feed");
-      const { width: W, height: H } = size;
-      await tap({ x: W - 28, y: 69 });
+      await tap(A("searchIcon"));
       await sleep(1000);
       await typeText(keyword);
       await sleep(700);
-      await tap({ x: W - 43, y: 69 });
+      await tap(A("searchSubmit"));
       await sleep(10000);
-      await tap({ x: W * 0.25, y: H * 0.255 });
+      await tap(A("searchFirstResult"));
       await sleep(1500);
       page = "feed";
       log(`已搜索「${keyword}」并进入结果视频流`);
@@ -370,8 +372,7 @@ export function createOnDeviceUI(deps: {
 
     async openOwnProfile() {
       await ensure();
-      // 底部导航最右「Profile」tab（390x844 量得 ≈ 屏宽90%、屏高96%；坐标待 REPL 核实）。
-      await tap({ x: size.width * 0.9, y: size.height * 0.96 });
+      await tap(A("profileTab")); // 底部导航最右「我」tab
       await sleep(1500);
       await dismissPopup(); // 进主页概率弹「登录/passkey」窗，关掉
       page = "feed";
@@ -382,8 +383,7 @@ export function createOnDeviceUI(deps: {
     async openOwnVideo(index: number) {
       await ensure();
       if (index === 0) {
-        // 点作品网格左上第一格 → 进全屏作品流（≈ 屏宽17%、屏高55%；待 REPL 核实）。
-        await tap({ x: size.width * 0.17, y: size.height * 0.55 });
+        await tap(A("gridFirstCell")); // 作品网格左上第一格 → 全屏作品流
         await sleep(1500);
         page = "feed";
       } else {
@@ -415,9 +415,9 @@ export function createOnDeviceUI(deps: {
      */
     async returnToFeed(): Promise<void> {
       await ensure();
-      // 视频→结果网格→搜索输入→推荐流：连点 3 次左上返回箭头（坐标待 REPL 核实）。
+      // 视频→结果网格→搜索输入→推荐流：连点 3 次左上返回箭头。
       for (let i = 0; i < 3; i++) {
-        await tap({ x: size.width * 0.06, y: size.height * 0.08 });
+        await tap(A("backArrow"));
         await sleep(800);
       }
       page = "feed";
@@ -448,7 +448,7 @@ export function createOnDeviceUI(deps: {
       // 非视频流/评论区：先看是不是已知弹窗（登录/passkey）→ 关掉，算已处理。
       const text = (await ocr(png)).map((b) => b.text).join(" ");
       if (POPUP_RE.test(text)) {
-        await tap({ x: size.width * 0.92, y: size.height * 0.6 });
+        await tap(A("popupClose"));
         await sleep(700);
         log("关闭登录/passkey 弹窗");
         lostStreak = 0;
@@ -474,9 +474,9 @@ export function createOnDeviceUI(deps: {
     async returnFromProfile(): Promise<void> {
       await ensure();
       // 作品全屏 →(返回箭头)→ 主页网格 →(底部 Home tab)→ 推荐流。
-      await tap({ x: size.width * 0.06, y: size.height * 0.08 }); // 返回箭头
+      await tap(A("backArrow")); // 返回箭头
       await sleep(800);
-      await tap({ x: size.width * 0.1, y: size.height * 0.96 }); // 底部 Home tab
+      await tap(A("homeTab")); // 底部 Home tab
       await sleep(1000);
       page = "feed";
       log("已从个人主页返回推荐流");
@@ -496,6 +496,36 @@ export function createOnDeviceUI(deps: {
       page = "feed";
       log("已回到推荐流（基地）");
       return true;
+    },
+
+    /**
+     * 发布：视频已由上层 downloadToAlbum 存入相册（相册最新一条）。走 TikTok「+ → 上传 →
+     * 选相册第一条 → 下一步 → 文案 → 发布」。⚠️ 上传流程锚点 publish* 均为占位比例，
+     * 必须真机 calibrate 覆盖后才可靠——否则会点偏（见 anchors.ts publish* 与收尾清单）。
+     */
+    async publishVideo(_assetUri: string, caption: string) {
+      await ensure();
+      await tap(A("publishCreate"));
+      await sleep(1500);
+      await handleSystemAlert(); // 首次可能弹相机/相册权限
+      await tap(A("publishUpload"));
+      await sleep(1200);
+      await handleSystemAlert();
+      await tap(A("publishAlbumFirst")); // 相册最新一条 = 刚下载的视频
+      await sleep(1000);
+      await tap(A("publishNext")); // 进编辑页
+      await sleep(2500);
+      await tap(A("publishNext")); // 进发布页（部分版本两段「下一步」）
+      await sleep(1500);
+      if (caption) {
+        await tap(A("publishCaption"));
+        await sleep(600);
+        await typeText(caption);
+        await sleep(500);
+      }
+      await tap(A("publishPost"));
+      await sleep(2000);
+      log("已尝试发布（⚠ 上传流程坐标需真机标定核实）");
     },
   };
 }

@@ -25,6 +25,7 @@ import {
   detectSendButton,
 } from "./railDetect";
 import { readCaption } from "./ocr";
+import { resolveAnchor, type AnchorName } from "../src/engine/anchors";
 
 type Log = (msg: string) => void;
 
@@ -49,6 +50,8 @@ export function createCalibratedUI(log: Log): TikTokUI {
   let heartCache: Point[] = [];
   // 连续"不在正常页面"的次数；避免横屏/图文帖偶发漏检导致在正常视频上误返回。
   let lostStreak = 0;
+  // 页面锚点：优先标定档覆盖，否则比例默认（与 onDeviceUI 共用 anchors.ts）。
+  const A = (name: AnchorName): Point => resolveAnchor(prof ?? {}, size.width, size.height, name);
 
   const ensure = async () => {
     if (!getSessionId()) {
@@ -115,8 +118,7 @@ export function createCalibratedUI(log: Log): TikTokUI {
     async openFollowingFeed() {
       await ensure();
       await goTo("feed");
-      // 顶部「关注」tab（在「推荐」左侧、顶部居中偏左；坐标待 REPL 核实）。
-      await tap({ x: size.width * 0.38, y: size.height * 0.065 });
+      await tap(A("followTab")); // 顶部「关注」tab
       await sleep(1200);
       page = "feed"; // 关注流与推荐流操作一致
       log("已切到「关注」视频流");
@@ -200,7 +202,7 @@ export function createCalibratedUI(log: Log): TikTokUI {
       await ensure();
       await goTo("comments");
       // 通过底部输入框发评论（暂发顶层评论，非针对具体评论的回复；文案由生成器给）。
-      await tap({ x: size.width * 0.28, y: size.height * 0.944 });
+      await tap(A("commentInput"));
       await sleep(800);
       await typeText(text);
       await sleep(600);
@@ -214,14 +216,13 @@ export function createCalibratedUI(log: Log): TikTokUI {
     async search(keyword: string) {
       await ensure();
       await goTo("feed");
-      const { width: W, height: H } = size;
-      await tap({ x: W - 28, y: 69 }); // 放大镜
+      await tap(A("searchIcon")); // 放大镜
       await sleep(1000);
       await typeText(keyword);
       await sleep(700);
-      await tap({ x: W - 43, y: 69 }); // 红色 Search 提交
+      await tap(A("searchSubmit")); // 红色 Search 提交
       await sleep(10000); // 等结果加载
-      await tap({ x: W * 0.25, y: H * 0.255 }); // 打开第一个结果，进入结果视频流
+      await tap(A("searchFirstResult")); // 打开第一个结果，进入结果视频流
       await sleep(1500);
       page = "feed"; // 结果视频流与推荐页操作相同，视作 feed
       log(`已搜索「${keyword}」并进入结果视频流`);
@@ -311,9 +312,9 @@ export function createCalibratedUI(log: Log): TikTokUI {
 
     async returnToFeed() {
       await ensure();
-      // 视频→结果网格→搜索输入→推荐流：连点 3 次左上返回箭头（坐标待 REPL 核实）。
+      // 视频→结果网格→搜索输入→推荐流：连点 3 次左上返回箭头。
       for (let i = 0; i < 3; i++) {
-        await tap({ x: size.width * 0.06, y: size.height * 0.08 });
+        await tap(A("backArrow"));
         await sleep(800);
       }
       page = "feed";
@@ -323,9 +324,9 @@ export function createCalibratedUI(log: Log): TikTokUI {
     async returnFromProfile() {
       await ensure();
       // 作品全屏 →(返回箭头)→ 主页网格 →(底部 Home tab)→ 推荐流。
-      await tap({ x: size.width * 0.06, y: size.height * 0.08 }); // 返回箭头
+      await tap(A("backArrow")); // 返回箭头
       await sleep(800);
-      await tap({ x: size.width * 0.1, y: size.height * 0.96 }); // 底部 Home tab
+      await tap(A("homeTab")); // 底部 Home tab
       await sleep(1000);
       page = "feed";
       log("已从个人主页返回推荐流");
@@ -333,8 +334,7 @@ export function createCalibratedUI(log: Log): TikTokUI {
 
     async openOwnProfile() {
       await ensure();
-      // 底部导航最右「Profile」tab（390x844 量得 ≈ 屏宽90%、屏高96%；坐标待 REPL 核实）。
-      await tap({ x: size.width * 0.9, y: size.height * 0.96 });
+      await tap(A("profileTab")); // 底部导航最右「我」tab
       await sleep(1500);
       page = "feed";
       log("已进入个人主页");
@@ -344,8 +344,7 @@ export function createCalibratedUI(log: Log): TikTokUI {
     async openOwnVideo(index: number) {
       await ensure();
       if (index === 0) {
-        // 点作品网格左上第一格 → 进全屏作品流（≈ 屏宽17%、屏高55%；待 REPL 核实）。
-        await tap({ x: size.width * 0.17, y: size.height * 0.55 });
+        await tap(A("gridFirstCell")); // 作品网格左上第一格 → 全屏作品流
         await sleep(1500);
         page = "feed";
       } else {
@@ -361,6 +360,33 @@ export function createCalibratedUI(log: Log): TikTokUI {
 
     async detectPopup() {
       return false;
+    },
+
+    /**
+     * 发布（REPL 调试用）：走 TikTok「+ → 上传 → 选相册第一条 → 下一步 → 文案 → 发布」。
+     * ⚠️ 上传流程锚点 publish* 为占位比例，需真机 calibrate 覆盖后才可靠。
+     */
+    async publishVideo(_assetUri: string, caption: string) {
+      await ensure();
+      await tap(A("publishCreate"));
+      await sleep(1500);
+      await tap(A("publishUpload"));
+      await sleep(1200);
+      await tap(A("publishAlbumFirst"));
+      await sleep(1000);
+      await tap(A("publishNext"));
+      await sleep(2500);
+      await tap(A("publishNext"));
+      await sleep(1500);
+      if (caption) {
+        await tap(A("publishCaption"));
+        await sleep(600);
+        await typeText(caption);
+        await sleep(500);
+      }
+      await tap(A("publishPost"));
+      await sleep(2000);
+      log("已尝试发布（⚠ 上传流程坐标需真机标定核实）");
     },
   };
 }

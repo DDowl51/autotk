@@ -1,11 +1,56 @@
 import { requireNativeModule } from "expo-modules-core";
-import { setBaseUrl, createSession, applyFastSettings, getSessionId, windowSize } from "../wda";
+import {
+  setBaseUrl,
+  createSession,
+  applyFastSettings,
+  getSessionId,
+  windowSize,
+  activateApp,
+  screenshot,
+  TIKTOK_BUNDLE_ID,
+} from "../wda";
 import { createOnDeviceUI, type DeviceProfile, type OcrFn } from "../engine/onDeviceUI";
 import { pickProfile } from "../engine/deviceSelect";
+import { validateRail, nearestProfileKey } from "../engine/railCheck";
+import { decode, detectRail } from "../vision/detect";
+import { getStoredProfiles, saveStoredProfile } from "./deviceProfileStore";
 import type { TikTokUI } from "../engine/tiktok-ui";
 import type { OcrBox } from "../vision/caption";
 import { track } from "../telemetry";
 import devices from "../../adaptation/devices.json";
+
+/**
+ * 首跑自动标定：本机当前若停在干净视频页，检测右栏 → 校验 → 存 AsyncStorage 并返回。
+ * 不在干净页/检测非法 → 返回 undefined（上层用最接近档兜底）。
+ */
+async function tryAutoCalibrate(
+  w: number,
+  h: number,
+  log: (m: string) => void,
+): Promise<DeviceProfile | undefined> {
+  try {
+    await activateApp(TIKTOK_BUNDLE_ID);
+    const rail = detectRail(decode(await screenshot()), w, h); // 白带 <4 会抛
+    const v = validateRail(rail, w, h);
+    if (!v.ok) {
+      log(`自动标定放弃：${v.reason}（多半此刻不在干净视频页）`);
+      return undefined;
+    }
+    const prof: DeviceProfile = {
+      screen: { w, h },
+      like: rail.like,
+      comment: rail.comment,
+      save: rail.save,
+      share: rail.share,
+      follow: rail.follow,
+    };
+    await saveStoredProfile(`${w}x${h}`, prof);
+    return prof;
+  } catch (e) {
+    log(`自动标定未成功（可能不在干净视频页）：${e instanceof Error ? e.message : String(e)}`);
+    return undefined;
+  }
+}
 
 /**
  * 构造真机 TikTokUI。
@@ -20,30 +65,44 @@ export async function createRealUI(log: (msg: string) => void): Promise<TikTokUI
   // WDA 与本 App 同机,走 localhost。
   setBaseUrl("http://localhost:8100");
 
-  const profiles = devices as Record<string, DeviceProfile>;
-  const keys = Object.keys(profiles);
-  if (keys.length === 0) {
-    throw new Error("未找到标定坐标（adaptation/devices.json 为空,请先用 calibrate 标定本机）");
-  }
+  // 出厂档（打包只读）+ 端上标定档（首跑自动标定/本机 calibrate 存的）合并，后者覆盖前者。
+  const stored = await getStoredProfiles();
+  const profiles: Record<string, DeviceProfile> = { ...(devices as Record<string, DeviceProfile>), ...stored };
 
   // 探一次真机分辨率，按机型选 profile（复用会话，onDeviceUI 之后不会再建）。
   let profile: DeviceProfile | undefined;
+  let width = 0;
+  let height = 0;
   try {
     if (!getSessionId()) {
       await createSession();
       await applyFastSettings();
     }
-    const { width, height } = await windowSize();
+    const s = await windowSize();
+    width = s.width;
+    height = s.height;
     profile = pickProfile(profiles, width, height);
-    if (profile) {
-      log(`机型匹配：${width}x${height} 标定档案`);
-    } else {
-      log(`未找到 ${width}x${height} 的标定，用 ${keys[0]} 兜底（建议对本机重新 calibrate）`);
-    }
+    if (profile) log(`机型匹配：${width}x${height} 标定档案`);
   } catch (e) {
-    log(`取分辨率失败，用 ${keys[0]} 兜底：${e instanceof Error ? e.message : String(e)}`);
+    log(`取分辨率失败：${e instanceof Error ? e.message : String(e)}`);
   }
-  profile = profile ?? profiles[keys[0]];
+
+  // 无精确档：先试首跑自动标定（本机在干净视频页时能成），失败再用「最接近档」兜底（不再盲取第一个）。
+  if (!profile && width > 0) {
+    profile = await tryAutoCalibrate(width, height, log);
+    if (profile) log(`已自动标定本机型 ${width}x${height} 并记住`);
+  }
+  if (!profile) {
+    const keys = Object.keys(profiles);
+    const nk = width > 0 ? nearestProfileKey(keys, width, height) : (keys[0] ?? null);
+    if (nk) {
+      profile = profiles[nk];
+      log(`未找到 ${width}x${height} 标定，用最接近的 ${nk} 兜底（建议对本机 calibrate）`);
+    }
+  }
+  if (!profile) {
+    throw new Error("未找到任何标定坐标（devices.json 为空且自动标定失败，请先 calibrate 本机）");
+  }
 
   // OCR 可选:有原生模块用之,没有则空实现（不读文案,不影响其余真机操作）。
   let ocr: OcrFn;
