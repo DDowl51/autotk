@@ -35,4 +35,9 @@ function parseBeacon(text) {
 /** 自动发现用的固定 UDP 端口。 */
 const DISCOVERY_PORT = 41234;
 
-module.exports = { pickLanIPv4, encodeBeacon, parseBeacon, DISCOVERY_PORT };
+// 内嵌 Hub 的共享候选端口表：内嵌方按此表挑第一个空闲端口起服；手机端在「已知 IP、
+// 端口变了、又收不到 UDP 广播」时，也按同一份表逐个端口重连（第三层兜底）。
+// ⚠️ 耦合缝：必须与手机端 apps/mobile/src/hub/hubUrl.ts 的 HUB_PORTS 逐一致，改一处两处同步。
+const HUB_PORTS = [4000, 51820, 53170, 55555, 57340];
+
+module.exports = { pickLanIPv4, encodeBeacon, parseBeacon, DISCOVERY_PORT, HUB_PORTS };

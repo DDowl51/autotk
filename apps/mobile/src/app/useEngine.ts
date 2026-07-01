@@ -11,6 +11,8 @@ import { HubClient } from "../hub/client";
 import { HUB_CONFIG, setHubUrl } from "../hub/config";
 import { getStoredHubUrl, setStoredHubUrl } from "../hub/hubUrlStore";
 import { startHubDiscovery } from "../hub/discovery";
+import { candidateUrls, hostOf } from "../hub/hubUrl";
+import { probeHub } from "../hub/probe";
 import { resolveDeviceName } from "../hub/deviceName";
 import { buildStatus, mapBattery } from "../hub/reporter";
 import { applyConfigPatch } from "../hub/configInbox";
@@ -332,6 +334,37 @@ export function useEngine(initialParams?: AutomationParams): EngineState {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hubUrl]);
+
+  // 端口兜底重连（第三层）：连不上、但有「已知 IP」（之前连过）时，按共享端口表在该 IP 上
+  // 逐个探测，命中就切过去。补「UDP 广播被防火墙拦 + Hub 端口变化」导致的重连不上。
+  useEffect(() => {
+    if (hubConnected) return; // 已连上不扫
+    const host = hostOf(hubUrlRef.current);
+    if (!host) return; // 没连过、没有已知 IP → 靠扫码 / 自动发现
+    let alive = true;
+    let running = false;
+    const sweep = async () => {
+      if (running || !alive || hubRef.current?.isConnected()) return;
+      running = true;
+      try {
+        for (const u of candidateUrls(host)) {
+          if (!alive || hubRef.current?.isConnected()) return;
+          if (u === hubUrlRef.current.replace(/\/$/, "")) continue; // 当前正在试的跳过
+          if (await probeHub(u)) {
+            if (alive && !hubRef.current?.isConnected()) setHubEndpoint(u);
+            return;
+          }
+        }
+      } finally {
+        running = false;
+      }
+    };
+    const timer = setInterval(() => void sweep(), 15000);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, [hubConnected, setHubEndpoint]);
 
   // 卸载时清理。
   useEffect(() => {

@@ -11,6 +11,11 @@ import { RelayStore, handleRelay } from "./relay";
 export interface StartHubOptions {
   /** 起始端口（默认 env PORT 或 4000）。被占用则依次 +1 回退。 */
   port?: number;
+  /**
+   * 候选端口表（如内嵌桌面的共享端口表）：提供时优先按此表逐个尝试、第一个空闲即用，
+   * 忽略 port/maxPortTries 的 +1 顺延。手机端按同一份表兜底重连，故实际端口必落在表内。
+   */
+  ports?: number[];
   /** 别名等持久化目录（默认 env HUB_DATA_DIR 或 ./hub-data）。 */
   dataDir?: string;
   /** 端口被占用时最多回退几次（默认 20）。 */
@@ -28,6 +33,31 @@ export interface HubHandle {
   /** 实际监听到的端口（可能因回退而非起始端口）。 */
   port: number;
   close(): Promise<void>;
+}
+
+/** 依次尝试候选端口表，第一个能绑定的即用；全被占用则 reject。返回实际端口。 */
+function listenList(server: HttpServer, ports: number[]): Promise<number> {
+  return new Promise((resolve, reject) => {
+    let i = 0;
+    const attempt = () => {
+      if (i >= ports.length) {
+        reject(new Error(`所有候选端口都被占用：${ports.join(", ")}`));
+        return;
+      }
+      const p = ports[i++];
+      const onError = (e: NodeJS.ErrnoException) => {
+        if (e.code === "EADDRINUSE") attempt();
+        else reject(e);
+      };
+      server.once("error", onError);
+      server.listen(p, () => {
+        server.removeListener("error", onError);
+        const a = server.address();
+        resolve(typeof a === "object" && a ? a.port : p);
+      });
+    };
+    attempt();
+  });
 }
 
 /** 监听，端口被占用（EADDRINUSE）则 +1 回退，返回实际端口。 */
@@ -78,7 +108,10 @@ export async function startHub(opts: StartHubOptions = {}): Promise<HubHandle> {
 
   // 先加载别名再监听，确保首个连接的快照已带别名。
   await aliases.load();
-  const port = await listen(httpServer, basePort, maxTries);
+  const port =
+    opts.ports && opts.ports.length > 0
+      ? await listenList(httpServer, opts.ports)
+      : await listen(httpServer, basePort, maxTries);
   // 持久错误监听：绑定成功后，运行期服务器错误（如 EMFILE）不再是「无监听的 error 事件」而崩进程。
   httpServer.on("error", (e: NodeJS.ErrnoException) => {
     // eslint-disable-next-line no-console

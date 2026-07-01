@@ -67,6 +67,7 @@ docs/management-center/           管理中心 README + dev/req 文档
   | license SDK | `packages/license-sdk/src/`（`@license/sdk`） | vendored `apps/mobile/src/license/sdk/`（client/errors/signing/storage 四文件） | 漂移（逻辑同，仅注释/导入风格异） | 改后**整文件拷**到手机端；跑 `pnpm --filter @license/sdk test` |
   | telemetry SDK | `packages/telemetry-sdk/src/`（`@telemetry/sdk`） | vendored 三份：`apps/mobile`/`apps/desktop`/`services/license` 各 `src/telemetry/sdk/`（**Hub 尚未接**） | 当前逐字节同步 | 改后拷到**三个**副本；各端入口 `initTelemetry()` |
   | IPA 母包 | Mac `expo prebuild`（autotk）/ 云编译（WDA） | `services/signing-station/apps/*.ipa`（母包入口 + `requiresXctest`） | 二进制，gitignore | 改 autotk 产物形态 → 对齐母包入口；WDA 母包必须含 XCTest，`pnpm --filter signing-station check` 会校验 |
+  | Hub 端口表 | `apps/desktop/electron/netutil.cjs` 的 `HUB_PORTS`（内嵌 Hub 按此表挑第一个空闲端口） | `apps/mobile/src/hub/hubUrl.ts` 的 `HUB_PORTS`（手机端口兜底重连按同表扫） | 必须逐一致 | 改一处两处同步；跑 `pnpm --filter @mc/hub test` + 手机 `bash tests/run.sh` |
 
   根因：`apps/mobile` 被 `!apps/mobile` 排除出 workspace，无法用 workspace 依赖联动，故只能 vendored + 手动同步；phase 4 收编后可删这些副本。改完把**两边的测试都跑一遍**确认仍绿，并在回复里说明波及到了哪些包。
 - **架构基调到处是「端口-适配器」**：纯业务逻辑放不依赖框架的 `core`/`domain`（用假实现单测），框架/外部脏活（Prisma、HTTP、zsign、socket.io、ImageMagick）放 `adapters`。**改规则改核心层并补测，改接线改适配器。**

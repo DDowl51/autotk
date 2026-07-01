@@ -35,4 +35,15 @@ describe("startHub", () => {
     await a.close();
     await b.close();
   });
+
+  it("候选端口表：表内第一个被占 → 落到表内下一个空闲端口", async () => {
+    const a = await startHub({ port: 0, dataDir: os.tmpdir() }); // 占住 Pa
+    const tmp = await startHub({ port: 0, dataDir: os.tmpdir() }); // 借一个真实端口 Pb
+    const pb = tmp.port;
+    await tmp.close(); // 释放 Pb，使其空闲
+    const b = await startHub({ ports: [a.port, pb], dataDir: os.tmpdir() });
+    expect(b.port).toBe(pb); // 表内第一个(Pa)被占 → 用第二个 Pb
+    await a.close();
+    await b.close();
+  });
 });

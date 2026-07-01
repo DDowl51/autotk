@@ -7,7 +7,7 @@ const dgram = require("node:dgram");
 const publisher = require("@mc/publisher");
 // P1：内嵌 Hub（需先构建 @mc/shared 与 @mc/hub 的 CJS dist）。
 const { startHub } = require("@mc/hub");
-const { pickLanIPv4, encodeBeacon, DISCOVERY_PORT } = require("./netutil.cjs");
+const { pickLanIPv4, encodeBeacon, DISCOVERY_PORT, HUB_PORTS } = require("./netutil.cjs");
 const logger = require("./logger.cjs");
 
 // 全局兜底：一处游离错误 / 未处理拒绝不静默崩、也不带崩内嵌 Hub；记本地日志。
@@ -66,7 +66,7 @@ let beaconTimer = null;
 
 async function ensureHub() {
   if (hub) return hub.port;
-  hub = await startHub({ port: 4000 }); // 固定 4000，占用则内部回退
+  hub = await startHub({ ports: HUB_PORTS }); // 按共享端口表挑第一个空闲；手机端按同表兜底重连
   startBeacon(hub.port);
   return hub.port;
 }
