@@ -15,7 +15,8 @@
       "bundleId": "com.ddowl.WebDriverAgentRunner.xctrunner",
       "title": "WebDriverAgent",
       "version": "5.15.5",
-      "motherIpaPath": "apps/wda.ipa"
+      "motherIpaPath": "apps/wda.ipa",
+      "requiresXctest": true
     },
     "autotk": {
       "bundleId": "com.ddowl.autotk",

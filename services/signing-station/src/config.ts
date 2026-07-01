@@ -16,6 +16,8 @@ export interface RawApp {
   title: string;
   version: string;
   motherIpaPath: string;
+  /** XCTest 运行器（WDA）置 true：母包必须含 XCTest 框架，否则装上点不开。 */
+  requiresXctest?: boolean;
 }
 export interface RawAccount {
   name: string;
@@ -88,6 +90,7 @@ export function loadConfig(raw: RawConfig, env: EnvOverrides, readText: (path: s
       title: req(a.title, `apps.${key}.title`),
       version: req(a.version, `apps.${key}.version`),
       motherIpaPath: req(a.motherIpaPath, `apps.${key}.motherIpaPath`),
+      requiresXctest: a.requiresXctest ?? false,
     };
   }
 

@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { loadConfig, type RawConfig } from "./config";
 import { api, type AscResource } from "node-app-store-connect-api";
+import { MotherIpaInspector } from "./adapters/mother-ipa";
 
 /**
  * 账号自检：填完 config.json 后 `npm run check`，逐账号验证
@@ -35,7 +36,40 @@ async function main(): Promise<void> {
       console.log(`  ✗ 失败：${e instanceof Error ? e.message : String(e)}`);
     }
   }
-  console.log(ok ? "\n✅ 全部账号就绪，可以进真机联调了。" : "\n❗ 有问题，按上面的 ✗ 修一下再跑。");
+  // 母包体检：文件在不在、WDA 类是否含 XCTest 框架（放错坏包是踩过的大坑）。
+  console.log(`\n[母包检查]`);
+  const inspector = new MotherIpaInspector();
+  for (const [key, app] of Object.entries(cfg.apps)) {
+    let insp;
+    try {
+      insp = await inspector.inspect(app.motherIpaPath);
+    } catch (e) {
+      ok = false;
+      console.log(`  ✗ ${key}: 读 ${app.motherIpaPath} 失败：${e instanceof Error ? e.message : String(e)}`);
+      continue;
+    }
+    if (!insp.exists) {
+      ok = false;
+      console.log(`  ✗ ${key}: 母包不存在 ${app.motherIpaPath}`);
+      continue;
+    }
+    if (!insp.appBundle) {
+      ok = false;
+      console.log(
+        `  ✗ ${key}: 母包里没有 Payload/*.app（${app.motherIpaPath}，共 ${insp.entryCount} 条目）—— 空包/坏包，重新放有效 IPA。`,
+      );
+    } else if (app.requiresXctest && !(insp.hasXctestFrameworks && insp.hasXctestPlugin)) {
+      ok = false;
+      console.log(
+        `  ✗ ${key}: 母包缺 XCTest 框架/插件（${app.motherIpaPath}）—— 这是 WDA，签出来装上会点不开！请换带框架的云编译包。`,
+      );
+    } else {
+      const xc = app.requiresXctest ? `  XCTest:${insp.hasXctestFrameworks && insp.hasXctestPlugin ? "齐" : "缺"}` : "";
+      console.log(`  ✓ ${key}: ${insp.appBundle ?? "?"} · 框架 ${insp.frameworks.length} 个${xc}`);
+    }
+  }
+
+  console.log(ok ? "\n✅ 全部账号 + 母包就绪，可以进真机联调了。" : "\n❗ 有问题，按上面的 ✗ 修一下再跑。");
   process.exit(ok ? 0 : 1);
 }
 

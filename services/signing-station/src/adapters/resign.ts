@@ -18,6 +18,8 @@ export type CredsResolver = (accountName: string) => AccountP12;
 export interface RunResult {
   code: number;
   stderr: string;
+  /** zsign 的错误常打到 stdout，单独留着拼进报错。 */
+  stdout?: string;
 }
 export type Runner = (bin: string, args: string[]) => Promise<RunResult>;
 
@@ -34,11 +36,13 @@ export function buildZsignArgs(o: {
 
 const defaultRunner: Runner = (bin, args) =>
   new Promise((resolve, reject) => {
-    const p = spawn(bin, args, { stdio: ["ignore", "ignore", "pipe"] });
+    const p = spawn(bin, args, { stdio: ["ignore", "pipe", "pipe"] });
+    let out = "";
     let err = "";
+    p.stdout.on("data", (d) => (out += d.toString()));
     p.stderr.on("data", (d) => (err += d.toString()));
     p.on("error", reject);
-    p.on("close", (code) => resolve({ code: code ?? -1, stderr: err }));
+    p.on("close", (code) => resolve({ code: code ?? -1, stderr: err, stdout: out }));
   });
 
 export interface ResignOpts {
@@ -70,7 +74,8 @@ export class ZsignResign implements ResignPort {
     });
     const r = await this.runner(this.opts.zsignBin ?? "zsign", args);
     if (r.code !== 0) {
-      throw new Error(`zsign 失败 (code ${r.code})：${r.stderr.slice(0, 500)}`);
+      const detail = (r.stderr || r.stdout || "").trim().slice(0, 800) || "（无输出）";
+      throw new Error(`zsign 失败 (code ${r.code})：${detail}`);
     }
     return this.read(outPath);
   }
