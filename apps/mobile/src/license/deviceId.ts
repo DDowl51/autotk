@@ -13,7 +13,7 @@ function randomId(): string {
  */
 export async function resolveDeviceId(): Promise<string> {
   try {
-    const idfv = await Application.getIosIdForVendoringAsync();
+    const idfv = await Application.getIosIdForVendorAsync();
     if (idfv) return idfv;
   } catch {
     // 忽略，走兜底

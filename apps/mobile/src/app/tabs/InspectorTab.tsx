@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ScrollView,
   StyleSheet,
@@ -58,12 +58,20 @@ export function InspectorTab() {
 
   // 真机版 UI（onDeviceUI：标定坐标 + 图像检测），与正式运行同一路径。
   // 元素树版 wdaUI 因 snapshotMaxDepth=1 在真机 TikTok 不可用，故不再用于单步测试。
-  const ui = useMemo<TikTokUI | null>(() => {
-    try {
-      return createRealUI((m) => setMsg(m));
-    } catch {
-      return null;
-    }
+  // createRealUI 是异步（要探测 vision-ocr 原生模块），故在 effect 里加载进 state。
+  const [ui, setUi] = useState<TikTokUI | null>(null);
+  useEffect(() => {
+    let alive = true;
+    createRealUI((m) => setMsg(m))
+      .then((u) => {
+        if (alive) setUi(u);
+      })
+      .catch(() => {
+        if (alive) setUi(null);
+      });
+    return () => {
+      alive = false;
+    };
   }, []);
 
   // 单步动作：真机 UI 不可用时提示而非崩溃。

@@ -38,8 +38,8 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: "debug", label: "调试" },
 ];
 
-export default function ConfigScreen() {
-  const { params, setParams, running, mode, logs, stats, start, stop } = useEngine();
+export default function ConfigScreen({ initialParams }: { initialParams?: AutomationParams }) {
+  const { params, setParams, running, mode, logs, stats, start, stop } = useEngine(initialParams);
   const [tab, setTab] = useState<TabKey>("kw");
   const [wdaMsg, setWdaMsg] = useState("未测试");
 
@@ -57,6 +57,21 @@ export default function ConfigScreen() {
 
   const patch = (p: Partial<AutomationParams>) => setParams({ ...params, ...p });
 
+  // 关键词/回复用本地文本编辑，需在离开输入前汇入 params（持久化才拿得到）。
+  const buildTextMerged = (base: AutomationParams): AutomationParams => ({
+    ...base,
+    searchKeywords: splitWords(kwText),
+    posPrompts: splitWords(posText),
+    negPrompts: splitWords(negText),
+    fixedReplies: splitLines(replyText),
+    commentMatchKeywords: splitWords(matchText),
+  });
+  // 切换标签时把文本框提交进 params（→ 触发持久化），不必等按「启动」。
+  const switchTab = (k: TabKey) => {
+    if (tab === "kw" && k !== "kw") setParams(buildTextMerged(params));
+    setTab(k);
+  };
+
   const testWda = async () => {
     setWdaMsg("连接中…");
     try {
@@ -68,14 +83,7 @@ export default function ConfigScreen() {
   };
 
   const onStart = () => {
-    const merged: AutomationParams = {
-      ...params,
-      searchKeywords: splitWords(kwText),
-      posPrompts: splitWords(posText),
-      negPrompts: splitWords(negText),
-      fixedReplies: splitLines(replyText),
-      commentMatchKeywords: splitWords(matchText),
-    };
+    const merged = buildTextMerged(params);
     const errors = validateParams(merged);
     if (errors.length > 0) {
       setWdaMsg("参数错误：" + errors[0]);
@@ -136,7 +144,7 @@ export default function ConfigScreen() {
               <TouchableOpacity
                 key={t.key}
                 style={[styles.tab, active && styles.tabActive]}
-                onPress={() => setTab(t.key)}
+                onPress={() => switchTab(t.key)}
                 activeOpacity={0.7}
               >
                 <Text style={[styles.tabText, active && styles.tabTextActive]}>

@@ -10,3 +10,5 @@ export {
   timeToSeconds,
   type LegacyParams,
 } from "./parse";
+export { mergeDeep, mergeParams } from "./merge";
+export { hydrateStoredParams, serializeParams } from "./persist";

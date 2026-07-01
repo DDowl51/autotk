@@ -18,6 +18,7 @@ import { PublishQueue, runPublish } from "../publish/publishQueue";
 import { downloadToAlbum } from "../publish/downloader";
 import { saveBytesToAlbum } from "../publish/album";
 import { resolveDeviceId } from "../license/deviceId";
+import { saveParams } from "./paramsStorage";
 import { track } from "../telemetry";
 
 type LogLevel = "info" | "warn" | "error";
@@ -52,8 +53,8 @@ async function makeUI(log: (m: string) => void): Promise<{ ui: TikTokUI; mode: E
  * 把决策引擎接到 React。演示模式下用 mock UI/生成器，
  * 因此在真机/Expo Go 上即可跑通整条链路。
  */
-export function useEngine(): EngineState {
-  const [params, setParams] = useState<AutomationParams>(DEFAULT_PARAMS);
+export function useEngine(initialParams?: AutomationParams): EngineState {
+  const [params, setParams] = useState<AutomationParams>(initialParams ?? DEFAULT_PARAMS);
   const [running, setRunning] = useState(false);
   const [mode, setMode] = useState<EngineMode>("mock");
   const [logs, setLogs] = useState<string[]>([]);
@@ -205,6 +206,17 @@ export function useEngine(): EngineState {
     logBufRef.current = [];
     setLogs([]);
   }, []);
+
+  // 设置变更即持久化（防抖 400ms）；跳过首帧（首帧就是加载好的值，无需回写）。
+  const savedOnceRef = useRef(false);
+  useEffect(() => {
+    if (!savedOnceRef.current) {
+      savedOnceRef.current = true;
+      return;
+    }
+    const h = setTimeout(() => void saveParams(params), 400);
+    return () => clearTimeout(h);
+  }, [params]);
 
   // 接入管理中心 Hub（配置了 EXPO_PUBLIC_HUB_URL 才接）：上报状态 + 日志。
   // 失败不影响 autotk 本体运行；autotk 一打开就在线，引擎跑不跑只改 running 字段。

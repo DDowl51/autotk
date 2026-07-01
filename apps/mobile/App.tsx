@@ -3,15 +3,18 @@ import { View, ActivityIndicator, StyleSheet } from "react-native";
 import ConfigScreen from "./src/app/ConfigScreen";
 import { ActivationScreen } from "./src/app/ActivationScreen";
 import { useLicense } from "./src/license/useLicense";
+import { useStoredParams } from "./src/app/paramsStorage";
 import { initTelemetry } from "./src/telemetry";
 
 export default function App() {
   const { state, activate } = useLicense();
+  // 启动即加载已存设置；加载完再挂 ConfigScreen，保证配置界面首屏就带上上次的设置。
+  const storedParams = useStoredParams();
   useEffect(() => {
     initTelemetry();
   }, []);
 
-  if (state === "loading") {
+  if (state === "loading" || (state === "active" && storedParams === null)) {
     return (
       <View style={styles.splash}>
         <ActivityIndicator size="large" color="#4f46e5" />
@@ -23,7 +26,7 @@ export default function App() {
     return <ActivationScreen onActivate={activate} />;
   }
 
-  return <ConfigScreen />;
+  return <ConfigScreen initialParams={storedParams ?? undefined} />;
 }
 
 const styles = StyleSheet.create({
