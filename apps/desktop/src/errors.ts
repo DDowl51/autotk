@@ -1,6 +1,6 @@
 // 把底层报错转成人话 + 补救建议。纯函数，便于单测。
 
-export type ErrorCtx = "analytics" | "scan" | "publish" | "qr" | "generic";
+export type ErrorCtx = "scan" | "publish" | "qr" | "generic";
 
 function friendly(raw: string): string {
   const r = raw.trim();
@@ -16,9 +16,6 @@ export function humanizeError(e: unknown, ctx: ErrorCtx = "generic"): string {
   const notfound = /enoent|no such file|not found|404/.test(low);
 
   switch (ctx) {
-    case "analytics":
-      if (net) return "读取失败：连不上采集服务，请检查「设置 → 埋点采集地址」";
-      return "读取失败：" + friendly(raw);
     case "scan":
       if (perm) return "扫描失败：没有权限访问该文件夹，换个位置或以管理员身份打开";
       if (notfound) return "扫描失败：找不到该文件夹，请重新选择视频根目录";

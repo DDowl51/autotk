@@ -3,7 +3,6 @@ export interface AppSettings {
   videoRoot: string; // 阶段 3 视频根文件夹（操作员本地路径）
   stalledMinutes: number; // 「疑似卡住」阈值（分钟）
   accent: string; // 主题色（信号色）
-  collectorUrl: string; // 埋点采集服务地址（数据看板用）
 }
 
 const KEY = "mc.settings";
@@ -12,7 +11,6 @@ const DEFAULTS: AppSettings = {
   videoRoot: "",
   stalledMinutes: 5,
   accent: "#c5f23f",
-  collectorUrl: "",
 };
 
 /** 纯函数：把存储的原始字符串解析成设置（含默认值兜底、坏数据容错）。可单测。 */

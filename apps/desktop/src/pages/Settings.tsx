@@ -16,7 +16,6 @@ export function Settings() {
   const publisher = useMemo(() => getPublisherApi(), []);
   const [url, setUrl] = useState(hubUrl);
   const [videoRoot, setVideoRoot] = useState(loadSettings().videoRoot);
-  const [collector, setCollector] = useState(loadSettings().collectorUrl);
   const [stall, setStall] = useState(stalledMinutes);
 
   const saveHub = () => {
@@ -169,31 +168,6 @@ export function Settings() {
             <Button onClick={saveRoot}>保存</Button>
           </Form>
         )}
-      </SectionCard>
-
-      <div style={{ height: 16 }} />
-
-      <SectionCard title="埋点采集地址">
-        <div style={{ color: "#8595a4", fontSize: 13, marginBottom: 12 }}>
-          「数据看板」从这个采集服务（collector）读事件统计。留空则看板不可用。
-        </div>
-        <Form layout="vertical" style={{ maxWidth: 460 }}>
-          <Form.Item label="Collector 地址">
-            <Input
-              value={collector}
-              onChange={(e) => setCollector(e.target.value)}
-              placeholder="http://你的服务器:4100"
-            />
-          </Form.Item>
-          <Button
-            onClick={() => {
-              saveSettings({ collectorUrl: collector.trim() });
-              message.success("已保存");
-            }}
-          >
-            保存
-          </Button>
-        </Form>
       </SectionCard>
 
       <div style={{ height: 16 }} />

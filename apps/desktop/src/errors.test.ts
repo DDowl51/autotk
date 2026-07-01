@@ -3,7 +3,6 @@ import { humanizeError } from "./errors";
 
 describe("humanizeError", () => {
   it("网络类 → 场景化补救", () => {
-    expect(humanizeError(new Error("connect ECONNREFUSED 1.2.3.4:4100"), "analytics")).toMatch(/采集服务/);
     expect(humanizeError(new Error("Network Error"), "publish")).toMatch(/网络异常/);
     expect(humanizeError(new Error("getaddrinfo ENOTFOUND"), "qr")).toMatch(/局域网/);
   });

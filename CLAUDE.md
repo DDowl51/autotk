@@ -54,7 +54,7 @@ docs/management-center/           管理中心 README + dev/req 文档
 - **mobile ↔ 管理中心**：手机端 `apps/mobile/src/hub/`（HubClient/reporter/configInbox）连云 Hub，上报状态/日志、收批量配置、收发布任务。协议两边各一份（`apps/mobile/src/hub/protocol.ts` 与 `packages/shared`），**不是同一份代码，改协议要两边同步**。手机用 `EXPO_PUBLIC_HUB_URL` 指向 Hub。
 - **mobile ↔ license**：手机端 `apps/mobile/src/license/` 通过 **vendored 的 license SDK** 做激活门禁 + 心跳。**改 `packages/license-sdk` 后需手动同步 vendored 副本到 `apps/mobile/src/license/sdk/`**（mobile 未进 workspace，暂时无法靠 workspace 依赖自动联动——phase 4 后可改为真正依赖、删副本）。上线前要在 license 后台建 `autotk` 产品，把 key/secret 填进 mobile config/.env。
 - **signing-station** 产出/分发的是 autotk 与 WDA 的 IPA 母包（`apps/wda.ipa` 云编译、`apps/autotk.ipa` 由 Mac `expo prebuild`）。不依赖其它包运行，但服务于 autotk 真机落地。
-- **telemetry** 是横切：三端各自 vendored/接入 `@telemetry/sdk`（三端接入尚未完成；同样待 phase 4 收编）。
+- **telemetry** 是横切：三端各自 vendored/接入 `@telemetry/sdk`。**方案已定（P4）：自建 collector、匿名无 PII、静默卖家遥测——买家侧无看板、无配置入口**（桌面原「数据看板」页 + 设置「埋点采集地址」已删）。`apps/mobile`/`apps/desktop`/`services/license` 三端已接入并在发（各自 env 开关 `EXPO_PUBLIC_TELEMETRY_URL`/`VITE_TELEMETRY_URL`/`TELEMETRY_URL`，未设则 no-op）；**仅 Hub 尚未接**。SDK 三份副本仍待 phase 4 收编。
 - **账号体系**：管理中心 Hub 与 license **各自独立、不共用、不同步**（早期曾设想同一套，已废弃）。
 
 ## 跨项目通用约定

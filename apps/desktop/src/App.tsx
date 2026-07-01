@@ -9,7 +9,6 @@ import {
   DeploymentUnitOutlined,
   WarningOutlined,
   HistoryOutlined,
-  BarChartOutlined,
 } from "@ant-design/icons";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
@@ -21,12 +20,11 @@ import { Overview } from "./pages/Overview";
 import { Devices } from "./pages/Devices";
 import { Alerts } from "./pages/Alerts";
 import { History } from "./pages/History";
-import { Analytics } from "./pages/Analytics";
 import { Publish } from "./pages/Publish";
 import { Settings } from "./pages/Settings";
 import { Guide } from "./pages/Guide";
 
-type View = "overview" | "devices" | "alerts" | "history" | "analytics" | "publish" | "settings" | "guide";
+type View = "overview" | "devices" | "alerts" | "history" | "publish" | "settings" | "guide";
 
 export default function App() {
   const [view, setView] = useState<View>("overview");
@@ -84,7 +82,6 @@ export default function App() {
     devices: <Devices goGuide={goGuide} />,
     alerts: <Alerts />,
     history: <History goDevices={() => setView("devices")} />,
-    analytics: <Analytics goSettings={() => setView("settings")} />,
     publish: <Publish />,
     settings: <Settings />,
     guide: <Guide />,
@@ -130,7 +127,6 @@ export default function App() {
                   icon: <WarningOutlined />,
                   label: summary.alerts > 0 ? `告警 (${summary.alerts})` : "告警",
                 },
-                { key: "analytics", icon: <BarChartOutlined />, label: "数据看板" },
               ],
             },
             {

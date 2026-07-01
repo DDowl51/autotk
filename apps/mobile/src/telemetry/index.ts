@@ -18,7 +18,7 @@ export function initTelemetry(): void {
   client = new TelemetryClient({
     endpoint: `${base}/v1/events`,
     system: "autotk",
-    appVersion: "autotk",
+    appVersion: "1.0.0",
     storage,
   });
   void client.init();

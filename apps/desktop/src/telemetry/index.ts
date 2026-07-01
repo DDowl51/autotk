@@ -13,7 +13,7 @@ export function initTelemetry(): void {
   client = new TelemetryClient({
     endpoint: `${base}/v1/events`,
     system: "management-center",
-    appVersion: "0.1.0",
+    appVersion: "1.0.0",
     fetch: (u, i) => fetch(u as string, i as RequestInit),
     storage: {
       getItem: (k) => {

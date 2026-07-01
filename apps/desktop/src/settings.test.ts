@@ -7,7 +7,6 @@ describe("parseSettings", () => {
     videoRoot: "",
     stalledMinutes: 5,
     accent: "#c5f23f",
-    collectorUrl: "",
   };
   it("null → 默认值", () => {
     expect(parseSettings(null)).toEqual(DEFAULTS);
