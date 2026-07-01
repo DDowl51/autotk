@@ -4,11 +4,10 @@
 
 ## 结构（pnpm monorepo）
 ```
-services/license   ← 后端 API（NestJS + Prisma + Postgres）
-packages/sdk       ← 客户端 SDK（纯 TS fetch，给 autotk/未来产品）
-packages/shared    ← 共享 zod schema / 类型（前后端 + SDK 共用）
-apps/web           ← 管理后台 + 客户端口（React + Vite + Ant Design）
-docker-compose.yml ← 本地一键起 postgres（+ 后端）
+services/license       ← 后端 API @license/api（NestJS + Prisma + Postgres；zod 直接内联，无独立 shared 包）
+packages/license-sdk   ← 客户端 SDK @license/sdk（纯 TS fetch，给 autotk/未来产品）
+apps/web               ← 管理后台 + 客户端口 @license/web（React + Vite + Ant Design）
+services/license/docker-compose.yml ← 本地一键起 postgres（+ 后端）
 ```
 
 ## 设计要点
@@ -30,7 +29,7 @@ pnpm --filter @license/api start:dev
 ## 进度
 - ✅ 数据模型（Prisma schema）+ 纯核心逻辑（HMAC 签名、发码、激活规则、统计）+ 单测。
 - ✅ 后端 NestJS API：客户端口（`/v1/activate`、`/v1/heartbeat`，HMAC 签名守卫）+ 管理端（产品 / 激活码增改·批量停用·导出 / 账号·分销配额停用 / stats 看板 / 个人中心）。三层测试（unit + vitest 集成 + HTTP/SDK e2e）。
-- ✅ 客户端 SDK（`packages/sdk`，已构建，含跨实现一致性测试）。
+- ✅ 客户端 SDK（`packages/license-sdk`，已构建，含跨实现一致性测试）。
 - ✅ 管理后台网页（`apps/web`，React+Vite+AntD 定制主题，8 个页面、recharts 看板、CSV 导出、角色化导航）。
 - ✅ Docker 化（Dockerfile + docker-compose 一键起 db + api）。
 - ⬜ 分销-产品可见性白名单（见 `todo.md`）。

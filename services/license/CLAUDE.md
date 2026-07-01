@@ -9,36 +9,34 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## 结构
 
 ```
-services/license   后端 API（NestJS + Prisma + PostgreSQL）
-packages/sdk       客户端 SDK（纯 TS，js-sha256 签名，给 autotk/未来产品）
-apps/web           管理后台（React + Vite + Ant Design + TanStack Query）
-docker-compose.yml 本地一键起 db + api
-docs/specs/        设计文档
+services/license        后端 API @license/api（NestJS + Prisma + PostgreSQL）
+packages/license-sdk    客户端 SDK @license/sdk（纯 TS，js-sha256 签名，给 autotk/未来产品）
+apps/web                管理后台 @license/web（React + Vite + Ant Design + TanStack Query）
+services/license/docker-compose.yml   本地一键起 db + api
+services/license/docs/specs/          设计文档
 ```
 
 ## 常用命令
 
 ```bash
 # 后端（services/license）—— 本机有 docker postgres 容器 license-pg:55432
-docker compose up -d --build                 # 起 db + api(:3001)
-docker compose exec api node dist/seed.js    # 建首个管理员 admin/admin123
-cd services/license
-npm run test:unit    # node:test 领域逻辑（无依赖）
-npm test             # vitest 集成（打真 postgres，需 DATABASE_URL）
-npm run test:e2e     # 启服务 + 签名请求 + SDK 全栈
-npm run build        # tsc 编译
+cd services/license && docker compose up -d --build              # 起 db + api(:3001)
+cd services/license && docker compose exec api node dist/seed.js # 建首个管理员 admin/admin123
+pnpm --filter @license/api run test:unit   # node:test 领域逻辑（无依赖）
+pnpm --filter @license/api test            # vitest 集成（打真 postgres，需 DATABASE_URL）
+pnpm --filter @license/api run test:e2e    # 启服务 + 签名请求 + SDK 全栈
+pnpm --filter @license/api build           # tsc 编译
 
-# SDK（packages/sdk）
-cd packages/sdk && npm test && npm run build
+# SDK（packages/license-sdk）
+pnpm --filter @license/sdk test && pnpm --filter @license/sdk build
 
 # 网页（apps/web）—— dev 时 vite 把 /admin 代理到 :3001
-cd apps/web
-npm run dev          # :5173
-npm run build        # tsc + vite 打包
-npm test             # vitest（纯逻辑，如 status.ts）
+pnpm --filter @license/web dev     # :5173
+pnpm --filter @license/web build   # tsc + vite 打包
+pnpm --filter @license/web test    # vitest（纯逻辑，如 status.ts）
 ```
 
-> npm 在本机带审批拦截安装脚本：装新依赖后若提示，跑 `npm approve-scripts <pkg>`（esbuild/prisma 等）。
+> 装新依赖若 pnpm 提示 build script 被拦截，跑 `pnpm approve-builds`（esbuild/prisma 等；常用的已列在根 `pnpm-workspace.yaml` 的 `onlyBuiltDependencies`）。
 
 ## 架构：端口-适配器（关键）
 

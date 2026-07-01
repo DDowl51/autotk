@@ -23,9 +23,10 @@ TypeScript + Fastify + Caddy(自动 TLS) + zsign + `node-app-store-connect-api`/
 
 ## 开发
 ```bash
-npm install
-npm test         # vitest
-npm run dev      # tsx watch src/main.ts
+pnpm install                          # 在 monorepo 根跑一次即可
+pnpm --filter signing-station test    # vitest
+pnpm --filter signing-station dev     # tsx watch src/main.ts
+pnpm --filter signing-station check   # 填完 config.json 后：账号自检 + 母包体检
 ```
 
 ## 部署（docker compose + Caddy 自动 TLS）

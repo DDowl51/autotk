@@ -3,7 +3,7 @@
 启动时校验激活码，未激活 → 激活页；已激活 → 进主界面；后台定时心跳续期 + 收远程封禁。
 
 ## 文件
-- `sdk/` —— **vendored 自 `license-saas/packages/sdk`**（去 .js 扩展名以兼容 Metro）。改 license SDK 后需同步过来。勿在此直接改逻辑。
+- `sdk/` —— **vendored 自 `packages/license-sdk`**（去 .js 扩展名以兼容 Metro）。改 license SDK 后需同步过来（见根 CLAUDE.md 耦合缝表）。勿在此直接改逻辑。
 - `config.ts` —— baseUrl / productKey / productSecret（可被 `EXPO_PUBLIC_*` 环境变量覆盖）。
 - `secureStorage.ts` —— 用 Keychain（expo-secure-store）存 token。
 - `deviceId.ts` —— iOS identifierForVendor，取不到则持久化随机 ID 兜底。

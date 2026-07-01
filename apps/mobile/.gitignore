@@ -3,3 +3,6 @@ ios/
 android/
 tools/dist/
 .expo/
+
+# license 密钥，勿提交
+.env

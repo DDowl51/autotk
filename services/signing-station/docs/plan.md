@@ -54,7 +54,9 @@
 
 ## 3. 模块拆分（纯逻辑优先、可单测）
 
-放在 `management-center/services/hub/src/ota/`。每个适配器都走端口接口，编排逻辑用假实现单测。
+> **（迁移后实况）** 已独立为 `services/signing-station/`，不在 management-center/hub 内：纯逻辑落在 `src/core/`（`manifest`/`enroll-profile`/`account-pool`/`signing-orchestrator`），适配器落在 `src/adapters/`（`asc-client`/`resign`/`ota-store`/`mobileconfig-sign`/`qr`/`ota-http`）。下表按最初规划撰写，落地位置以此实况为准。
+
+每个适配器都走端口接口，编排逻辑用假实现单测。
 
 | 文件 | 性质 | 职责 | 测试 |
 |---|---|---|---|

@@ -59,11 +59,16 @@ docs/management-center/           管理中心 README + dev/req 文档
 
 ## 跨项目通用约定
 
-- **改一处必须保证关联处仍能跑（强约束）**：这些包通过协议/SDK/IPA 母包/埋点互相咬合，**不允许改了一边导致另一边跑不起来**。动到下列任一处时，必须同步检查并改动配对处：
-  - `apps/mobile/src/hub/protocol.ts` ↔ `packages/shared` + `services/hub` 路由（消息格式两边各一份）。
-  - `packages/license-sdk` ↔ vendored 副本 `apps/mobile/src/license/sdk/`（改完手动同步）。
-  - autotk 的参数/产物形态 ↔ `services/signing-station` 母包入口；telemetry 事件 ↔ 各接入端。
-  改完把**两边的测试都跑一遍**确认仍绿，并在回复里说明波及到了哪些包。
+- **改一处必须保证关联处仍能跑（强约束）**：这些包通过协议/SDK/IPA 母包/埋点互相咬合，**不允许改了一边导致另一边跑不起来**。改「源」必同步「副本/消费方」（下表状态已用代码核实）：
+
+  | 耦合缝 | 源 | 副本/消费方 | 状态 | 改动纪律 |
+  |---|---|---|---|---|
+  | Hub 协议 | `packages/shared/src/protocol.ts`（全量 16 事件） | `apps/mobile/src/hub/protocol.ts`（设备侧子集 7 事件）+ `services/hub/src/gateway.ts` 消费 | 有意漂移（手机端只留子集，不含 operator 事件） | 改**设备侧**事件才需三处同步 shared→mobile→gateway；跑 `pnpm --filter @mc/hub test` |
+  | license SDK | `packages/license-sdk/src/`（`@license/sdk`） | vendored `apps/mobile/src/license/sdk/`（client/errors/signing/storage 四文件） | 漂移（逻辑同，仅注释/导入风格异） | 改后**整文件拷**到手机端；跑 `pnpm --filter @license/sdk test` |
+  | telemetry SDK | `packages/telemetry-sdk/src/`（`@telemetry/sdk`） | vendored 三份：`apps/mobile`/`apps/desktop`/`services/license` 各 `src/telemetry/sdk/`（**Hub 尚未接**） | 当前逐字节同步 | 改后拷到**三个**副本；各端入口 `initTelemetry()` |
+  | IPA 母包 | Mac `expo prebuild`（autotk）/ 云编译（WDA） | `services/signing-station/apps/*.ipa`（母包入口 + `requiresXctest`） | 二进制，gitignore | 改 autotk 产物形态 → 对齐母包入口；WDA 母包必须含 XCTest，`pnpm --filter signing-station check` 会校验 |
+
+  根因：`apps/mobile` 被 `!apps/mobile` 排除出 workspace，无法用 workspace 依赖联动，故只能 vendored + 手动同步；phase 4 收编后可删这些副本。改完把**两边的测试都跑一遍**确认仍绿，并在回复里说明波及到了哪些包。
 - **架构基调到处是「端口-适配器」**：纯业务逻辑放不依赖框架的 `core`/`domain`（用假实现单测），框架/外部脏活（Prisma、HTTP、zsign、socket.io、ImageMagick）放 `adapters`。**改规则改核心层并补测，改接线改适配器。**
 - **测试纪律**：纯逻辑都有自动化测试，回归靠各包测试；真机/Electron/Postgres 相关的接线层只能在对应运行时验（见 `真机与上线收尾清单.md`）。改完跑对应测试保持绿。
 - 装新依赖若 pnpm 提示 build script 被拦截，跑 `pnpm approve-builds`（esbuild/electron/prisma 等；常用的已列在 `pnpm-workspace.yaml` 的 `onlyBuiltDependencies`）。
