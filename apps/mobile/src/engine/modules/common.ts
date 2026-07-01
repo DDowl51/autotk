@@ -14,8 +14,11 @@ export async function interactWithVideo(
   gen: CommentGenerator,
   mp: ModuleInteractionParams,
   video: VideoInfo,
+  /** 评论匹配词覆盖（关注监控/打粉用自己的词）；不传则用全局 commentMatchKeywords。 */
+  matchKeywords?: string[],
 ): Promise<void> {
   const { stats, params } = ctx;
+  const keywords = matchKeywords ?? params.commentMatchKeywords;
 
   // —— 视频级：点赞 / 收藏 / 关注 ——
   if (chance(mp.videoLikeProb)) {
@@ -57,8 +60,8 @@ export async function interactWithVideo(
     for (const c of comments) {
       if (ctx.shouldStop() || replied >= mp.commentReplyMaxCount) break;
       // #3：配了"评论匹配词" → 只回复命中的评论作者；没配 → 沿用旧行为（按概率回复）。
-      const matchedKw = matchComment(c.text, params.commentMatchKeywords);
-      if (params.commentMatchKeywords.length > 0 && !matchedKw) continue;
+      const matchedKw = matchComment(c.text, keywords);
+      if (keywords.length > 0 && !matchedKw) continue;
       if (chance(mp.commentReplyProb)) {
         const text = await gen.reply({
           videoCaption: video.caption,

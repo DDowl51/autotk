@@ -15,6 +15,7 @@ import { useEngine } from "./useEngine";
 import { COLORS, StepperField, SwitchField } from "./fields";
 import { KeywordsTab } from "./tabs/KeywordsTab";
 import { ModuleTab } from "./tabs/ModuleTab";
+import { FollowingTab } from "./tabs/FollowingTab";
 import { ScheduleTab } from "./tabs/ScheduleTab";
 import { LogsTab } from "./tabs/LogsTab";
 import { InspectorTab } from "./tabs/InspectorTab";
@@ -24,6 +25,7 @@ type TabKey =
   | "forYou"
   | "kwSearch"
   | "persHome"
+  | "following"
   | "schedule"
   | "logs"
   | "debug";
@@ -33,6 +35,7 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: "forYou", label: "推荐页" },
   { key: "kwSearch", label: "搜索页" },
   { key: "persHome", label: "个人主页" },
+  { key: "following", label: "关注监控" },
   { key: "schedule", label: "时间" },
   { key: "logs", label: "日志" },
   { key: "debug", label: "调试" },
@@ -50,6 +53,9 @@ export default function ConfigScreen({ initialParams }: { initialParams?: Automa
   // 固定回复一行一条（回复内容可能含逗号，故只按换行拆）。
   const [replyText, setReplyText] = useState(params.fixedReplies.join("\n"));
   const [matchText, setMatchText] = useState(params.commentMatchKeywords.join(", "));
+  // 关注监控（打粉）覆盖用文本（留空则沿用全局）。
+  const [fMatchText, setFMatchText] = useState((params.following.commentMatchKeywords ?? []).join(", "));
+  const [fReplyText, setFReplyText] = useState((params.following.fixedReplies ?? []).join("\n"));
   const splitWords = (t: string) =>
     t.split(/[,\n]/).map((s) => s.trim()).filter(Boolean);
   const splitLines = (t: string) =>
@@ -65,10 +71,15 @@ export default function ConfigScreen({ initialParams }: { initialParams?: Automa
     negPrompts: splitWords(negText),
     fixedReplies: splitLines(replyText),
     commentMatchKeywords: splitWords(matchText),
+    following: {
+      ...base.following,
+      commentMatchKeywords: splitWords(fMatchText),
+      fixedReplies: splitLines(fReplyText),
+    },
   });
-  // 切换标签时把文本框提交进 params（→ 触发持久化），不必等按「启动」。
+  // 切换标签时把所有文本框提交进 params（→ 触发持久化），不必等按「启动」。
   const switchTab = (k: TabKey) => {
-    if (tab === "kw" && k !== "kw") setParams(buildTextMerged(params));
+    setParams(buildTextMerged(params));
     setTab(k);
   };
 
@@ -227,6 +238,17 @@ export default function ConfigScreen({ initialParams }: { initialParams?: Automa
                 />
               </View>
             }
+          />
+        )}
+
+        {tab === "following" && (
+          <FollowingTab
+            params={params}
+            patch={patch}
+            match={fMatchText}
+            setMatch={setFMatchText}
+            reply={fReplyText}
+            setReply={setFReplyText}
           />
         )}
 

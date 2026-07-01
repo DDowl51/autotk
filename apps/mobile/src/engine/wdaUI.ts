@@ -127,6 +127,15 @@ export function createWdaUI(log: Log): TikTokUI {
       log("已切到 TikTok 推荐页");
     },
 
+    async openFollowingFeed() {
+      await ensure();
+      const els = await snapshot();
+      const follow = findByName(els, "top_tabs_follow");
+      if (follow) await tap(center(follow));
+      else log("未找到「关注」tab（元素名待核实）");
+      log("已切到 TikTok 关注页");
+    },
+
     async swipeToNextVideo() {
       await ensure();
       const { width: w, height: h } = size;

@@ -221,6 +221,17 @@ export function createOnDeviceUI(deps: {
       log("已确保 TikTok 在前台（推荐页）");
     },
 
+    async openFollowingFeed() {
+      await ensure();
+      await goTo("feed"); // 先确保在主 feed（顶部才有「关注 / 推荐」切换）
+      // 顶部「关注」tab 在「推荐」左侧、顶部居中偏左（坐标待 REPL 标定）。
+      await tap({ x: size.width * 0.38, y: size.height * 0.065 });
+      await sleep(1200);
+      await dismissPopup(); // 切流概率弹登录/passkey 窗
+      page = "feed"; // 关注流与推荐流操作一致，视作 feed
+      log("已切到「关注」视频流");
+    },
+
     async swipeToNextVideo() {
       await ensure();
       await goTo("feed");

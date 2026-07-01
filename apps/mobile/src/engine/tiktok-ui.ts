@@ -23,6 +23,8 @@ export interface CommentInfo {
 export interface TikTokUI {
   // —— 推荐页 ——
   openForYou(): Promise<void>;
+  /** 切到「关注」流（你关注的账号发的视频）。用于关注监控/打粉。 */
+  openFollowingFeed(): Promise<void>;
   swipeToNextVideo(): Promise<void>;
   readCurrentVideo(): Promise<VideoInfo>;
 
@@ -111,6 +113,7 @@ export function createStubUI(): TikTokUI {
   };
   return {
     openForYou: stub("openForYou"),
+    openFollowingFeed: stub("openFollowingFeed"),
     swipeToNextVideo: stub("swipeToNextVideo"),
     readCurrentVideo: stub("readCurrentVideo"),
     likeVideo: stub("likeVideo"),

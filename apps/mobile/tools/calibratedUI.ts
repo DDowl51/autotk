@@ -112,6 +112,16 @@ export function createCalibratedUI(log: Log): TikTokUI {
       log("已确保 TikTok 在前台（推荐页）");
     },
 
+    async openFollowingFeed() {
+      await ensure();
+      await goTo("feed");
+      // 顶部「关注」tab（在「推荐」左侧、顶部居中偏左；坐标待 REPL 核实）。
+      await tap({ x: size.width * 0.38, y: size.height * 0.065 });
+      await sleep(1200);
+      page = "feed"; // 关注流与推荐流操作一致
+      log("已切到「关注」视频流");
+    },
+
     async swipeToNextVideo() {
       await ensure();
       await goTo("feed");

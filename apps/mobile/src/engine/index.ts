@@ -11,6 +11,7 @@ import { jitter, randInt } from "./random";
 import { runForYou } from "./modules/forYou";
 import { runKwSearch } from "./modules/kwSearch";
 import { runPersHome } from "./modules/persHome";
+import { runFollowingFeed } from "./modules/followingFeed";
 
 export interface EngineDeps {
   params: AutomationParams;
@@ -95,6 +96,20 @@ export function createEngine(deps: EngineDeps): Engine {
 
     let idleLogged = false;
     let consecutiveErrors = 0;
+    let followingTurn = false; // 关注监控开启时，与养号交替执行
+
+    // 养号一批：按搜索占比分发推荐页 / 搜索页。
+    const runGrooming = async () => {
+      const kind = pickModule(params.kwSearchExecRatio);
+      if (kind === "kwSearch") {
+        currentModule = "kwSearch";
+        await runKwSearch(ctx, ui, gen, randInt(3, 8));
+      } else {
+        currentModule = "forYou";
+        await runForYou(ctx, ui, gen, randInt(5, 15));
+      }
+    };
+
     try {
       while (!stopped) {
         if (!params.allDay && !isWithinAnyWindow(params.taskWindows)) {
@@ -122,16 +137,17 @@ export function createEngine(deps: EngineDeps): Engine {
             persHomeRanOn = todayKey();
             currentModule = "persHome";
             await runPersHome(ctx, ui, gen);
-          } else {
-            // 按搜索占比分发一个批次。
-            const kind = pickModule(params.kwSearchExecRatio);
-            if (kind === "kwSearch") {
-              currentModule = "kwSearch";
-              await runKwSearch(ctx, ui, gen, randInt(3, 8));
+          } else if (params.following.moduleEnable) {
+            // 关注监控开启：与养号交替（本批打粉，下批养号），既引流又保号。
+            followingTurn = !followingTurn;
+            if (followingTurn) {
+              currentModule = "following";
+              await runFollowingFeed(ctx, ui, gen, randInt(3, 8));
             } else {
-              currentModule = "forYou";
-              await runForYou(ctx, ui, gen, randInt(5, 15));
+              await runGrooming();
             }
+          } else {
+            await runGrooming();
           }
 
           consecutiveErrors = 0;

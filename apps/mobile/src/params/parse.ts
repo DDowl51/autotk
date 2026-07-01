@@ -131,6 +131,22 @@ export function fromLegacy(p: LegacyParams): AutomationParams {
       maxVideoCount: num(p.pers_home_vid_int_max_count, 3),
     },
 
+    // 关注监控（打粉）：原版无此模块，全部用默认，默认关。
+    following: {
+      moduleEnable: false,
+      interactEnable: true,
+      interactProb: 1,
+      videoLikeProb: 0,
+      videoSaveProb: 0,
+      videoFollowProb: 0,
+      commentLikeProb: 0.3,
+      commentReplyProb: 0.8,
+      commentLikeMaxCount: 3,
+      commentReplyMaxCount: 3,
+      commentMatchKeywords: [],
+      fixedReplies: [],
+    },
+
     taskWindows: windows,
   };
 }
@@ -168,6 +184,12 @@ export function validateParams(p: AutomationParams): string[] {
     ["个人主页互动概率", p.persHome.interactProb],
     ["个人主页评论点赞概率", p.persHome.commentLikeProb],
     ["个人主页评论回复概率", p.persHome.commentReplyProb],
+    ["关注监控进评论区概率", p.following.interactProb],
+    ["关注监控点赞概率", p.following.videoLikeProb],
+    ["关注监控收藏概率", p.following.videoSaveProb],
+    ["关注监控关注概率", p.following.videoFollowProb],
+    ["关注监控评论点赞概率", p.following.commentLikeProb],
+    ["关注监控评论回复概率", p.following.commentReplyProb],
   ];
   for (const [name, v] of probs) {
     if (!isProb(v)) errors.push(`${name} 必须在 0~1 之间（当前 ${v}）`);

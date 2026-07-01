@@ -27,6 +27,7 @@ export function createMockUI(log: Log): TikTokUI {
 
   return {
     openForYou: () => act("打开推荐页"),
+    openFollowingFeed: () => act("切到「关注」流"),
     swipeToNextVideo: () => act("上滑到下一个视频", 0.6),
     readCurrentVideo: async (): Promise<VideoInfo> => {
       await jitterSleep(0.3);

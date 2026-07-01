@@ -57,6 +57,23 @@ export const DEFAULT_PARAMS: AutomationParams = {
     maxVideoCount: 3,
   },
 
+  // 关注监控（打粉）：默认关。打粉聚焦评论回复 → 视频点赞/收藏/关注默认关，
+  // 进评论区概率拉满（这是打粉的目的），命中关键词的评论优先回复。
+  following: {
+    moduleEnable: false,
+    interactEnable: true,
+    interactProb: 1,
+    videoLikeProb: 0,
+    videoSaveProb: 0,
+    videoFollowProb: 0,
+    commentLikeProb: 0.3,
+    commentReplyProb: 0.8,
+    commentLikeMaxCount: 3,
+    commentReplyMaxCount: 3,
+    commentMatchKeywords: [], // 空=沿用全局评论匹配词
+    fixedReplies: [], // 空=沿用全局固定回复
+  },
+
   allDay: false,
   taskWindows: [
     { start: "07:00:00", end: "11:00:00" },

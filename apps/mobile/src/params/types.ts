@@ -75,6 +75,18 @@ export interface AutomationParams {
     /** 进入个人主页后，对多少条自己的作品进行互动。 */
     maxVideoCount: number;
   };
+  /**
+   * 关注监控（打粉）：监控「关注」流里你关注的账号发的视频，
+   * 进其评论区、对命中关键词的评论回复引流话术。开启后与养号轮流执行。
+   */
+  following: ModuleInteractionParams & {
+    /** 打粉总开关。默认关。 */
+    moduleEnable: boolean;
+    /** 打粉专用评论匹配词；留空（空数组）则沿用全局 commentMatchKeywords。 */
+    commentMatchKeywords?: string[];
+    /** 打粉专用固定回复（引流话术）；留空（空数组）则沿用全局 fixedReplies。 */
+    fixedReplies?: string[];
+  };
 
   // —— 分时段调度 ——
   /**
