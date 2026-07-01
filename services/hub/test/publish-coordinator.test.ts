@@ -25,7 +25,7 @@ function fakeTimers() {
   return { timers, fireAll: () => [...fns].forEach((f) => f()), count: () => fns.length };
 }
 
-function mk(online: Set<string>, timers?: Timers) {
+function mk(online: Set<string>, timers?: Timers, now?: () => number) {
   const progress: PublishProgressMsg[] = [];
   const sent: string[] = [];
   const c = new PublishCoordinator(
@@ -35,7 +35,7 @@ function mk(online: Set<string>, timers?: Timers) {
       return true;
     },
     (p) => progress.push(p),
-    { timeoutMs: 1000, timers },
+    { timeoutMs: 1000, timers, now },
   );
   return { c, progress, sent };
 }
@@ -95,5 +95,39 @@ describe("PublishCoordinator", () => {
     const before = progress.length;
     c.onResult("nope", "published");
     expect(progress.length).toBe(before);
+  });
+
+  it("定时·未来时刻：先 scheduled、不下发；到点触发才 sent", () => {
+    const ft = fakeTimers();
+    const { c, progress, sent } = mk(new Set(["d"]), ft.timers, () => 1000);
+    c.start({ ...task("t1"), scheduledAtMs: 5000 });
+    expect(sent).toEqual([]);
+    expect(statuses(progress, "t1")).toEqual(["scheduled"]);
+    expect(c.pendingCount()).toBe(1);
+    ft.fireAll(); // 到点
+    expect(sent).toEqual(["t1"]);
+    expect(statuses(progress, "t1")).toEqual(["scheduled", "sent"]);
+    // 到点后进入正常流程，可继续回报直至终态。
+    c.onResult("t1", "published");
+    expect(c.pendingCount()).toBe(0);
+  });
+
+  it("定时·过去时刻：等同立即下发", () => {
+    const { c, progress, sent } = mk(new Set(["d"]), undefined, () => 10_000);
+    c.start({ ...task("t1"), scheduledAtMs: 5000 });
+    expect(sent).toEqual(["t1"]);
+    expect(statuses(progress, "t1")).toEqual(["sent"]);
+  });
+
+  it("定时到点前设备离线 → offline，不残留占位", () => {
+    const ft = fakeTimers();
+    const online = new Set<string>(["d"]);
+    const { c, progress, sent } = mk(online, ft.timers, () => 1000);
+    c.start({ ...task("t1"), scheduledAtMs: 5000 });
+    online.delete("d"); // 到点前掉线
+    ft.fireAll();
+    expect(sent).toEqual([]);
+    expect(statuses(progress, "t1")).toEqual(["scheduled", "offline"]);
+    expect(c.pendingCount()).toBe(0);
   });
 });

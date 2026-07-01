@@ -21,6 +21,7 @@ const realTimers: Timers = {
 export interface PublishOpts {
   timeoutMs?: number; // 多久没有任何进展就判 timeout（下载/发布耗时，默认 120s）
   timers?: Timers;
+  now?: () => number; // 当前时刻（注入便于测试定时发送）
 }
 
 /**
@@ -37,6 +38,7 @@ export class PublishCoordinator {
   private readonly pending = new Map<string, { deviceId: string; cancel: () => void }>();
   private readonly timeoutMs: number;
   private readonly timers: Timers;
+  private readonly now: () => number;
 
   constructor(
     private readonly send: SendPublishTask,
@@ -45,9 +47,24 @@ export class PublishCoordinator {
   ) {
     this.timeoutMs = opts.timeoutMs ?? 120_000;
     this.timers = opts.timers ?? realTimers;
+    this.now = opts.now ?? Date.now;
   }
 
   start(task: PublishTask): void {
+    const at = task.scheduledAtMs;
+    if (at != null && at > this.now()) {
+      // 定时：先报「待发」并占位，到点再真正下发。手机侧无感知（收到即发）。
+      // 注意：定时器在内存，Hub 重启会丢失未到点的排期（见路线图；如需持久化改存储）。
+      this.emit(task.taskId, task.deviceId, "scheduled");
+      const cancel = this.timers.set(() => this.dispatch(task), at - this.now());
+      this.pending.set(task.taskId, { deviceId: task.deviceId, cancel });
+      return;
+    }
+    this.dispatch(task);
+  }
+
+  /** 立即把任务下发到设备并装上「无进展超时」；离线则终态 offline。 */
+  private dispatch(task: PublishTask): void {
     const online = this.send(task.deviceId, {
       taskId: task.taskId,
       videoName: task.videoName,
@@ -55,6 +72,7 @@ export class PublishCoordinator {
       source: task.source,
     });
     if (!online) {
+      this.pending.delete(task.taskId); // 清掉可能存在的「待发」占位
       this.progress({ taskId: task.taskId, deviceId: task.deviceId, status: "offline" });
       return;
     }

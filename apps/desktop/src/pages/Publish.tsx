@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Button, Table, Tag, Space, Segmented, Input, Alert, message, type TableColumnsType } from "antd";
+import { Button, Table, Tag, Space, Segmented, Input, Alert, DatePicker, message, type TableColumnsType } from "antd";
 import { FolderOpenOutlined, ReloadOutlined, SendOutlined } from "@ant-design/icons";
+import dayjs, { type Dayjs } from "dayjs";
 import type { PublishSource, PublishTask } from "@mc/shared";
 import { useHub } from "../hubState";
 import { loadSettings, saveSettings } from "../settings";
@@ -17,6 +18,7 @@ const hhmm = (ts: number) => {
 };
 const STATUS_TAG: Record<RowStatus, { color: string; label: string }> = {
   queued: { color: "default", label: "排队中" },
+  scheduled: { color: "processing", label: "待发" },
   sent: { color: "processing", label: "已下发" },
   downloading: { color: "processing", label: "下载中" },
   downloaded: { color: "processing", label: "已入相册" },
@@ -33,6 +35,9 @@ export function Publish() {
   const [root, setRoot] = useState(() => loadSettings().videoRoot);
   const [plans, setPlans] = useState<DevicePlan[]>([]);
   const [mode, setMode] = useState<"lan" | "relay">("lan");
+  // 发送时机：立即 or 定时（定时用 `at`，Hub 到点再下发）。
+  const [when, setWhen] = useState<"now" | "scheduled">("now");
+  const [at, setAt] = useState<Dayjs | null>(null);
   const [busy, setBusy] = useState(false);
   const markedRef = useRef<Set<string>>(new Set());
 
@@ -79,7 +84,14 @@ export function Publish() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [publishTasks]);
 
-  async function publishOne(deviceName: string, item: PublishPlanItem) {
+  /** 定时模式下解析目标时刻；未选/已过则返回 "invalid"（调用方拦下并提示）。 */
+  function resolveScheduledAt(): number | undefined | "invalid" {
+    if (when !== "scheduled") return undefined;
+    if (!at || at.valueOf() <= Date.now()) return "invalid";
+    return at.valueOf();
+  }
+
+  async function publishOne(deviceName: string, item: PublishPlanItem, scheduledAtMs?: number) {
     const dev = deviceByName.get(deviceName);
     if (!dev || !dev.online) {
       message.warning(`「${deviceName}」当前不在线，无法发布`);
@@ -99,16 +111,26 @@ export function Publish() {
         videoName: item.fileName,
         caption: item.caption,
         source,
+        scheduledAtMs,
       };
       enqueuePublish(task, deviceName, item.fileName);
-      message.success(`已发起：${item.fileName} → ${deviceName}`);
+      message.success(
+        scheduledAtMs
+          ? `已定时：${item.fileName} → ${deviceName}（${hhmm(scheduledAtMs)} 发送）`
+          : `已发起：${item.fileName} → ${deviceName}`,
+      );
     } catch (e) {
       message.error(`发布失败：${e instanceof Error ? e.message : String(e)}`);
     }
   }
 
   async function publishAll(plan: DevicePlan) {
-    for (const item of plan.pending) await publishOne(plan.deviceName, item);
+    const sched = resolveScheduledAt();
+    if (sched === "invalid") {
+      message.warning("请先选择一个将来的发送时间");
+      return;
+    }
+    for (const item of plan.pending) await publishOne(plan.deviceName, item, sched);
   }
 
   if (!api) {
@@ -169,6 +191,30 @@ export function Publish() {
           />
           {!connected && <Tag color="warning">未连接 Hub，无法下发</Tag>}
         </div>
+        <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <span style={{ color: C.dim, fontSize: 13 }}>发送时机</span>
+          <Segmented
+            value={when}
+            onChange={(v) => setWhen(v as "now" | "scheduled")}
+            options={[
+              { label: "立即发送", value: "now" },
+              { label: "定时发送", value: "scheduled" },
+            ]}
+          />
+          {when === "scheduled" && (
+            <DatePicker
+              showTime={{ format: "HH:mm" }}
+              format="YYYY-MM-DD HH:mm"
+              value={at}
+              onChange={setAt}
+              placeholder="选择发送时间"
+              disabledDate={(d) => !!d && d.isBefore(dayjs().startOf("day"))}
+            />
+          )}
+          {when === "scheduled" && (
+            <span style={{ color: C.faint, fontSize: 12 }}>到点由电脑自动发送，电脑需保持开启</span>
+          )}
+        </div>
       </SectionCard>
 
       <div style={{ height: 16 }} />
@@ -199,9 +245,16 @@ export function Publish() {
                   size="small"
                   icon={<SendOutlined />}
                   disabled={!online || !connected}
-                  onClick={() => publishOne(plan.deviceName, item)}
+                  onClick={() => {
+                    const sched = resolveScheduledAt();
+                    if (sched === "invalid") {
+                      message.warning("请先选择一个将来的发送时间");
+                      return;
+                    }
+                    void publishOne(plan.deviceName, item, sched);
+                  }}
                 >
-                  发布
+                  {when === "scheduled" ? "定时" : "发布"}
                 </Button>
               ),
             },

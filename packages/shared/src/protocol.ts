@@ -157,10 +157,19 @@ export interface PublishTask {
   videoName: string;
   caption: string;
   source: PublishSource;
+  /**
+   * 定时发送的目标时刻（epoch ms）。缺省/过去 = 立即下发；
+   * 未来 = Hub 持有到点再下发（手机侧无需改动，收到即发）。
+   */
+  scheduledAtMs?: number;
 }
 
-/** 发布状态机：sent→downloading→downloaded→publishing→published；或 failed/offline/timeout。 */
+/**
+ * 发布状态机：scheduled（Hub 待发）→ sent→downloading→downloaded→publishing→published；
+ * 或 failed/offline/timeout。scheduled 是 Hub 侧「已排期未下发」的中间态，手机不产生。
+ */
 export type PublishStatus =
+  | "scheduled"
   | "sent"
   | "downloading"
   | "downloaded"
