@@ -18,6 +18,8 @@ export interface HubClientOptions {
   onConfigApply?: (m: ConfigApplyMsg) => void;
   /** 收到发布任务时回调（useEngine 注入：下载入相册→发布→回报）。 */
   onPublishTask?: (m: PublishTaskMsg) => void;
+  /** 连接状态变化回调（用于 UI 显示「已连接/未连接控制中心」）。 */
+  onConnectionChange?: (connected: boolean) => void;
 }
 
 /**
@@ -42,8 +44,17 @@ export class HubClient {
         version: this.opts.version,
       },
       transports: ["websocket"],
+      // 无限重试 + 有界退避：Hub 未启动 / 晚于手机启动 / 重启 / IP 变后都能自动连上。
       reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      timeout: 20000,
     });
+    const notify = () => this.opts.onConnectionChange?.(!!this.socket?.connected);
+    this.socket.on("connect", notify);
+    this.socket.on("disconnect", notify);
+    this.socket.on("connect_error", notify);
     this.socket.on(EVT.logsWanted, (m: { on?: boolean }) => {
       this.watched = !!m?.on;
       this.scheduleFlush();
@@ -73,6 +84,10 @@ export class HubClient {
 
   log(line: DeviceLogMsg): void {
     this.buf.push(line);
+  }
+
+  isConnected(): boolean {
+    return !!this.socket?.connected;
   }
 
   disconnect(): void {

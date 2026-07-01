@@ -8,7 +8,9 @@ import { createRealUI } from "./realUI";
 import { startKeepAlive, stopKeepAlive } from "./keepalive";
 import type { TikTokUI } from "../engine/tiktok-ui";
 import { HubClient } from "../hub/client";
-import { hubEnabled, HUB_CONFIG } from "../hub/config";
+import { HUB_CONFIG, setHubUrl } from "../hub/config";
+import { getStoredHubUrl, setStoredHubUrl } from "../hub/hubUrlStore";
+import { startHubDiscovery } from "../hub/discovery";
 import { resolveDeviceName } from "../hub/deviceName";
 import { buildStatus, mapBattery } from "../hub/reporter";
 import { applyConfigPatch } from "../hub/configInbox";
@@ -37,6 +39,12 @@ export interface EngineState {
   start: () => void;
   stop: () => void;
   clearLogs: () => void;
+  /** 是否已连上控制中心（Hub）。 */
+  hubConnected: boolean;
+  /** 当前控制中心地址（空=未配置）。 */
+  hubUrl: string;
+  /** 设定控制中心地址（扫码/手动输入调用）：持久化 + 触发重连。 */
+  setHubEndpoint: (url: string) => void;
 }
 
 /** 真机模式优先（dev build 上有 vision-ocr）；不可用则回退演示模式。 */
@@ -59,6 +67,11 @@ export function useEngine(initialParams?: AutomationParams): EngineState {
   const [mode, setMode] = useState<EngineMode>("mock");
   const [logs, setLogs] = useState<string[]>([]);
   const [stats, setStats] = useState<RunStats>(emptyStats());
+  // 控制中心连接：地址（扫码/自动发现/持久化/env 默认）+ 是否已连上。
+  const [hubUrl, setHubUrlState] = useState<string>(HUB_CONFIG.url);
+  const [hubConnected, setHubConnected] = useState(false);
+  const hubUrlRef = useRef(hubUrl);
+  hubUrlRef.current = hubUrl;
 
   const engineRef = useRef<Engine | null>(null);
   const uiRef = useRef<TikTokUI | null>(null);
@@ -218,10 +231,35 @@ export function useEngine(initialParams?: AutomationParams): EngineState {
     return () => clearTimeout(h);
   }, [params]);
 
-  // 接入管理中心 Hub（配置了 EXPO_PUBLIC_HUB_URL 才接）：上报状态 + 日志。
+  // 设定控制中心地址：写 config + 持久化 + 触发重连（下方 hub 连接 effect 依赖 hubUrl）。
+  const setHubEndpoint = useCallback((url: string) => {
+    const u = (url || "").trim();
+    if (!u) return;
+    setHubUrl(u);
+    void setStoredHubUrl(u);
+    setHubUrlState(u);
+  }, []);
+
+  // 挂载：载入上次记住的地址 + 启动局域网自动发现（都失败也不影响本机运行）。
+  useEffect(() => {
+    void getStoredHubUrl().then((stored) => {
+      if (stored) setHubEndpoint(stored);
+    });
+    let disc: { stop(): void } | null = null;
+    try {
+      disc = startHubDiscovery((url) => {
+        if (!hubUrlRef.current) setHubEndpoint(url); // 还没地址时才采用自动发现到的
+      });
+    } catch {
+      // 自动发现不可用（无原生模块/权限）→ 靠扫码或手填
+    }
+    return () => disc?.stop();
+  }, [setHubEndpoint]);
+
+  // 接入管理中心 Hub（有地址才接，地址变则重连）：上报状态 + 日志。
   // 失败不影响 autotk 本体运行；autotk 一打开就在线，引擎跑不跑只改 running 字段。
   useEffect(() => {
-    if (!hubEnabled()) return;
+    if (!hubUrl) return;
     let client: HubClient | null = null;
     let statusTimer: ReturnType<typeof setInterval> | null = null;
     let batteryTimer: ReturnType<typeof setInterval> | null = null;
@@ -240,10 +278,11 @@ export function useEngine(initialParams?: AutomationParams): EngineState {
         const deviceId = await resolveDeviceId();
         if (!alive) return;
         client = new HubClient({
-          url: HUB_CONFIG.url,
+          url: hubUrl,
           deviceId,
           deviceName: resolveDeviceName(),
           version: "autotk",
+          onConnectionChange: (c) => setHubConnected(c),
           onConfigApply: (m) => {
             // 批量配置下发：深合并到最新 params + 校验，整体接受或整体拒绝并回执。
             const res = applyConfigPatch(paramsRef.current, m.patch);
@@ -288,8 +327,10 @@ export function useEngine(initialParams?: AutomationParams): EngineState {
       if (batteryTimer) clearInterval(batteryTimer);
       client?.disconnect();
       hubRef.current = null;
+      setHubConnected(false);
     };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hubUrl]);
 
   // 卸载时清理。
   useEffect(() => {
@@ -299,5 +340,18 @@ export function useEngine(initialParams?: AutomationParams): EngineState {
     };
   }, []);
 
-  return { params, setParams, running, mode, logs, stats, start, stop, clearLogs };
+  return {
+    params,
+    setParams,
+    running,
+    mode,
+    logs,
+    stats,
+    start,
+    stop,
+    clearLogs,
+    hubConnected,
+    hubUrl,
+    setHubEndpoint,
+  };
 }

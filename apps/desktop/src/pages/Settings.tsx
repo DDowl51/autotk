@@ -7,9 +7,10 @@ import { loadSettings, saveSettings } from "../settings";
 import { getPublisherApi } from "../publish-ipc";
 import { PageHeader, SectionCard } from "../ui";
 import { C, ACCENTS } from "../theme";
+import { QrPanel } from "./QrPanel";
 
 export function Settings() {
-  const { hubUrl, setHubUrl, reconnect, connected, stalledMinutes, setStalledMinutes } = useHub();
+  const { hubUrl, setHubUrl, reconnect, connected, embedded, stalledMinutes, setStalledMinutes } = useHub();
   const { accent, setAccent } = useAppTheme();
   const { message } = AntApp.useApp();
   const publisher = useMemo(() => getPublisherApi(), []);
@@ -41,18 +42,29 @@ export function Settings() {
     <>
       <PageHeader title="设置" />
 
-      <SectionCard title="Hub 连接">
-        <div style={{ color: "#8595a4", fontSize: 13, marginBottom: 12 }}>
-          手机和本管理中心都连到这个 Hub 地址。当前：{connected ? "已连接" : "未连接"}
-        </div>
-        <Form layout="vertical" style={{ maxWidth: 460 }}>
-          <Form.Item label="Hub 地址">
-            <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="http://localhost:4000" />
-          </Form.Item>
-          <Button type="primary" onClick={saveHub}>
-            保存并重连
-          </Button>
-        </Form>
+      <SectionCard title="连接手机">
+        {embedded ? (
+          <>
+            <div style={{ color: "#8595a4", fontSize: 13, marginBottom: 12 }}>
+              控制中心已在本机运行（{connected ? "运行中" : "启动中…"}）。用手机 App 扫下面的二维码即可连上，无需填地址。
+            </div>
+            <QrPanel />
+          </>
+        ) : (
+          <>
+            <div style={{ color: "#8595a4", fontSize: 13, marginBottom: 12 }}>
+              浏览器预览模式：手动填 Hub 地址。当前：{connected ? "已连接" : "未连接"}
+            </div>
+            <Form layout="vertical" style={{ maxWidth: 460 }}>
+              <Form.Item label="Hub 地址">
+                <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="http://localhost:4000" />
+              </Form.Item>
+              <Button type="primary" onClick={saveHub}>
+                保存并重连
+              </Button>
+            </Form>
+          </>
+        )}
       </SectionCard>
 
       <div style={{ height: 16 }} />

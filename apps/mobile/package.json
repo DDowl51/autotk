@@ -17,6 +17,7 @@
     "@react-native-async-storage/async-storage": "2.2.0",
     "expo": "~54.0.34",
     "expo-application": "~7.0.7",
+    "expo-camera": "~17.0.10",
     "expo-dev-client": "~6.0.21",
     "expo-device": "~8.0.9",
     "expo-location": "~19.0.8",
@@ -28,6 +29,7 @@
     "pako": "^2.1.0",
     "react": "19.1.0",
     "react-native": "0.81.5",
+    "react-native-udp": "^4.1.7",
     "socket.io-client": "^4.8.1",
     "tesseract.js": "^7.0.0",
     "webdriverio": "^9.27.2"

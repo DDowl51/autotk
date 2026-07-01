@@ -19,6 +19,7 @@ import { FollowingTab } from "./tabs/FollowingTab";
 import { ScheduleTab } from "./tabs/ScheduleTab";
 import { LogsTab } from "./tabs/LogsTab";
 import { InspectorTab } from "./tabs/InspectorTab";
+import { HubConnectScreen } from "./HubConnectScreen";
 import { isDeveloperMode } from "./devtools";
 
 type TabKey =
@@ -43,9 +44,11 @@ const TABS: { key: TabKey; label: string }[] = [
 ];
 
 export default function ConfigScreen({ initialParams }: { initialParams?: AutomationParams }) {
-  const { params, setParams, running, mode, logs, stats, start, stop } = useEngine(initialParams);
+  const { params, setParams, running, mode, logs, stats, start, stop, hubConnected, hubUrl, setHubEndpoint } =
+    useEngine(initialParams);
   const [tab, setTab] = useState<TabKey>("kw");
   const [wdaMsg, setWdaMsg] = useState("未测试");
+  const [showHubConnect, setShowHubConnect] = useState(false);
   // 发行版隐藏「调试」Tab（非技术买家看不到）；dev 或 EXPO_PUBLIC_DEV_TOOLS=1 才显示。
   const showDev = isDeveloperMode(__DEV__, process.env.EXPO_PUBLIC_DEV_TOOLS);
   const visibleTabs = showDev ? TABS : TABS.filter((t) => t.key !== "debug");
@@ -109,6 +112,16 @@ export default function ConfigScreen({ initialParams }: { initialParams?: Automa
     start();
   };
 
+  if (showHubConnect) {
+    return (
+      <HubConnectScreen
+        current={hubUrl}
+        onConnect={setHubEndpoint}
+        onClose={() => setShowHubConnect(false)}
+      />
+    );
+  }
+
   return (
     <SafeAreaView style={styles.safe}>
       <StatusBar style="light" />
@@ -126,6 +139,12 @@ export default function ConfigScreen({ initialParams }: { initialParams?: Automa
                 {running ? "运行中" : "已停止"} · {mode === "real" ? "真机" : "演示"}
               </Text>
             </View>
+            <TouchableOpacity style={styles.statusRow} onPress={() => setShowHubConnect(true)} activeOpacity={0.7}>
+              <View style={[styles.dot, hubConnected ? styles.dotOn : styles.dotOff]} />
+              <Text style={styles.statusText}>
+                {hubConnected ? "已连接控制中心" : "未连接控制中心 · 点此连接"}
+              </Text>
+            </TouchableOpacity>
           </View>
           <TouchableOpacity
             style={[styles.runBtn, running ? styles.stopBtn : styles.startBtn]}

@@ -11,6 +11,7 @@ import type { Socket } from "socket.io-client";
 import type { DeviceInfo, DeviceLogMsg, ConfigPatch, PublishTask } from "@mc/shared";
 import { connectHub, watchLogs, pushConfig, enqueuePublish, renameDevice } from "./hub";
 import { getPublisherApi } from "./publish-ipc";
+import { getHubApi } from "./hub-ipc";
 import { addRename, loadRenames, saveRenames, type RenameOp } from "./renameHistory";
 import { track } from "./telemetry";
 import { startJob, applyProgress, summarizeJob, type JobState } from "./configJobs";
@@ -38,6 +39,8 @@ import { loadSettings, saveSettings } from "./settings";
 
 interface HubContextValue {
   connected: boolean;
+  /** 是否运行在桌面应用内（内嵌 Hub，自动连本机；浏览器预览为 false）。 */
+  embedded: boolean;
   devices: DeviceInfo[]; // 已排序
   map: DeviceMap;
   summary: Summary;
@@ -186,9 +189,28 @@ export function HubProvider({ children }: { children: ReactNode }) {
     });
   }, [configJob]);
 
+  const embedded = !!getHubApi();
+
+  // 挂载即连：桌面应用内 → 取内嵌 Hub 端口连 localhost（免手填）；浏览器预览 → 用设置里的地址。
   useEffect(() => {
-    connect(hubUrl);
+    let alive = true;
+    const api = getHubApi();
+    if (api) {
+      void api
+        .getPort()
+        .then((port) => {
+          if (!alive) return;
+          const url = `http://localhost:${port}`;
+          setHubUrlState(url);
+          saveSettings({ hubUrl: url });
+          connect(url);
+        })
+        .catch(() => alive && connect(hubUrl)); // 拿不到端口就退回设置里的地址
+    } else {
+      connect(hubUrl);
+    }
     return () => {
+      alive = false;
       socketRef.current?.close();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -227,6 +249,7 @@ export function HubProvider({ children }: { children: ReactNode }) {
     <Ctx.Provider
       value={{
         connected,
+        embedded,
         devices,
         map,
         summary,

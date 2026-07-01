@@ -1,9 +1,18 @@
-// 管理中心 Hub 接入配置。url 为空 = 不接 Hub（autotk 可独立运行）。
-// 用 EXPO_PUBLIC_HUB_URL 在构建时注入，如 http://hub.example.com:4000。
+// 管理中心 Hub 接入配置。url 为空 = 未连接（autotk 仍可独立运行）。
+// 地址来源优先级：运行时设定（扫码/自动发现/持久化）> 构建期 EXPO_PUBLIC_HUB_URL。
+let currentUrl = process.env.EXPO_PUBLIC_HUB_URL ?? "";
+
 export const HUB_CONFIG = {
-  url: process.env.EXPO_PUBLIC_HUB_URL ?? "",
+  get url(): string {
+    return currentUrl;
+  },
 };
 
 export function hubEnabled(): boolean {
-  return !!HUB_CONFIG.url;
+  return !!currentUrl;
+}
+
+/** 运行时设定 Hub 地址（来自扫码/自动发现/加载的持久化值）。 */
+export function setHubUrl(url: string): void {
+  currentUrl = (url || "").trim();
 }
