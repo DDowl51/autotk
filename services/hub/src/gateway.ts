@@ -54,12 +54,18 @@ export function attachGateway(io: Server, registry: DeviceRegistry, logHub: LogH
     (p) => io.to(OPERATORS).emit(EVT.publishProgress, p),
   );
 
+  // 异步链兜底：registry 若因存储 IO 失败而 reject，记日志而非未捕获 rejection 崩 Hub。
+  const logErr = (label: string) => (e: unknown) => {
+    // eslint-disable-next-line no-console
+    console.error(`[gateway] ${label} 失败：`, e);
+  };
+
   io.on("connection", (socket: Socket) => {
     const auth = socket.handshake.auth as DeviceAuth;
 
     if (auth.role === "operator") {
       socket.join(OPERATORS);
-      void registry.snapshot().then((list) => socket.emit(EVT.devicesSnapshot, list));
+      void registry.snapshot().then((list) => socket.emit(EVT.devicesSnapshot, list)).catch(logErr("snapshot"));
 
       socket.on(EVT.watchLogs, (m: WatchLogsMsg) => {
         if (!m?.deviceId) return;
@@ -87,9 +93,12 @@ export function attachGateway(io: Server, registry: DeviceRegistry, logHub: LogH
 
       socket.on(EVT.deviceRename, (m: DeviceRenameMsg) => {
         if (!m?.deviceId) return;
-        void registry.rename(m.deviceId, m.alias ?? "").then((info) => {
-          if (info) io.to(OPERATORS).emit(EVT.deviceUpdate, info);
-        });
+        void registry
+          .rename(m.deviceId, m.alias ?? "")
+          .then((info) => {
+            if (info) io.to(OPERATORS).emit(EVT.deviceUpdate, info);
+          })
+          .catch(logErr("rename"));
       });
 
       socket.on("disconnect", () => {
@@ -108,7 +117,7 @@ export function attachGateway(io: Server, registry: DeviceRegistry, logHub: LogH
       };
 
       socket.on(EVT.deviceStatus, (status: DeviceStatus) => {
-        void registry.updateStatus(deviceId, status).then(broadcast);
+        void registry.updateStatus(deviceId, status).then(broadcast).catch(logErr("updateStatus"));
       });
 
       socket.on(EVT.deviceLog, (batch: DeviceLogBatch) => {
@@ -128,12 +137,13 @@ export function attachGateway(io: Server, registry: DeviceRegistry, logHub: LogH
       });
 
       socket.on("disconnect", () => {
-        void registry.disconnect(deviceId).then(broadcast);
+        void registry.disconnect(deviceId).then(broadcast).catch(logErr("disconnect"));
       });
 
       void registry
         .register({ deviceId, deviceName: auth.deviceName, version: auth.version })
-        .then(broadcast);
+        .then(broadcast)
+        .catch(logErr("register"));
       return;
     }
 

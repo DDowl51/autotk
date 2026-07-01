@@ -317,8 +317,9 @@ export function useEngine(initialParams?: AutomationParams): EngineState {
             }),
           );
         }, 5000);
-      } catch {
-        // 忽略：Hub 接入失败不影响主流程
+      } catch (e) {
+        // Hub 接入失败不影响主流程，但记一条日志（不再静默）。
+        pushLog(`控制中心接入失败（本机仍可运行）：${e instanceof Error ? e.message : String(e)}`, "warn");
       }
     })();
     return () => {

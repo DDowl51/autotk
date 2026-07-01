@@ -12,6 +12,7 @@ import { runForYou } from "./modules/forYou";
 import { runKwSearch } from "./modules/kwSearch";
 import { runPersHome } from "./modules/persHome";
 import { runFollowingFeed } from "./modules/followingFeed";
+import { withTimeout } from "./timeout";
 
 export interface EngineDeps {
   params: AutomationParams;
@@ -40,6 +41,8 @@ const MAX_BACKOFF_SECONDS = 60;
 const CIRCUIT_THRESHOLD = 5;
 /** 熔断后的长冷却时长（秒）。 */
 const CIRCUIT_COOLDOWN_SECONDS = 300;
+/** 单批模块执行上限（秒）：WDA 卡住/无响应超过此值即超时进退避，不永久挂住。 */
+const MODULE_TIMEOUT_SECONDS = 300;
 
 function todayKey(d = new Date()): string {
   return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
@@ -103,10 +106,10 @@ export function createEngine(deps: EngineDeps): Engine {
       const kind = pickModule(params.kwSearchExecRatio);
       if (kind === "kwSearch") {
         currentModule = "kwSearch";
-        await runKwSearch(ctx, ui, gen, randInt(3, 8));
+        await withTimeout(runKwSearch(ctx, ui, gen, randInt(3, 8)), MODULE_TIMEOUT_SECONDS);
       } else {
         currentModule = "forYou";
-        await runForYou(ctx, ui, gen, randInt(5, 15));
+        await withTimeout(runForYou(ctx, ui, gen, randInt(5, 15)), MODULE_TIMEOUT_SECONDS);
       }
     };
 
@@ -136,13 +139,13 @@ export function createEngine(deps: EngineDeps): Engine {
           if (params.persHome.moduleEnable && persHomeRanOn !== todayKey()) {
             persHomeRanOn = todayKey();
             currentModule = "persHome";
-            await runPersHome(ctx, ui, gen);
+            await withTimeout(runPersHome(ctx, ui, gen), MODULE_TIMEOUT_SECONDS);
           } else if (params.following.moduleEnable) {
             // 关注监控开启：与养号交替（本批打粉，下批养号），既引流又保号。
             followingTurn = !followingTurn;
             if (followingTurn) {
               currentModule = "following";
-              await runFollowingFeed(ctx, ui, gen, randInt(3, 8));
+              await withTimeout(runFollowingFeed(ctx, ui, gen, randInt(3, 8)), MODULE_TIMEOUT_SECONDS);
             } else {
               await runGrooming();
             }

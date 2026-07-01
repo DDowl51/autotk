@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { createServer, type Server } from "node:http";
+import { createServer, type Server, type IncomingMessage, type ServerResponse } from "node:http";
+import { EventEmitter } from "node:events";
 import { RelayStore, handleRelay } from "../src/relay";
 
 describe("RelayStore", () => {
@@ -66,5 +67,31 @@ describe("handleRelay (真 HTTP)", () => {
     expect(await down.text()).toBe("VIDEO-BYTES");
 
     expect((await fetch(`${url}/relay/deadbeef`)).status).toBe(404);
+  });
+});
+
+describe("handleRelay 错误兜底", () => {
+  it("POST body 读取出错 → 400，不抛未捕获", async () => {
+    const store = new RelayStore();
+    const req = Object.assign(new EventEmitter(), {
+      method: "POST",
+      url: "/relay",
+      headers: {},
+    }) as unknown as IncomingMessage;
+    let code = 0;
+    const res = {
+      writeHead(c: number) {
+        code = c;
+        return res;
+      },
+      end() {
+        return res;
+      },
+    } as unknown as ServerResponse;
+
+    expect(handleRelay(store, req, res)).toBe(true);
+    (req as unknown as EventEmitter).emit("error", new Error("boom")); // 触发 readBody reject → .catch
+    await new Promise((r) => setTimeout(r, 10));
+    expect(code).toBe(400);
   });
 });

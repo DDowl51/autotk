@@ -92,10 +92,21 @@ function readBody(req: IncomingMessage): Promise<Buffer> {
 export function handleRelay(store: RelayStore, req: IncomingMessage, res: ServerResponse): boolean {
   const url = req.url ?? "";
   if (req.method === "POST" && url === "/relay") {
-    void readBody(req).then((data) => {
-      const id = store.put(data, req.headers["content-type"] ?? "application/octet-stream");
-      res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ id, path: `/relay/${id}` }));
-    });
+    void readBody(req)
+      .then((data) => {
+        const id = store.put(data, req.headers["content-type"] ?? "application/octet-stream");
+        res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ id, path: `/relay/${id}` }));
+      })
+      .catch((e) => {
+        // 请求体读取/写响应失败：回 400，别让未捕获 rejection 崩掉 Hub。
+        // eslint-disable-next-line no-console
+        console.error("[relay] POST 处理失败：", e);
+        try {
+          res.writeHead(400).end("bad request");
+        } catch {
+          /* 响应可能已发出 */
+        }
+      });
     return true;
   }
   const m = url.match(/^\/relay\/([a-f0-9]+)$/);

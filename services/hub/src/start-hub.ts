@@ -79,6 +79,11 @@ export async function startHub(opts: StartHubOptions = {}): Promise<HubHandle> {
   // 先加载别名再监听，确保首个连接的快照已带别名。
   await aliases.load();
   const port = await listen(httpServer, basePort, maxTries);
+  // 持久错误监听：绑定成功后，运行期服务器错误（如 EMFILE）不再是「无监听的 error 事件」而崩进程。
+  httpServer.on("error", (e: NodeJS.ErrnoException) => {
+    // eslint-disable-next-line no-console
+    console.error("[hub] httpServer 运行期错误：", e.code ?? e.message);
+  });
   opts.onListening?.(port);
 
   return {

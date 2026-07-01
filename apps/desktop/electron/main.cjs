@@ -8,6 +8,36 @@ const publisher = require("@mc/publisher");
 // P1：内嵌 Hub（需先构建 @mc/shared 与 @mc/hub 的 CJS dist）。
 const { startHub } = require("@mc/hub");
 const { pickLanIPv4, encodeBeacon, DISCOVERY_PORT } = require("./netutil.cjs");
+const logger = require("./logger.cjs");
+
+// 全局兜底：一处游离错误 / 未处理拒绝不静默崩、也不带崩内嵌 Hub；记本地日志。
+let fatalShown = false;
+process.on("uncaughtException", (err) => {
+  logger.error("未捕获异常", err);
+  if (!fatalShown) {
+    fatalShown = true;
+    try {
+      dialog.showErrorBox("出错了", "软件遇到一个错误，已记录日志。若功能异常请重启软件。");
+    } catch {
+      /* dialog 不可用则仅记日志 */
+    }
+  }
+});
+process.on("unhandledRejection", (reason) => {
+  logger.error("未处理的 Promise 拒绝", reason);
+});
+
+// IPC 薄包裹：handler 抛错记日志后按原样回抛（渲染层拿到 rejection，主进程不受影响）。
+function handle(channel, fn) {
+  ipcMain.handle(channel, async (...args) => {
+    try {
+      return await fn(...args);
+    } catch (e) {
+      logger.error(`IPC ${channel} 失败`, e);
+      throw e;
+    }
+  });
+}
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -96,30 +126,30 @@ async function ensureAgent(rootDir, schedule) {
 }
 
 // 内嵌 Hub：渲染层拿端口连 localhost；二维码用本机局域网 IP。
-ipcMain.handle("hub:port", async () => ensureHub());
-ipcMain.handle("hub:lanIp", async () => pickLanIPv4(os.networkInterfaces()));
+handle("hub:port", async () => ensureHub());
+handle("hub:lanIp", async () => pickLanIPv4(os.networkInterfaces()));
 
-ipcMain.handle("publisher:chooseRoot", async () => {
+handle("publisher:chooseRoot", async () => {
   const r = await dialog.showOpenDialog({ properties: ["openDirectory", "createDirectory"] });
   return r.canceled || r.filePaths.length === 0 ? null : r.filePaths[0];
 });
 
-ipcMain.handle("publisher:refresh", async (_e, { rootDir, schedule }) => {
+handle("publisher:refresh", async (_e, { rootDir, schedule }) => {
   const a = await ensureAgent(rootDir, schedule);
   return a.refresh();
 });
 
-ipcMain.handle("publisher:prepareSource", async (_e, { deviceName, fileName, mode, hubBase }) => {
+handle("publisher:prepareSource", async (_e, { deviceName, fileName, mode, hubBase }) => {
   if (!agent) throw new Error("请先扫描根目录");
   return agent.prepareSource(deviceName, fileName, mode, hubBase); // lan 已在 refresh 时启动
 });
 
-ipcMain.handle("publisher:markPublished", async (_e, { deviceName, fileName }) => {
+handle("publisher:markPublished", async (_e, { deviceName, fileName }) => {
   if (!agent) return;
   return agent.markPublished(deviceName, fileName);
 });
 
-ipcMain.handle("publisher:renameFolder", async (_e, { oldName, newName }) => {
+handle("publisher:renameFolder", async (_e, { oldName, newName }) => {
   if (!agent) return; // 还没设过根目录就没文件夹可改
   return agent.renameDeviceFolder(oldName, newName);
 });
@@ -127,8 +157,19 @@ ipcMain.handle("publisher:renameFolder", async (_e, { oldName, newName }) => {
 app.whenReady().then(async () => {
   try {
     await ensureHub(); // 先起内嵌 Hub 再开窗，渲染层一挂载即可连 localhost
+    logger.info(`内嵌 Hub 已启动 :${hub ? hub.port : "?"}`);
   } catch (e) {
-    console.error("内嵌 Hub 启动失败：", e);
+    logger.error("内嵌 Hub 启动失败", e);
+    try {
+      dialog.showMessageBoxSync({
+        type: "error",
+        buttons: ["知道了"],
+        title: "控制中心启动失败",
+        message: "控制中心未能启动（端口可能被占用）。请关闭其他占用程序后重启本软件。",
+      });
+    } catch {
+      /* ignore */
+    }
   }
   createWindow();
 });
