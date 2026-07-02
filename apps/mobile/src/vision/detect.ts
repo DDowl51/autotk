@@ -1,5 +1,6 @@
 import { decodePng, pixel, base64ToBytes, type DecodedImage } from "./png";
 import type { Point } from "../wda";
+import { looksLikeIconRow } from "../engine/railCheck";
 
 // 纯 JS 版图像检测，逻辑与 tools/railDetect.ts 一致，但直接读解码后的像素，
 // 不依赖 ImageMagick，可在 RN 端运行（截图 → pako 解码 → 这里分析）。
@@ -45,7 +46,7 @@ export function railBandCenters(img: DecodedImage, W: number, H: number): Point[
     for (let lx = 0; lx < railW; lx++) {
       if (isWhite(lp(img, scale, railX + lx, railY + ly))) xs.push(lx);
     }
-    const wide = xs.length >= 12 && Math.max(...xs) - Math.min(...xs) >= 14;
+    const wide = looksLikeIconRow(xs, railW);
     if (wide) {
       if (!cur) cur = { y0: ly, y1: ly };
       else cur.y1 = ly;

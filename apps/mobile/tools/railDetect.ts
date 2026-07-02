@@ -4,6 +4,7 @@ import * as os from "os";
 import * as path from "path";
 import { screenshot } from "../src/wda";
 import type { Point } from "../src/wda";
+import { looksLikeIconRow } from "../src/engine/railCheck";
 
 export interface RailIcons {
   like: Point;
@@ -105,14 +106,14 @@ function redCentroid(rail: Rail, maxLocalY: number): Point | null {
 
 /** 从已抓的 rail 网格里找白色图标带中心（全局坐标）；容忍数量≠4，供标定与运行时重定位共用。 */
 function bandsFromGrid(rail: Rail): Point[] {
-  const { grid, railX, railY, railH } = rail;
+  const { grid, railX, railY, railW, railH } = rail;
   const bands: { y0: number; y1: number }[] = [];
   let cur: { y0: number; y1: number } | null = null;
   for (let y = 0; y < railH; y++) {
     const row = grid.get(y);
     const xs: number[] = [];
     if (row) for (const [x, p] of row) if (isWhite(p)) xs.push(x);
-    const wide = xs.length >= 12 && Math.max(...xs) - Math.min(...xs) >= 14;
+    const wide = looksLikeIconRow(xs, railW);
     if (wide) {
       if (!cur) cur = { y0: y, y1: y };
       else cur.y1 = y;

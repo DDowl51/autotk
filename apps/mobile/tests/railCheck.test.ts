@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { validateRail, nearestProfileKey, railOffsetY } from "../src/engine/railCheck";
+import { validateRail, nearestProfileKey, railOffsetY, looksLikeIconRow } from "../src/engine/railCheck";
 
 const good = {
   like: { x: 359, y: 453 },
@@ -55,4 +55,17 @@ test("railOffsetY：偏移超过 maxShift 的带被忽略", () => {
   // 两个正常(+10) + 一个离谱(+500，被 maxShift 滤掉) → 仍取 +10
   const detected = [453 + 10, 520 + 10, 585 + 500];
   assert.equal(railOffsetY(storedYs, detected), 10);
+});
+
+test("looksLikeIconRow：居中白图标行 → true；白背景整行发白 → false（抗白背景）", () => {
+  const railW = 68;
+  const centered = Array.from({ length: 29 }, (_, i) => 20 + i); // 20..48 居中
+  assert.equal(looksLikeIconRow(centered, railW), true);
+  const edgeToEdge = Array.from({ length: 68 }, (_, i) => i); // 0..67 边到边=白背景
+  assert.equal(looksLikeIconRow(edgeToEdge, railW), false);
+});
+
+test("looksLikeIconRow：太少/太窄 → false", () => {
+  assert.equal(looksLikeIconRow([1, 2, 3], 68), false); // 太少
+  assert.equal(looksLikeIconRow(Array.from({ length: 13 }, (_, i) => 30 + i), 68), false); // 30..42 跨度12<14
 });

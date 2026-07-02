@@ -32,6 +32,21 @@ export function validateRail(r: RailForCheck, w: number, h: number): { ok: boole
 }
 
 /**
+ * 一行白像素是否像「图标行」而非亮场背景（抗白背景误检）：
+ * 需够宽（≥12 个白像素、跨度≥14）；且白像素**不从最左贯通到最右**——
+ * 若两侧都没有非白边距，多半是白墙/雪景等亮场背景整行发白，不是图标。
+ */
+export function looksLikeIconRow(whiteXs: number[], railW: number): boolean {
+  if (whiteXs.length < 12) return false;
+  const min = Math.min(...whiteXs);
+  const max = Math.max(...whiteXs);
+  if (max - min < 14) return false;
+  const edge = 4;
+  if (min <= edge && max >= railW - 1 - edge) return false; // 边到边 = 白背景，弃
+  return true;
+}
+
+/**
  * 运行时重定位：右栏图标逐视频整体上下浮动 ±~25px（因文案长短），而标定存的是某一个视频的绝对 y。
  * 用当前检测到的白带 y 列表，估计右栏相对标定时的整体竖直偏移 dy，运行时把标定坐标整体平移 dy 再点。
  * 做法：每个检测带对齐到最近的标定带、取匹配差的中位数（抗个别带缺失/多余，如点赞变红少一带）。
