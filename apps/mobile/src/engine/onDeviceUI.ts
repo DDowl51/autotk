@@ -25,7 +25,9 @@ import {
   detectFollow,
   detectRail,
   detectSendButton,
+  railBandCenters,
 } from "../vision/detect";
+import { railOffsetY } from "./railCheck";
 import { captionFromBoxes, type OcrBox } from "../vision/caption";
 import { detectAppPopup } from "./popupDetect";
 import { planDismiss } from "./popupDismiss";
@@ -69,6 +71,8 @@ export function createOnDeviceUI(deps: {
   let sized = false; // 屏幕尺寸只查一次（竖屏锁定，运行期不变），避免每个动作都往返 WDA
   let page: Page = "feed";
   let heartCache: Point[] = [];
+  // 当前视频的右栏坐标（标定坐标按本条视频白带位置吸附后的结果）；换视频时清空、下次动作重测。
+  let railCache: { like: Point; comment: Point; save: Point; share: Point } | null = null;
   // listComments 时 OCR 解析出的评论（文字+作者+y），供 #3 匹配与针对性回复。
   let commentCache: ParsedComment[] = [];
   // 连续"不在正常页面"的次数；用于避免横屏/图文帖偶发漏检导致在正常视频上误返回。
@@ -92,6 +96,33 @@ export function createOnDeviceUI(deps: {
 
   /** 抓一张屏并解码成像素。 */
   const shot = async () => decode(await screenshot());
+
+  /**
+   * 当前视频的右栏坐标：标定存的是某个视频的绝对 y，而图标逐视频上下浮动 ±~25px。
+   * 每条视频进来第一次用到右栏时，测一次当前白带位置、把标定坐标整体平移吸附上去（缓存到换视频）。
+   * 检测不可靠（白带对不上/异常屏）时回退用原标定坐标，绝不比改前更差。
+   */
+  const base = { like: prof.like, comment: prof.comment, save: prof.save, share: prof.share };
+  const currentRail = async (): Promise<typeof base> => {
+    if (railCache) return railCache;
+    let next = base;
+    try {
+      const ys = railBandCenters(await shot(), size.width, size.height).map((c) => c.y);
+      const dy = railOffsetY([base.like.y, base.comment.y, base.save.y, base.share.y], ys);
+      if (dy != null) {
+        next = {
+          like: { x: base.like.x, y: base.like.y + dy },
+          comment: { x: base.comment.x, y: base.comment.y + dy },
+          save: { x: base.save.x, y: base.save.y + dy },
+          share: { x: base.share.x, y: base.share.y + dy },
+        };
+      }
+    } catch {
+      /* 检测失败/异常屏 → 用原标定坐标 base，绝不比改前更差 */
+    }
+    railCache = next;
+    return next;
+  };
 
   // 进主页等场景概率弹出的「Sign In / 管理 passkey」系统弹窗：OCR 命中关键词就关掉。
   const POPUP_RE = /sign\s*in|passkey|autofill|another device|manage your/i;
@@ -185,7 +216,7 @@ export function createOnDeviceUI(deps: {
   };
 
   const rawOpenComments = async () => {
-    await tap(prof.comment);
+    await tap((await currentRail()).comment);
     await sleep(900);
   };
   const rawCloseComments = async () => {
@@ -222,6 +253,7 @@ export function createOnDeviceUI(deps: {
     async openForYou() {
       await ensure();
       page = "feed";
+      railCache = null;
       log("已确保 TikTok 在前台（推荐页）");
     },
 
@@ -232,6 +264,7 @@ export function createOnDeviceUI(deps: {
       await sleep(1200);
       await dismissPopup(); // 切流概率弹登录/passkey 窗
       page = "feed"; // 关注流与推荐流操作一致，视作 feed
+      railCache = null;
       log("已切到「关注」视频流");
     },
 
@@ -240,6 +273,7 @@ export function createOnDeviceUI(deps: {
       await goTo("feed");
       const { width: w, height: h } = size;
       await swipe({ x: w * 0.5, y: h * 0.72 }, { x: w * 0.5, y: h * 0.26 }, 0.25);
+      railCache = null; // 换视频 → 右栏可能整体上下移，下次动作重测
       log("上滑切换视频");
     },
 
@@ -259,21 +293,21 @@ export function createOnDeviceUI(deps: {
     async likeVideo() {
       await ensure();
       await goTo("feed");
-      await tap(prof.like);
+      await tap((await currentRail()).like);
       log("已点赞");
     },
 
     async saveVideo() {
       await ensure();
       await goTo("feed");
-      await tap(prof.save);
+      await tap((await currentRail()).save);
       log("已收藏");
     },
 
     async followAuthor() {
       await ensure();
       await goTo("feed");
-      const f = detectFollow(await shot(), size.width, size.height, prof.like.y);
+      const f = detectFollow(await shot(), size.width, size.height, (await currentRail()).like.y);
       if (!f) {
         log("未检测到关注按钮（已关注），跳过");
         return;
@@ -352,6 +386,7 @@ export function createOnDeviceUI(deps: {
       await tap(A("searchFirstResult"));
       await sleep(1500);
       page = "feed";
+      railCache = null;
       log(`已搜索「${keyword}」并进入结果视频流`);
     },
     // 真机无法可靠数搜索结果数；返回大值，让调用方的 maxResults 决定遍历多少条。
@@ -365,6 +400,7 @@ export function createOnDeviceUI(deps: {
           { x: size.width * 0.5, y: size.height * 0.26 },
           0.25,
         );
+        railCache = null;
         log(`上滑到第 ${index + 1} 个结果`);
       }
     },
@@ -382,6 +418,7 @@ export function createOnDeviceUI(deps: {
     listOwnVideos: async () => 6,
     async openOwnVideo(index: number) {
       await ensure();
+      railCache = null; // 进/切作品 → 新视频，右栏重测
       if (index === 0) {
         await tap(A("gridFirstCell")); // 作品网格左上第一格 → 全屏作品流
         await sleep(1500);

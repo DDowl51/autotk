@@ -27,8 +27,11 @@ export interface RailIcons {
   follow: Point | null;
 }
 
-/** 定位四个白色图标 + 关注红 +（标定用，干净未点赞未关注的视频）。 */
-export function detectRail(img: DecodedImage, W: number, H: number): RailIcons {
+/**
+ * 扫右栏白色图标带，返回从上到下每个带的中心点（全局坐标）。
+ * 容忍数量≠4（点赞变红/已收藏等只会少一个白带）——供运行时重定位用；标定用 detectRail 要求 4 个。
+ */
+export function railBandCenters(img: DecodedImage, W: number, H: number): Point[] {
   const scale = img.width / W;
   const railX = Math.round(W - 70);
   const railY = Math.round(H * 0.28);
@@ -52,23 +55,28 @@ export function detectRail(img: DecodedImage, W: number, H: number): RailIcons {
     }
   }
   if (cur && cur.y1 - cur.y0 >= 9) bands.push(cur);
-  if (bands.length < 4) {
-    throw new Error(`只检测到 ${bands.length} 个白色图标带（需要 4 个）`);
-  }
 
-  const centerOf = (b: { y0: number; y1: number }): Point => {
+  return bands.map((b) => {
     const my = (b.y0 + b.y1) >> 1;
     const xs: number[] = [];
     for (let lx = 0; lx < railW; lx++) {
       if (isWhite(lp(img, scale, railX + lx, railY + my))) xs.push(lx);
     }
-    return {
-      x: railX + (Math.min(...xs) + Math.max(...xs)) / 2,
-      y: railY + (b.y0 + b.y1) / 2,
-    };
-  };
-  const [like, comment, save, share] = bands.slice(0, 4).map(centerOf);
+    return { x: railX + (Math.min(...xs) + Math.max(...xs)) / 2, y: railY + (b.y0 + b.y1) / 2 };
+  });
+}
 
+/** 定位四个白色图标 + 关注红 +（标定用，干净未点赞未关注的视频）。 */
+export function detectRail(img: DecodedImage, W: number, H: number): RailIcons {
+  const scale = img.width / W;
+  const railX = Math.round(W - 70);
+  const railY = Math.round(H * 0.28);
+  const railW = 68;
+  const centers = railBandCenters(img, W, H);
+  if (centers.length < 4) {
+    throw new Error(`只检测到 ${centers.length} 个白色图标带（需要 4 个）`);
+  }
+  const [like, comment, save, share] = centers.slice(0, 4);
   // 关注红 + 在点赞上方；扫描区上界避开可能变红的点赞心。
   const follow = redCentroid(img, scale, railX, railY, railW, like.y - railY - 20);
   return { like, comment, save, share, follow };

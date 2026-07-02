@@ -103,13 +103,9 @@ function redCentroid(rail: Rail, maxLocalY: number): Point | null {
   return n >= 20 ? { x: rail.railX + rx / n, y: rail.railY + ry / n } : null;
 }
 
-/**
- * 定位四个白色图标 + 关注红 +。用于标定（在干净未点赞、未关注的视频上）。
- */
-export async function detectRail(W: number, H: number): Promise<RailIcons> {
-  const rail = await grabRail(W, H);
+/** 从已抓的 rail 网格里找白色图标带中心（全局坐标）；容忍数量≠4，供标定与运行时重定位共用。 */
+function bandsFromGrid(rail: Rail): Point[] {
   const { grid, railX, railY, railH } = rail;
-
   const bands: { y0: number; y1: number }[] = [];
   let cur: { y0: number; y1: number } | null = null;
   for (let y = 0; y < railH; y++) {
@@ -126,22 +122,33 @@ export async function detectRail(W: number, H: number): Promise<RailIcons> {
     }
   }
   if (cur && cur.y1 - cur.y0 >= 9) bands.push(cur);
-
-  if (bands.length < 4) {
-    throw new Error(
-      `只检测到 ${bands.length} 个白色图标带（需要 4 个）。可能不在视频页/界面异常/图标变色。`,
-    );
-  }
-  const centerOf = (b: { y0: number; y1: number }): Point => {
+  return bands.map((b) => {
     const my = (b.y0 + b.y1) >> 1;
     const row = grid.get(my) ?? grid.get(b.y0)!;
     const xs = [...row].filter(([, p]) => isWhite(p)).map(([x]) => x);
     return { x: railX + (Math.min(...xs) + Math.max(...xs)) / 2, y: railY + (b.y0 + b.y1) / 2 };
-  };
-  const [like, comment, save, share] = bands.slice(0, 4).map(centerOf);
+  });
+}
 
+/** 白带中心列表（容忍≠4，点赞变红等只会少一个带）——运行时重定位右栏用。 */
+export async function railBandCenters(W: number, H: number): Promise<Point[]> {
+  return bandsFromGrid(await grabRail(W, H));
+}
+
+/**
+ * 定位四个白色图标 + 关注红 +。用于标定（在干净未点赞、未关注的视频上）。
+ */
+export async function detectRail(W: number, H: number): Promise<RailIcons> {
+  const rail = await grabRail(W, H);
+  const centers = bandsFromGrid(rail);
+  if (centers.length < 4) {
+    throw new Error(
+      `只检测到 ${centers.length} 个白色图标带（需要 4 个）。可能不在视频页/界面异常/图标变色。`,
+    );
+  }
+  const [like, comment, save, share] = centers.slice(0, 4);
   // 关注红 + 在点赞上方；限制扫描区避开可能变红的点赞心。
-  const follow = redCentroid(rail, like.y - railY - 20);
+  const follow = redCentroid(rail, like.y - rail.railY - 20);
   return { like, comment, save, share, follow };
 }
 

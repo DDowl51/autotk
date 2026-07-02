@@ -23,9 +23,11 @@ import {
   detectCommentCloseButton,
   detectCommentHearts,
   detectSendButton,
+  railBandCenters,
 } from "./railDetect";
 import { readCaption } from "./ocr";
 import { resolveAnchor, type AnchorName } from "../src/engine/anchors";
+import { railOffsetY } from "../src/engine/railCheck";
 
 type Log = (msg: string) => void;
 
@@ -53,6 +55,31 @@ export function createCalibratedUI(log: Log): TikTokUI {
   // 页面锚点：优先标定档覆盖，否则比例默认（与 onDeviceUI 共用 anchors.ts）。
   const A = (name: AnchorName): Point => resolveAnchor(prof ?? {}, size.width, size.height, name);
 
+  // 当前视频右栏坐标：标定坐标按本条视频白带位置吸附（治图标逐视频 ±25px 浮动）；换视频清空。
+  let railCache: { like: Point; comment: Point; save: Point; share: Point } | null = null;
+  const currentRail = async () => {
+    if (railCache) return railCache;
+    const p = prof!; // 每个方法调用前都已 ensure()（保证 prof 非空）
+    const b = { like: p.like, comment: p.comment, save: p.save, share: p.share };
+    let next = b;
+    try {
+      const ys = (await railBandCenters(size.width, size.height)).map((c) => c.y);
+      const dy = railOffsetY([b.like.y, b.comment.y, b.save.y, b.share.y], ys);
+      if (dy != null) {
+        next = {
+          like: { x: b.like.x, y: b.like.y + dy },
+          comment: { x: b.comment.x, y: b.comment.y + dy },
+          save: { x: b.save.x, y: b.save.y + dy },
+          share: { x: b.share.x, y: b.share.y + dy },
+        };
+      }
+    } catch {
+      /* 检测失败 → 用原标定坐标 b */
+    }
+    railCache = next;
+    return next;
+  };
+
   const ensure = async () => {
     if (!getSessionId()) {
       await createSession();
@@ -72,7 +99,7 @@ export function createCalibratedUI(log: Log): TikTokUI {
 
   // —— 原子转换动作（只点击/滑动，不改 page）——
   const rawOpenComments = async () => {
-    await tap(prof!.comment);
+    await tap((await currentRail()).comment);
     await sleep(900); // 等评论面板上滑动画完成
   };
   const rawCloseComments = async () => {
@@ -112,6 +139,7 @@ export function createCalibratedUI(log: Log): TikTokUI {
     async openForYou() {
       await ensure();
       page = "feed"; // 假定启动时在推荐页
+      railCache = null;
       log("已确保 TikTok 在前台（推荐页）");
     },
 
@@ -121,6 +149,7 @@ export function createCalibratedUI(log: Log): TikTokUI {
       await tap(A("followTab")); // 顶部「关注」tab
       await sleep(1200);
       page = "feed"; // 关注流与推荐流操作一致
+      railCache = null;
       log("已切到「关注」视频流");
     },
 
@@ -129,6 +158,7 @@ export function createCalibratedUI(log: Log): TikTokUI {
       await goTo("feed");
       const { width: w, height: h } = size;
       await swipe({ x: w * 0.5, y: h * 0.72 }, { x: w * 0.5, y: h * 0.26 }, 0.25);
+      railCache = null; // 换视频 → 右栏可能整体上下移，下次动作重测
       log("上滑切换视频");
     },
 
@@ -147,14 +177,14 @@ export function createCalibratedUI(log: Log): TikTokUI {
     async likeVideo() {
       await ensure();
       await goTo("feed");
-      await tap(prof!.like);
+      await tap((await currentRail()).like);
       log("已点赞");
     },
 
     async saveVideo() {
       await ensure();
       await goTo("feed");
-      await tap(prof!.save);
+      await tap((await currentRail()).save);
       log("已收藏");
     },
 
@@ -162,7 +192,7 @@ export function createCalibratedUI(log: Log): TikTokUI {
       await ensure();
       await goTo("feed");
       // 实时检测红 +：在才点（已关注作者无 +，点了会跳进主页）。
-      const f = await detectFollow(size.width, size.height, prof!.like.y);
+      const f = await detectFollow(size.width, size.height, (await currentRail()).like.y);
       if (!f) {
         log("未检测到关注按钮（已关注），跳过");
         return;
@@ -225,6 +255,7 @@ export function createCalibratedUI(log: Log): TikTokUI {
       await tap(A("searchFirstResult")); // 打开第一个结果，进入结果视频流
       await sleep(1500);
       page = "feed"; // 结果视频流与推荐页操作相同，视作 feed
+      railCache = null;
       log(`已搜索「${keyword}」并进入结果视频流`);
     },
     // 结果是连续视频流，没有确切总数；返回一个批量数，由调用方上限裁剪。
@@ -239,6 +270,7 @@ export function createCalibratedUI(log: Log): TikTokUI {
           { x: size.width * 0.5, y: size.height * 0.26 },
           0.25,
         );
+        railCache = null;
       }
     },
     back: async () => {
@@ -343,6 +375,7 @@ export function createCalibratedUI(log: Log): TikTokUI {
     listOwnVideos: async () => 6,
     async openOwnVideo(index: number) {
       await ensure();
+      railCache = null; // 进/切作品 → 新视频，右栏重测
       if (index === 0) {
         await tap(A("gridFirstCell")); // 作品网格左上第一格 → 全屏作品流
         await sleep(1500);

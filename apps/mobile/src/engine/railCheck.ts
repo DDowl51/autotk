@@ -32,6 +32,29 @@ export function validateRail(r: RailForCheck, w: number, h: number): { ok: boole
 }
 
 /**
+ * 运行时重定位：右栏图标逐视频整体上下浮动 ±~25px（因文案长短），而标定存的是某一个视频的绝对 y。
+ * 用当前检测到的白带 y 列表，估计右栏相对标定时的整体竖直偏移 dy，运行时把标定坐标整体平移 dy 再点。
+ * 做法：每个检测带对齐到最近的标定带、取匹配差的中位数（抗个别带缺失/多余，如点赞变红少一带）。
+ * 匹配到的带 <2 或偏移超出 maxShift → 返回 null（不敢调，调用方回退用原标定坐标）。
+ */
+export function railOffsetY(storedYs: number[], detectedYs: number[], maxShift = 60): number | null {
+  if (storedYs.length === 0 || detectedYs.length === 0) return null;
+  const diffs: number[] = [];
+  for (const d of detectedYs) {
+    let best = Infinity;
+    for (const s of storedYs) {
+      const diff = d - s;
+      if (Math.abs(diff) < Math.abs(best)) best = diff;
+    }
+    if (Number.isFinite(best) && Math.abs(best) <= maxShift) diffs.push(best);
+  }
+  if (diffs.length < 2) return null; // 至少两个带对上才敢整体平移
+  diffs.sort((a, b) => a - b);
+  const mid = Math.floor(diffs.length / 2);
+  return diffs.length % 2 ? diffs[mid] : (diffs[mid - 1] + diffs[mid]) / 2;
+}
+
+/**
  * 无精确档（WxH）时，从已有档案 key 里挑最接近的：宽高比优先（坐标比例主要随比例走），面积次之。
  * 纯字符串数学，不点错也总比盲取第一个强。无可解析 key 时返回 null。
  */
