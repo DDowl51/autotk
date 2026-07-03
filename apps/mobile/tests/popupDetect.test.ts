@@ -83,3 +83,9 @@ test("浮层：虚拟物品和奖励政策（可点「知道了」安全关掉�
   const steps = planDismiss(hit, boxes, size);
   assert.equal(steps[0].kind, "tap");
 });
+
+test("浮层：英文界面也命中（avatar / policy / Got it）", () => {
+  assert.equal(detectAppPopup([box("Create your TikTok avatar", 0.3, 0.7)])?.id, "avatar");
+  assert.equal(detectAppPopup([box("Virtual Items and Rewards Policy", 0.3, 0.4)])?.id, "policy");
+  assert.equal(hasDismissControl([box("Got it")]), true);
+});

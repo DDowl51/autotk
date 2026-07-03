@@ -17,3 +17,13 @@ test("isLivePage：只在下半屏算——顶部/上半屏的同字不算（避
 test("isLivePage：普通视频文案 → false", () => {
   assert.equal(isLivePage([box("这是一条普通视频 #dance", 0.8)]), false);
 });
+
+test("isLivePage：英文——tap to watch LIVE 短语 → true", () => {
+  assert.equal(isLivePage([box("Tap to watch LIVE", 0.53)]), true);
+});
+
+test("isLivePage：英文——左下角 LIVE 徽标算；文案里的 LIVE 不算", () => {
+  assert.equal(isLivePage([{ text: "LIVE", x: 0.05, y: 0.72, w: 0.1, h: 0.03 }]), true);
+  assert.equal(isLivePage([box("I LOVE LIVE MUSIC", 0.8)]), false); // 非整串 LIVE
+  assert.equal(isLivePage([{ text: "LIVE", x: 0.05, y: 0.05, w: 0.1, h: 0.03 }]), false); // 顶部 tab 不算
+});
