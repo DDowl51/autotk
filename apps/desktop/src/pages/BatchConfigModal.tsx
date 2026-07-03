@@ -30,6 +30,10 @@ interface Draft {
   forYou: Required<ModuleParamsPatch>;
   kwSearch: Required<ModuleParamsPatch>;
   persHome: Mod;
+  followingEnable: boolean;
+  following: Required<ModuleParamsPatch>;
+  followingMatchText: string;
+  followingReplyText: string;
   kwSearchExecRatio: number;
   clickWaitTime: number;
   postReplies: boolean;
@@ -46,6 +50,10 @@ const DEFAULT_DRAFT: Draft = {
   forYou: { ...MODULE_DEFAULT },
   kwSearch: { ...MODULE_DEFAULT, interactProb: 0.45, videoLikeProb: 0.5, videoSaveProb: 0.3, videoFollowProb: 0.3, commentLikeProb: 0.5, commentReplyProb: 0.3, commentLikeMaxCount: 5 },
   persHome: { moduleEnable: false, interactEnable: false, interactProb: 0.1, commentLikeProb: 0.5, commentReplyProb: 0.5, commentLikeMaxCount: 4, commentReplyMaxCount: 2, maxVideoCount: 3 },
+  followingEnable: false,
+  following: { interactEnable: true, interactProb: 1, videoLikeProb: 0, videoSaveProb: 0, videoFollowProb: 0, commentLikeProb: 0.3, commentReplyProb: 0.8, commentLikeMaxCount: 3, commentReplyMaxCount: 3 },
+  followingMatchText: "",
+  followingReplyText: "",
   kwSearchExecRatio: 0.8,
   clickWaitTime: 1,
   postReplies: false,
@@ -53,7 +61,7 @@ const DEFAULT_DRAFT: Draft = {
   taskWindows: [{ start: "09:00:00", end: "12:00:00" }],
 };
 
-type GroupKey = "kw" | "forYou" | "kwSearch" | "persHome" | "schedule";
+type GroupKey = "kw" | "forYou" | "kwSearch" | "persHome" | "following" | "schedule";
 
 /** 分组开关：开了才会把这组下发。 */
 function GroupGate({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
@@ -122,6 +130,7 @@ export function BatchConfigModal({
     forYou: false,
     kwSearch: false,
     persHome: false,
+    following: false,
     schedule: false,
   });
   const [draft, setDraft] = useState<Draft>(DEFAULT_DRAFT);
@@ -140,6 +149,14 @@ export function BatchConfigModal({
     if (groups.forYou) p.forYou = draft.forYou;
     if (groups.kwSearch) p.kwSearch = draft.kwSearch;
     if (groups.persHome) p.persHome = draft.persHome;
+    if (groups.following) {
+      p.following = {
+        moduleEnable: draft.followingEnable,
+        ...draft.following,
+        commentMatchKeywords: splitWords(draft.followingMatchText),
+        fixedReplies: splitLines(draft.followingReplyText),
+      };
+    }
     if (groups.schedule) {
       p.kwSearchExecRatio = draft.kwSearchExecRatio;
       p.clickWaitTime = draft.clickWaitTime;
@@ -219,6 +236,43 @@ export function BatchConfigModal({
           <Section title="评论区动作">
             <PercentRow label="单条评论点赞概率" value={draft.persHome.commentLikeProb ?? 0.5} onChange={(v) => setD({ persHome: { ...draft.persHome, commentLikeProb: v } })} />
             <PercentRow label="单条评论回复概率" value={draft.persHome.commentReplyProb ?? 0.5} onChange={(v) => setD({ persHome: { ...draft.persHome, commentReplyProb: v } })} />
+          </Section>
+        </>
+      ),
+    },
+    {
+      key: "following",
+      label: "关注监控",
+      children: (
+        <>
+          <GroupGate {...gate("following")} />
+          <Section
+            title="关注监控（打粉）"
+            hint="⚠️ 开启后进入纯打粉：只跑「关注」流回复引流、暂停日常养号（推荐/搜索/主页都不跑，与养号互斥）。先在各手机 TikTok 里关注一批目标账号。"
+          >
+            <SwitchRow
+              label="启用关注监控（与养号互斥）"
+              value={draft.followingEnable}
+              onChange={(v) => setD({ followingEnable: v })}
+            />
+          </Section>
+          <ModuleFields value={draft.following} onChange={(v) => setD({ following: v })} />
+          <Section title="打粉关键词（可选）" hint="评论含这些词才回复其作者。留空 = 沿用「关键词」页的全局评论匹配词。">
+            <TextRow
+              label="打粉关键词"
+              value={draft.followingMatchText}
+              onChange={(v) => setD({ followingMatchText: v })}
+              placeholder="how much, where to buy, dm me"
+              rows={2}
+            />
+          </Section>
+          <Section title="打粉话术（可选）" hint="引流话术，一行一条随机取。留空 = 沿用全局固定回复。占位符 {emoji}/{user}/{kw}。">
+            <TextRow
+              label="话术列表（一行一条）"
+              value={draft.followingReplyText}
+              onChange={(v) => setD({ followingReplyText: v })}
+              placeholder={"感兴趣的宝子扣1 {emoji}\n主页有联系方式哦 {emoji}"}
+            />
           </Section>
         </>
       ),

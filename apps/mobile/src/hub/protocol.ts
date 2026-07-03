@@ -57,6 +57,12 @@ export interface ConfigPatch {
   forYou?: ModuleParamsPatch;
   kwSearch?: ModuleParamsPatch;
   persHome?: ModuleParamsPatch & { moduleEnable?: boolean; maxVideoCount?: number };
+  /** 关注监控（打粉）：moduleEnable 与日常养号互斥；关键词/话术留空则沿用全局。 */
+  following?: ModuleParamsPatch & {
+    moduleEnable?: boolean;
+    commentMatchKeywords?: string[];
+    fixedReplies?: string[];
+  };
   taskWindows?: Array<{ start: string; end: string }>;
 }
 
