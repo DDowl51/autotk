@@ -271,6 +271,33 @@ export async function detectCommentCloseButton(
   return n >= 20 ? { x: sx / n, y: oy + sy / n } : null;
 }
 
+/** 检测应用内浮层卡片右上角的关闭 ✕（浅灰圆里的灰色 ✕）。⚠️ 阈值起步值真机核；找不到返回 null。 */
+export async function detectCardClose(W: number, H: number): Promise<Point | null> {
+  const ox = Math.round(W * 0.78);
+  const oy = Math.round(H * 0.18);
+  const w = Math.round(W * 0.15);
+  const h = Math.round(H * 0.44);
+  const grid = await grabRegion(W, H, ox, oy, w, h);
+  const isGreyX = (p: Px) => {
+    const mx = Math.max(p.r, p.g, p.b);
+    const mn = Math.min(p.r, p.g, p.b);
+    return mx - mn < 24 && p.r > 70 && p.r < 185;
+  };
+  let sx = 0;
+  let sy = 0;
+  let n = 0;
+  for (const [y, row] of grid) {
+    for (const [x, p] of row) {
+      if (isGreyX(p)) {
+        sx += ox + x;
+        sy += oy + y;
+        n++;
+      }
+    }
+  }
+  return n >= 12 && n <= 500 ? { x: sx / n, y: sy / n } : null;
+}
+
 /**
  * 检测评论输入栏的红色发送按钮（打完字后右侧出现的 ↑ 圆）。
  * y 随键盘高度浮动，故运行时检测。扫描右侧、键盘之上区域的 TikTok 红圆。

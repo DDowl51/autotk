@@ -23,11 +23,15 @@ import {
   detectCommentCloseButton,
   detectCommentHearts,
   detectSendButton,
+  detectCardClose,
   railBandCenters,
 } from "./railDetect";
-import { readCaption } from "./ocr";
+import { readCaption, recognizeBoxes } from "./ocr";
 import { resolveAnchor, type AnchorName } from "../src/engine/anchors";
 import { railOffsetY } from "../src/engine/railCheck";
+import { isLivePage } from "../src/engine/livePage";
+import { detectAppPopup } from "../src/engine/popupDetect";
+import { planDismiss } from "../src/engine/popupDismiss";
 
 type Log = (msg: string) => void;
 
@@ -170,8 +174,14 @@ export function createCalibratedUI(log: Log): TikTokUI {
         .split(/\s+/)
         .map((t) => t.replace(/^#/, ""))
         .filter(Boolean);
-      log(caption ? `文案：${caption}` : "未识别到文案");
-      return { caption, tags };
+      let isLive = false;
+      try {
+        isLive = isLivePage(await recognizeBoxes());
+      } catch {
+        /* OCR 不可用 → 当非直播 */
+      }
+      log(isLive ? "直播卡，跳过" : caption ? `文案：${caption}` : "未识别到文案");
+      return { caption, tags, isLive };
     },
 
     async likeVideo() {
@@ -302,6 +312,35 @@ export function createCalibratedUI(log: Log): TikTokUI {
         lostStreak = 0;
         return;
       }
+      // 应用内浮层（登录/通知/头像/政策等）：OCR 检测 → 视觉 ✕ 或安全脱困计划关掉。
+      try {
+        const boxes = await recognizeBoxes();
+        const hit = detectAppPopup(boxes);
+        if (hit) {
+          log(`应用内浮层(${hit.id})：${hit.matched}`);
+          const cx = await detectCardClose(size.width, size.height);
+          if (cx) {
+            await tap(cx);
+            await sleep(700);
+          } else {
+            for (const s of planDismiss(hit, boxes, { width: size.width, height: size.height })) {
+              if (s.kind === "tap") await tap(s.point);
+              else if (s.kind === "swipe") await swipe(s.from, s.to, 0.3);
+              else
+                await swipe(
+                  { x: 3, y: size.height * 0.5 },
+                  { x: size.width * 0.78, y: size.height * 0.5 },
+                  0.2,
+                );
+              await sleep(600);
+            }
+          }
+          lostStreak = 0;
+          return;
+        }
+      } catch {
+        /* OCR 不可用 → 跳过浮层处理 */
+      }
       // 已知页面：评论区（关闭✕）或视频流（动作栏）。
       const known = async (): Promise<boolean> => {
         if (await detectCommentCloseButton(size.width, size.height)) return true;
@@ -392,7 +431,11 @@ export function createCalibratedUI(log: Log): TikTokUI {
     },
 
     async detectPopup() {
-      return false;
+      try {
+        return !!detectAppPopup(await recognizeBoxes());
+      } catch {
+        return false;
+      }
     },
 
     /**

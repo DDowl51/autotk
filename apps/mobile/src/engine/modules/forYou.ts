@@ -36,6 +36,12 @@ export async function runForYou(
     const video = await ui.readCurrentVideo();
     stats.videosWatched++;
 
+    if (video.isLive) {
+      // 直播卡：不互动，直接下滑。
+      await ui.swipeToNextVideo();
+      continue;
+    }
+
     if (matchesPrompts(video, params.negPrompts)) {
       // 命中反向提示词：立即划走。
       await ui.swipeToNextVideo();

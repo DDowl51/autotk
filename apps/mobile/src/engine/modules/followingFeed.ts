@@ -50,6 +50,13 @@ export async function runFollowingFeed(
     const video = await ui.readCurrentVideo();
     stats.videosWatched++;
 
+    if (video.isLive) {
+      // 直播卡：不互动，直接下滑。
+      await ui.swipeToNextVideo();
+      await ctx.sleep(jitter(2));
+      continue;
+    }
+
     // 逐条关注视频都进评论区匹配回复（视频级动作由 following 参数控制，默认全关）。
     await interactWithVideo(ctx, ui, replyGen, mp, video, matchKeywords);
 

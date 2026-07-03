@@ -20,6 +20,7 @@ import { parseComments, type ParsedComment } from "./commentParse";
 import type { TikTokUI, VideoInfo, CommentInfo } from "./tiktok-ui";
 import {
   decode,
+  detectCardClose,
   detectCommentCloseButton,
   detectCommentHearts,
   detectFollow,
@@ -28,6 +29,7 @@ import {
   railBandCenters,
 } from "../vision/detect";
 import { railOffsetY } from "./railCheck";
+import { isLivePage } from "./livePage";
 import { captionFromBoxes, type OcrBox } from "../vision/caption";
 import { detectAppPopup } from "./popupDetect";
 import { planDismiss } from "./popupDismiss";
@@ -159,11 +161,25 @@ export function createOnDeviceUI(deps: {
       detected = true;
       log(`应用内浮层(${hit.id})：${hit.matched}`);
       onEvent?.("popup_detected", { id: hit.id });
-      for (const s of planDismiss(hit, boxes, size)) {
-        if (s.kind === "tap") await tap(s.point);
-        else if (s.kind === "swipe") await swipe(s.from, s.to, 0.3);
-        else await doSwipeBack();
-        await sleep(600);
+      // 优先视觉定位卡片右上 ✕（比固定坐标可靠）；关掉了就跳过通用计划，避免已关闭后误点信息流。
+      let closedByIcon = false;
+      try {
+        const cx = detectCardClose(decode(await screenshot()), size.width, size.height);
+        if (cx) {
+          await tap(cx);
+          await sleep(700);
+          closedByIcon = !detectAppPopup(await ocr(await screenshot()));
+        }
+      } catch {
+        /* 视觉定位失败 → 走通用脱困计划 */
+      }
+      if (!closedByIcon) {
+        for (const s of planDismiss(hit, boxes, size)) {
+          if (s.kind === "tap") await tap(s.point);
+          else if (s.kind === "swipe") await swipe(s.from, s.to, 0.3);
+          else await doSwipeBack();
+          await sleep(600);
+        }
       }
     }
     const still = !!detectAppPopup(await ocr(await screenshot()));
@@ -286,8 +302,9 @@ export function createOnDeviceUI(deps: {
         .split(/\s+/)
         .map((t) => t.replace(/^#/, ""))
         .filter(Boolean);
-      log(caption ? `文案：${caption}` : "未识别到文案");
-      return { caption, tags };
+      const live = isLivePage(boxes);
+      log(live ? "直播卡，跳过" : caption ? `文案：${caption}` : "未识别到文案");
+      return { caption, tags, isLive: live };
     },
 
     async likeVideo() {

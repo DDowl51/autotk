@@ -62,3 +62,24 @@ test("planDismiss：没有关闭文字框则跳过 closeText 步", () => {
 test("findDismissText：无匹配返回 null", () => {
   assert.equal(findDismissText([box("hello")], size), null);
 });
+
+// —— 真机实测遇到的三个浮层（截图核实）——
+test("浮层：接收好友新作品通知（强标题，✕/backdrop 脱困，不点接收）", () => {
+  const hit = detectAppPopup([box("接收好友新作品通知？", 0.3, 0.7)]);
+  assert.equal(hit?.id, "notif-friend");
+  assert.deepEqual(hit?.dismiss, ["closeIcon", "tapOutside", "back"]);
+});
+
+test("浮层：虚拟头像（强标题）", () => {
+  assert.equal(detectAppPopup([box("你的虚拟头像，你的专属风格", 0.3, 0.7)])?.id, "avatar");
+});
+
+test("浮层：虚拟物品和奖励政策（可点「知道了」安全关掉）", () => {
+  const boxes = [box("虚拟物品和奖励政策更新", 0.3, 0.4), box("知道了", 0.5, 0.7)];
+  assert.equal(detectAppPopup(boxes)?.id, "policy");
+  assert.equal(hasDismissControl([box("知道了")]), true); // 知道了 现在算关闭控件
+  // planDismiss 的 closeText 应定位到「知道了」框中心
+  const hit = detectAppPopup(boxes)!;
+  const steps = planDismiss(hit, boxes, size);
+  assert.equal(steps[0].kind, "tap");
+});

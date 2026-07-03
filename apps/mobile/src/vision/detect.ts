@@ -237,6 +237,37 @@ export function detectCommentCloseButton(
   return n >= 20 ? { x: sx / n, y: sy / n } : null;
 }
 
+/**
+ * 检测应用内浮层卡片右上角的关闭 ✕（浅灰圆里的灰色 ✕）。
+ * 扫右侧竖条、上半~中部，找一小簇「灰、明显暗于白卡但非纯黑、非彩色」的像素质心。
+ * ⚠️ 阈值为起步值，真机核实；找不到（太少/太多）返回 null，调用方回退安全脱困计划。
+ */
+export function detectCardClose(img: DecodedImage, W: number, H: number): Point | null {
+  const scale = img.width / W;
+  const x0 = Math.round(W * 0.78);
+  const x1 = Math.round(W * 0.93);
+  const y0 = Math.round(H * 0.18);
+  const y1 = Math.round(H * 0.62);
+  const isGreyX = (p: Px) => {
+    const mx = Math.max(p.r, p.g, p.b);
+    const mn = Math.min(p.r, p.g, p.b);
+    return mx - mn < 24 && p.r > 70 && p.r < 185;
+  };
+  let sx = 0;
+  let sy = 0;
+  let n = 0;
+  for (let ly = y0; ly < y1; ly++) {
+    for (let lx = x0; lx < x1; lx++) {
+      if (isGreyX(lp(img, scale, lx, ly))) {
+        sx += lx;
+        sy += ly;
+        n++;
+      }
+    }
+  }
+  return n >= 12 && n <= 500 ? { x: sx / n, y: sy / n } : null;
+}
+
 /** 便捷：从 base64 PNG 解码（统一入口，RN 安全）。 */
 export function decode(b64: string): DecodedImage {
   return decodePng(base64ToBytes(b64));

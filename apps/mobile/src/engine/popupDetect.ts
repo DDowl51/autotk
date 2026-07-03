@@ -23,7 +23,7 @@ export interface PopupHit {
 
 /** 关闭控件文字（整串精确匹配，避免把正文里的词当按钮）。复用 #4 否定词思路。 */
 export const DISMISS_TEXT =
-  /^\s*(✕|×|x|close|not now|no thanks|maybe later|skip|cancel|dismiss|done|not interested|取消|关闭|暂不|以后再说|跳过|不允许|不感兴趣)\s*$/i;
+  /^\s*(✕|×|x|close|not now|no thanks|maybe later|skip|cancel|dismiss|done|not interested|取消|关闭|暂不|以后再说|跳过|不允许|不感兴趣|知道了|我知道了)\s*$/i;
 
 /** 右侧动作栏（点赞/评论计数等），其文字永远不算浮层标记。 */
 export function inActionRail(b: OcrBox): boolean {
@@ -44,6 +44,28 @@ export const SIGNATURES: PopupSignature[] = [
     dismiss: ["closeText", "closeIcon", "back"],
   },
   { id: "addyours", strong: true, markers: [/add yours/i, /添加你的/], dismiss: ["closeIcon", "back"] },
+  // —— 真机实测遇到的（截图核实）——
+  // 推荐流：「接收好友新作品通知？」，只有「接收通知」(红，勿点)+ 卡片右上 ✕。
+  {
+    id: "notif-friend",
+    strong: true,
+    markers: [/接收好友新作品通知/, /好友新作品通知/, /新作品通知/],
+    dismiss: ["closeIcon", "tapOutside", "back"],
+  },
+  // 个人主页：「你的虚拟头像，你的专属风格」，只有「开始创建」(勿点)+ 卡片右上 ✕。
+  {
+    id: "avatar",
+    strong: true,
+    markers: [/虚拟头像/, /你的专属风格/, /开始创建/, /avatar/i],
+    dismiss: ["closeIcon", "tapOutside", "back"],
+  },
+  // 直播里：「虚拟物品和奖励政策更新」，底部整条「知道了」可安全点掉。
+  {
+    id: "policy",
+    strong: true,
+    markers: [/虚拟物品和奖励政策/, /奖励政策更新/, /虚拟物品政策/],
+    dismiss: ["closeText", "back"],
+  },
   {
     id: "follow",
     markers: [/log\s*in to follow/i, /follow back/i, /登录.*关注/],

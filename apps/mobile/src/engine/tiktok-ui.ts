@@ -10,6 +10,8 @@
 export interface VideoInfo {
   caption: string;
   tags: string[];
+  /** 当前是否是推荐流里的直播卡（遇到直接下滑、不互动）。检测不到/未实现时为 undefined/false。 */
+  isLive?: boolean;
 }
 
 export interface CommentInfo {
