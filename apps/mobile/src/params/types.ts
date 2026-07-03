@@ -77,7 +77,8 @@ export interface AutomationParams {
   };
   /**
    * 关注监控（打粉）：监控「关注」流里你关注的账号发的视频，
-   * 进其评论区、对命中关键词的评论回复引流话术。开启后与养号轮流执行。
+   * 进其评论区、对命中关键词的评论回复引流话术。
+   * moduleEnable 开启 = 纯打粉，只跑关注流、暂停日常养号（与养号互斥）。
    */
   following: ModuleInteractionParams & {
     /** 打粉总开关。默认关。 */
