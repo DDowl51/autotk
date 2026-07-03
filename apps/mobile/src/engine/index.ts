@@ -99,7 +99,6 @@ export function createEngine(deps: EngineDeps): Engine {
 
     let idleLogged = false;
     let consecutiveErrors = 0;
-    let followingTurn = false; // 关注监控开启时，与养号交替执行
 
     // 养号一批：按搜索占比分发推荐页 / 搜索页。
     const runGrooming = async () => {
@@ -134,21 +133,17 @@ export function createEngine(deps: EngineDeps): Engine {
           // 失败/异常会被本 try 捕获 → 退避重试。
           if (ui.recoverToFeed) await ui.recoverToFeed();
 
-          // 个人主页：每天仅一次，时间段内优先处理。
-          // 先标记"今天已尝试"再执行：即便失败也不会整天反复重试（配合下方容错）。
-          if (params.persHome.moduleEnable && persHomeRanOn !== todayKey()) {
+          // 「监控关注」开关与日常养号**互斥**：
+          //   开 = 纯打粉，只跑关注流、暂停养号（推荐/搜索/个人主页都不跑）；
+          //   关 = 日常养号（个人主页每天一次 + 推荐/搜索按比例）。
+          if (params.following.moduleEnable) {
+            currentModule = "following";
+            await withTimeout(runFollowingFeed(ctx, ui, gen, randInt(3, 8)), MODULE_TIMEOUT_SECONDS);
+          } else if (params.persHome.moduleEnable && persHomeRanOn !== todayKey()) {
+            // 个人主页：每天仅一次，时间段内优先。先标记"今天已尝试"再执行，避免失败整天重试。
             persHomeRanOn = todayKey();
             currentModule = "persHome";
             await withTimeout(runPersHome(ctx, ui, gen), MODULE_TIMEOUT_SECONDS);
-          } else if (params.following.moduleEnable) {
-            // 关注监控开启：与养号交替（本批打粉，下批养号），既引流又保号。
-            followingTurn = !followingTurn;
-            if (followingTurn) {
-              currentModule = "following";
-              await withTimeout(runFollowingFeed(ctx, ui, gen, randInt(3, 8)), MODULE_TIMEOUT_SECONDS);
-            } else {
-              await runGrooming();
-            }
           } else {
             await runGrooming();
           }

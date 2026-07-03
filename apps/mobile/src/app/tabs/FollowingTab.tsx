@@ -28,11 +28,11 @@ export function FollowingTab({
     <>
       <Section
         title="关注监控（打粉）"
-        hint="监控「关注」流里你关注账号发的视频，进评论区、对命中关键词的评论回复引流话术。开启后与养号轮流跑。"
+        hint="监控「关注」流里你关注账号发的视频，进评论区、对命中关键词的评论回复引流话术。⚠️ 开启后进入纯打粉模式：只跑关注监控，暂停日常养号（推荐/搜索/个人主页都不跑）——与养号互斥。"
       >
         <SwitchField
-          label="启用关注监控"
-          hint="先在 TikTok 里关注一批目标账号，再开这里"
+          label="启用关注监控（打粉专用，与养号互斥）"
+          hint="先在 TikTok 里关注一批目标账号，再开这里；开启期间不做日常养号，关掉即恢复养号"
           value={f.moduleEnable}
           onChange={(v) => patch({ following: { ...f, moduleEnable: v } })}
         />
