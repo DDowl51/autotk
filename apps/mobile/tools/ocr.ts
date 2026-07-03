@@ -4,6 +4,7 @@ import * as os from "os";
 import * as path from "path";
 import { createWorker, type Worker } from "tesseract.js";
 import { screenshot } from "../src/wda";
+import type { OcrBox } from "../src/vision/caption";
 
 // 复用一个 OCR worker（首次创建会下载/加载语言模型，较慢；之后很快）。
 let workerPromise: Promise<Worker> | null = null;
@@ -12,12 +13,79 @@ function getWorker(): Promise<Worker> {
   return workerPromise;
 }
 
+// 标定固定按钮用的 worker：中英文都识（关注/Following、下一步/Next、发布/Post…）。
+let anchorWorkerPromise: Promise<Worker> | null = null;
+function getAnchorWorker(): Promise<Worker> {
+  if (!anchorWorkerPromise) anchorWorkerPromise = createWorker("eng+chi_sim");
+  return anchorWorkerPromise;
+}
+
 /** 进程退出前调用，否则 worker 线程会让 node 挂着不退出。 */
 export async function terminateOcr(): Promise<void> {
   if (workerPromise) {
     const w = await workerPromise;
     await w.terminate();
     workerPromise = null;
+  }
+  if (anchorWorkerPromise) {
+    const w = await anchorWorkerPromise;
+    await w.terminate();
+    anchorWorkerPromise = null;
+  }
+}
+
+// tesseract 结果里词框的最小形状（不同版本 words 可能挂在顶层或 blocks 树里，两种都收）。
+interface TBBox {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+interface TWord {
+  text: string;
+  bbox: TBBox;
+}
+interface TPage {
+  words?: TWord[];
+  blocks?: Array<{ paragraphs?: Array<{ lines?: Array<{ words?: TWord[] }> }> }> | null;
+}
+function collectWords(page: TPage): TWord[] {
+  if (Array.isArray(page.words) && page.words.length > 0) return page.words;
+  const out: TWord[] = [];
+  for (const block of page.blocks ?? []) {
+    for (const para of block.paragraphs ?? []) {
+      for (const line of para.lines ?? []) {
+        for (const w of line.words ?? []) out.push(w);
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * 整屏 OCR，返回带**归一化(0~1)位置**的词框（供 anchorLocate.findAnchorByText 按文字定位固定按钮）。
+ * 标定期用（电脑 tesseract），跟手机机型/系统无关。
+ */
+export async function recognizeBoxes(): Promise<OcrBox[]> {
+  const b64 = await screenshot();
+  const buf = Buffer.from(b64, "base64");
+  const { w: pxW, h: pxH } = pngSize(buf);
+  const tmp = path.join(os.tmpdir(), `tk-ocr-${Date.now()}.png`);
+  fs.writeFileSync(tmp, buf);
+  try {
+    const worker = await getAnchorWorker();
+    const { data } = await worker.recognize(tmp);
+    return collectWords(data as unknown as TPage)
+      .filter((w) => w.text && w.text.trim().length > 0)
+      .map((w) => ({
+        text: w.text,
+        x: w.bbox.x0 / pxW,
+        y: w.bbox.y0 / pxH,
+        w: (w.bbox.x1 - w.bbox.x0) / pxW,
+        h: (w.bbox.y1 - w.bbox.y0) / pxH,
+      }));
+  } finally {
+    if (fs.existsSync(tmp)) fs.unlinkSync(tmp);
   }
 }
 

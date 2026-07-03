@@ -53,7 +53,8 @@ import {
 import { createCalibratedUI } from "./calibratedUI";
 import { validateRail } from "../src/engine/railCheck";
 import { computeAnchors, resolveAnchor, type AnchorName } from "../src/engine/anchors";
-import { readCaption, terminateOcr } from "./ocr";
+import { readCaption, terminateOcr, recognizeBoxes } from "./ocr";
+import { findAnchorByText } from "../src/engine/anchorLocate";
 import {
   deviceKey,
   loadProfile,
@@ -400,8 +401,23 @@ async function dispatch(
         log(`⚠ 标定被拒：${v.reason}。请确认停在干净的未点赞视频页后重试，本次未写盘。`);
         break;
       }
-      // 记录各页面锚点默认（占位比例）到档案，便于逐点手改覆盖；右栏坐标为检测值。
-      const prof: DeviceProfile = { screen: { w: width, h: height }, ...r, anchors: computeAnchors(width, height) };
+      // 各页面锚点默认（占位比例）；能 OCR 定位的固定按钮就用检测值覆盖，比比例猜稳。
+      const anchors = computeAnchors(width, height);
+      // 「关注」Tab 在顶部、有文字 → 电脑 tesseract OCR 定位（只看顶部带，避开评论同字）。
+      try {
+        const topBoxes = (await recognizeBoxes()).filter((b) => b.y + b.h / 2 < 0.15);
+        const followTab = findAnchorByText(topBoxes, ["关注", "Following"], width, height);
+        if (followTab) {
+          anchors.followTab = followTab;
+          log(`  OCR 定位「关注」Tab → (${followTab.x.toFixed(0)}, ${followTab.y.toFixed(0)})`);
+        } else {
+          log("  OCR 未找到「关注/Following」Tab（可能界面语言/位置不同），followTab 用比例默认——真机核实");
+        }
+      } catch (e) {
+        log(`  OCR 定位跳过（${e instanceof Error ? e.message : String(e)}）——followTab 用比例默认`);
+      }
+      // 发布流程「下一步/发布」等按钮不在推荐页，需专门的发布标定流程，暂留比例默认（见收尾清单）。
+      const prof: DeviceProfile = { screen: { w: width, h: height }, ...r, anchors };
       const key = deviceKey(width, height);
       saveProfile(key, prof);
       log(`已标定 [${key}] 并保存 → ${DEVICES_FILE}`);
