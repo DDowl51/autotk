@@ -265,13 +265,14 @@ export default function ConfigScreen({ initialParams }: { initialParams?: Automa
               <View style={styles.footerCard}>
                 <StepperField
                   label="互动作品数"
-                  hint="进主页后对几条自己的作品互动，建议 ≤ 每天更新条数"
+                  hint="进主页后对几条自己的作品互动，建议 ≤ 每天更新条数（开启模块时至少 1）"
                   value={params.persHome.maxVideoCount}
                   onChange={(v) =>
                     patch({
                       persHome: { ...params.persHome, maxVideoCount: v },
                     })
                   }
+                  min={1}
                   max={50}
                 />
               </View>

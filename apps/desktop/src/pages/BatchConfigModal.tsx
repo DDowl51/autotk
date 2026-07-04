@@ -231,7 +231,7 @@ export function BatchConfigModal({
           <Section title="个人主页模块" hint="对自己作品评论区互动。账号没发过作品请关闭">
             <SwitchRow label="启用个人主页模块" hint="账号无任何作品时必须关闭" value={!!draft.persHome.moduleEnable} onChange={(v) => setD({ persHome: { ...draft.persHome, moduleEnable: v } })} />
             <PercentRow label="进评论区概率" value={draft.persHome.interactProb ?? 0.1} onChange={(v) => setD({ persHome: { ...draft.persHome, interactProb: v } })} />
-            <StepperRow label="互动作品数" hint="进主页后对几条自己的作品互动" value={draft.persHome.maxVideoCount ?? 3} onChange={(v) => setD({ persHome: { ...draft.persHome, maxVideoCount: v } })} max={50} />
+            <StepperRow label="互动作品数" hint="进主页后对几条自己的作品互动（开启模块时至少 1）" value={draft.persHome.maxVideoCount ?? 3} onChange={(v) => setD({ persHome: { ...draft.persHome, maxVideoCount: v } })} min={1} max={50} />
           </Section>
           <Section title="评论区动作">
             <PercentRow label="单条评论点赞概率" value={draft.persHome.commentLikeProb ?? 0.5} onChange={(v) => setD({ persHome: { ...draft.persHome, commentLikeProb: v } })} />
