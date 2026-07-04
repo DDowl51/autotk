@@ -233,6 +233,11 @@ export function useEngine(initialParams?: AutomationParams): EngineState {
     return () => clearTimeout(h);
   }, [params]);
 
+  // 参数变化（本地改设置 / 下发合并）→ 若引擎在跑，热更到运行中的引擎，即时生效。
+  useEffect(() => {
+    engineRef.current?.updateParams(params, createFixedReplyGenerator(params.fixedReplies));
+  }, [params]);
+
   // 设定控制中心地址：写 config + 持久化 + 触发重连（下方 hub 连接 effect 依赖 hubUrl）。
   const setHubEndpoint = useCallback((url: string) => {
     const u = (url || "").trim();
@@ -289,7 +294,10 @@ export function useEngine(initialParams?: AutomationParams): EngineState {
             // 批量配置下发：深合并到最新 params + 校验，整体接受或整体拒绝并回执。
             const res = applyConfigPatch(paramsRef.current, m.patch);
             if (res.ok) {
-              setParams(res.next); // 下一轮引擎读到新值
+              setParams(res.next);
+              // 关键：同步热更到「正在运行的引擎」，真生效后再回 ok；
+              // 否则运行中的引擎读的是旧闭包，下发静默失灵还伪报成功（审计 critical）。
+              engineRef.current?.updateParams(res.next, createFixedReplyGenerator(res.next.fixedReplies));
               pushLog(`已应用下发配置（任务 ${m.jobId}）`);
               hubRef.current?.reportConfigResult(m.jobId, true);
             } else {

@@ -28,6 +28,11 @@ export interface Engine {
   isRunning(): boolean;
   /** 当前正在跑的模块（forYou/kwSearch/persHome），未跑则 undefined。 */
   getModule(): string | undefined;
+  /**
+   * 热更运行参数：下发配置 / 本地改设置后调用，**运行中即时生效**（不必停机重建）。
+   * gen 可选：fixedReplies 变了就传一个新的固定回复生成器进来。
+   */
+  updateParams(next: AutomationParams, gen?: CommentGenerator): void;
 }
 
 /** 不在时间段内时，每隔这么久重新检查一次（秒）。 */
@@ -53,7 +58,10 @@ function todayKey(d = new Date()): string {
  * 真正的界面操作由注入的 ui 完成；评论内容由 gen 生成。
  */
 export function createEngine(deps: EngineDeps): Engine {
-  const { params, ui, gen, logger } = deps;
+  const { ui, logger } = deps;
+  // 可变，供 updateParams 热更；ctx/循环/模块调用都读这两个变量，改一处全生效。
+  let params = deps.params;
+  let gen = deps.gen;
   let stopped = false;
   let running = false;
   const stats = emptyStats();
@@ -79,7 +87,10 @@ export function createEngine(deps: EngineDeps): Engine {
   }
 
   const ctx: RunContext = {
-    params,
+    // getter：模块每次读到的是最新 params（updateParams 热更后即时生效）。
+    get params() {
+      return params;
+    },
     stats,
     logger,
     shouldStop: () => stopped,
@@ -187,6 +198,10 @@ export function createEngine(deps: EngineDeps): Engine {
     getStats: () => ({ ...stats }),
     isRunning: () => running,
     getModule: () => currentModule,
+    updateParams: (next, g) => {
+      params = next;
+      if (g) gen = g;
+    },
   };
 }
 
