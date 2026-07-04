@@ -47,9 +47,13 @@ export class ConfigDispatcher {
   private readonly timeoutMs: number;
   private readonly timers: Timers;
 
-  /** 发起一次下发。deviceIds 去重；离线台直接 offline。 */
+  /**
+   * 发起一次下发。deviceIds 去重；离线台直接 offline。
+   * **合并**已有同 jobId 的等待表（而非覆盖）：这样离线设备重连后可用**原 jobId**补发，
+   * 既不冲掉同批仍在等回执的在线设备条目，又让操作员看板按原 jobId 正确把该设备更新到 ok。
+   */
   start(jobId: string, deviceIds: string[], patch: ConfigPatch): void {
-    const perDevice = new Map<string, () => void>();
+    const perDevice = this.pending.get(jobId) ?? new Map<string, () => void>();
     this.pending.set(jobId, perDevice);
 
     for (const deviceId of new Set(deviceIds)) {

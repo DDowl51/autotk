@@ -318,6 +318,8 @@ describe("Hub 实时协议（真 socket.io）", () => {
     // dOn 此刻才回 Jmix 的回执 → 必须仍被正确结算为 ok（旧代码里会被 dOff 补发覆盖后吞掉）。
     dOn.emit(EVT.configResult, { jobId: "Jmix", ok: true });
     await waitFor(() => prog.some((p) => p.jobId === "Jmix" && p.deviceId === "dOn" && p.status === "ok"));
+    // 且 dOff 的补发也在**原 jobId** 下走到 ok（操作员看板据此把它从 offline 翻到 ok，不再永久卡 offline）。
+    await waitFor(() => prog.some((p) => p.jobId === "Jmix" && p.deviceId === "dOff" && p.status === "ok"));
 
     dOn.close();
     dOff.close();

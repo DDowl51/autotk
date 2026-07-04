@@ -105,4 +105,21 @@ describe("ConfigDispatcher", () => {
     d.start("j1", ["a", "a"], patch);
     expect(sent).toEqual(["a"]);
   });
+
+  it("同 jobId 二次 start 合并、不冲掉仍在等待的旧设备（离线补发用原 jobId 的前提）", () => {
+    const online = new Set(["a"]); // b 起初离线
+    const { d, progress } = mk(online);
+    d.start("j1", ["a", "b"], patch); // a 在线 sent 等待、b 离线
+    expect(d.pendingCount("j1")).toBe(1); // 只有 a 在等
+    // b 重连后用**原 jobId**补发：应合并进同一等待表，不清掉 a。
+    online.add("b");
+    d.start("j1", ["b"], patch);
+    expect(d.pendingCount("j1")).toBe(2); // a、b 都在等（未被覆盖）
+    // a 迟到回执仍被正确结算（旧代码里会因覆盖被吞）。
+    d.onResult("j1", "a", true);
+    expect(statusOf(progress, "a")).toEqual(["sent", "ok"]);
+    d.onResult("j1", "b", true);
+    expect(statusOf(progress, "b")).toEqual(["offline", "sent", "ok"]);
+    expect(d.pendingCount("j1")).toBe(0);
+  });
 });
