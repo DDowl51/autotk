@@ -57,6 +57,11 @@ export class PendingStore {
     return this.m.get(deviceId)?.length ?? 0;
   }
 
+  /** 等最近一次写落盘（优雅关闭/测试用）。 */
+  flush(): Promise<void> {
+    return this.chain;
+  }
+
   private push(deviceId: string, item: PendingItem): void {
     const arr = this.m.get(deviceId) ?? [];
     arr.push(item);

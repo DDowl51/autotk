@@ -112,6 +112,23 @@ describe("PublishCoordinator", () => {
     expect(c.pendingCount()).toBe(0);
   });
 
+  it("定时·未来：排程即 persistScheduled 落盘；到点触发 dropScheduled 出盘", () => {
+    const ft = fakeTimers();
+    const added: string[] = [];
+    const dropped: string[] = [];
+    const c = new PublishCoordinator(() => true, () => {}, {
+      timers: ft.timers,
+      now: () => 1000,
+      persistScheduled: (t) => added.push(t.taskId),
+      dropScheduled: (id) => dropped.push(id),
+    });
+    c.start({ ...task("t1"), scheduledAtMs: 5000 });
+    expect(added).toEqual(["t1"]); // 排程即落盘
+    expect(dropped).toEqual([]);
+    ft.fireAll(); // 到点下发
+    expect(dropped).toEqual(["t1"]); // 出盘（不再是「定时待发」）
+  });
+
   it("定时·过去时刻：等同立即下发", () => {
     const { c, progress, sent } = mk(new Set(["d"]), undefined, () => 10_000);
     c.start({ ...task("t1"), scheduledAtMs: 5000 });

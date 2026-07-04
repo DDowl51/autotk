@@ -6,6 +6,7 @@ import { LogHub } from "./domain/log-hub";
 import { AliasStore } from "./domain/alias-store";
 import { FileDeviceStore } from "./adapters/file-device-store";
 import { PendingStore } from "./domain/pending-store";
+import { ScheduledStore } from "./domain/scheduled-store";
 import { attachGateway } from "./gateway";
 import { RelayStore, handleRelay } from "./relay";
 
@@ -113,12 +114,14 @@ export async function startHub(opts: StartHubOptions = {}): Promise<HubHandle> {
   // 文件持久化：设备列表 + 离线待补发队列，Hub（内嵌桌面 App）重启后不丢。
   const deviceStore = new FileDeviceStore(path.join(dataDir, "devices.json"));
   const pending = new PendingStore(path.join(dataDir, "pending.json"));
+  const scheduled = new ScheduledStore(path.join(dataDir, "scheduled.json"));
   const registry = new DeviceRegistry(deviceStore, Date.now, aliases);
   const logHub = new LogHub();
-  attachGateway(io, registry, logHub, pending);
 
-  // 先加载别名/设备/待补发再监听，确保首个连接的快照已带持久化数据、补发不漏。
-  await Promise.all([aliases.load(), deviceStore.load(), pending.load()]);
+  // 先加载别名/设备/待补发/定时，再 attach + 监听：
+  // 确保首个快照已带持久化数据、补发不漏、定时任务在 attach 时被重新排程。
+  await Promise.all([aliases.load(), deviceStore.load(), pending.load(), scheduled.load()]);
+  attachGateway(io, registry, logHub, pending, scheduled);
   const port =
     opts.ports && opts.ports.length > 0
       ? await listenList(httpServer, opts.ports)
@@ -138,7 +141,8 @@ export async function startHub(opts: StartHubOptions = {}): Promise<HubHandle> {
     port,
     close: async () => {
       await new Promise<void>((resolve) => io.close(() => resolve()));
-      await deviceStore.close(); // 停去抖定时器并最后落一次盘
+      // 停去抖定时器并把三份持久化都落到盘（避免关闭时丢最后一次写）。
+      await Promise.all([deviceStore.close(), pending.flush(), scheduled.flush()]);
     },
   };
 }

@@ -15,6 +15,7 @@ import type { LogHub } from "./domain/log-hub";
 import { ConfigDispatcher } from "./domain/config-dispatcher";
 import { PublishCoordinator } from "./domain/publish-coordinator";
 import { PendingStore } from "./domain/pending-store";
+import type { ScheduledStore } from "./domain/scheduled-store";
 
 const OPERATORS = "operators";
 const deviceRoom = (deviceId: string) => `dev:${deviceId}`;
@@ -39,6 +40,7 @@ export function attachGateway(
   registry: DeviceRegistry,
   logHub: LogHub,
   pending: PendingStore = new PendingStore(),
+  scheduled?: ScheduledStore,
 ): void {
   // 批量配置下发协调器：在线才下发，逐台进度广播给所有操作员；
   // 离线台入「待补发」队列（重连时补发），而非静默丢弃。
@@ -65,7 +67,16 @@ export function attachGateway(
       return true;
     },
     (p) => io.to(OPERATORS).emit(EVT.publishProgress, p),
+    {
+      // 未来定时任务落盘/到点出盘 → Hub 重启后能重新排程。
+      persistScheduled: scheduled ? (t) => scheduled.add(t) : undefined,
+      dropScheduled: scheduled ? (id) => scheduled.remove(id) : undefined,
+    },
   );
+
+  // 启动时把持久化的定时发布重新排程（Hub 重启不丢）：未来的重新装表，已过点的立即下发
+  // （在线则送达、离线则进补发队列）。iterate 快照，start() 内部的增删不影响本次遍历。
+  if (scheduled) for (const t of scheduled.list()) publisher.start(t);
 
   // 设备（重）连上后，把它离线期间积压的下发/发布补发下去（重新走协调器 → 正常进度/超时）。
   const flushPending = async (deviceId: string): Promise<void> => {

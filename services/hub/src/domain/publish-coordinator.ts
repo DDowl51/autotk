@@ -22,6 +22,10 @@ export interface PublishOpts {
   timeoutMs?: number; // 多久没有任何进展就判 timeout（下载/发布耗时，默认 120s）
   timers?: Timers;
   now?: () => number; // 当前时刻（注入便于测试定时发送）
+  /** 排程一条未来定时任务时回调（落盘，供 Hub 重启后重新排程）。 */
+  persistScheduled?: (task: PublishTask) => void;
+  /** 定时任务到点下发（或取消）时回调（出「定时」持久化）。 */
+  dropScheduled?: (taskId: string) => void;
 }
 
 /**
@@ -39,6 +43,8 @@ export class PublishCoordinator {
   private readonly timeoutMs: number;
   private readonly timers: Timers;
   private readonly now: () => number;
+  private readonly persistScheduled?: (task: PublishTask) => void;
+  private readonly dropScheduled?: (taskId: string) => void;
 
   constructor(
     private readonly send: SendPublishTask,
@@ -48,15 +54,21 @@ export class PublishCoordinator {
     this.timeoutMs = opts.timeoutMs ?? 120_000;
     this.timers = opts.timers ?? realTimers;
     this.now = opts.now ?? Date.now;
+    this.persistScheduled = opts.persistScheduled;
+    this.dropScheduled = opts.dropScheduled;
   }
 
   start(task: PublishTask): void {
     const at = task.scheduledAtMs;
     if (at != null && at > this.now()) {
       // 定时：先报「待发」并占位，到点再真正下发。手机侧无感知（收到即发）。
-      // 注意：定时器在内存，Hub 重启会丢失未到点的排期（见路线图；如需持久化改存储）。
+      // 落盘持久化，Hub（内嵌桌面 App）重启后可 list() 出来重新排程，定时发布不丢。
       this.emit(task.taskId, task.deviceId, "scheduled");
-      const cancel = this.timers.set(() => this.dispatch(task), at - this.now());
+      this.persistScheduled?.(task);
+      const cancel = this.timers.set(() => {
+        this.dropScheduled?.(task.taskId); // 到点：出「定时」持久化，进入正常下发流程
+        this.dispatch(task);
+      }, at - this.now());
       this.pending.set(task.taskId, { deviceId: task.deviceId, cancel });
       return;
     }
