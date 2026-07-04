@@ -87,6 +87,8 @@ export function useEngine(initialParams?: AutomationParams): EngineState {
   // 发布任务队列（阶段3）：去重 + 串行处理，避免并发发布。
   const publishQueueRef = useRef(new PublishQueue());
   const drainingRef = useRef(false);
+  // 发布正在驱动 WDA（占用手机前台）→ 养号暂停。引擎 isPaused 读它；发布期间置 true。
+  const publishingRef = useRef(false);
   const logBufRef = useRef<string[]>([]);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   // 同步防重入：engineRef/running 要等 await startKeepAlive 之后才设置，
@@ -105,7 +107,11 @@ export function useEngine(initialParams?: AutomationParams): EngineState {
   const drainPublishQueue = useCallback(async () => {
     if (drainingRef.current) return;
     drainingRef.current = true;
+    // 占用 WDA：养号暂停开新批次（isPaused），并等它当前批次跑完（isBusy）再发布，
+    // 保证养号与发布对同一手机完全串行、绝不并发驱动。
+    publishingRef.current = true;
     try {
+      while (engineRef.current?.isBusy()) await new Promise((r) => setTimeout(r, 400));
       let item = publishQueueRef.current.nextPending();
       while (item) {
         const task = item.task;
@@ -134,6 +140,7 @@ export function useEngine(initialParams?: AutomationParams): EngineState {
       }
     } finally {
       drainingRef.current = false;
+      publishingRef.current = false; // 发布队列清空 → 养号恢复
     }
   }, [pushLog]);
 
@@ -189,6 +196,8 @@ export function useEngine(initialParams?: AutomationParams): EngineState {
           ui: picked.ui,
           gen: createFixedReplyGenerator(params.fixedReplies),
           logger: { log: (lvl, msg) => pushLog(msg, lvl as LogLevel) },
+          // 发布占用手机时暂停养号（与发布串行，不抢前台）。
+          isPaused: () => publishingRef.current,
         });
         engineRef.current = engine;
         setRunning(true);

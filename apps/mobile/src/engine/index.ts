@@ -19,6 +19,11 @@ export interface EngineDeps {
   ui: TikTokUI;
   gen: CommentGenerator;
   logger: Logger;
+  /**
+   * 是否暂停养号（true = 有别的流程正在驱动同一手机的 WDA/前台，如「远程下发发布」）。
+   * 引擎在每个批次开始前查一次：暂停中就空转、不开新批次，避免养号与发布抢前台互相踩。
+   */
+  isPaused?: () => boolean;
 }
 
 export interface Engine {
@@ -28,6 +33,11 @@ export interface Engine {
   isRunning(): boolean;
   /** 当前正在跑的模块（forYou/kwSearch/persHome），未跑则 undefined。 */
   getModule(): string | undefined;
+  /**
+   * 引擎是否正忙于驱动 WDA（某批模块正在执行）。发布流程据此**等当前批次跑完再插入**，
+   * 从而与养号完全串行、不并发驱动同一手机。批次间隔/退避/暂停等空闲期返回 false。
+   */
+  isBusy(): boolean;
   /**
    * 热更运行参数：下发配置 / 本地改设置后调用，**运行中即时生效**（不必停机重建）。
    * gen 可选：fixedReplies 变了就传一个新的固定回复生成器进来。
@@ -67,6 +77,8 @@ export function createEngine(deps: EngineDeps): Engine {
   const stats = emptyStats();
   let persHomeRanOn: string | null = null;
   let currentModule: string | undefined;
+  // 本批是否正在驱动 WDA（供发布等它跑完再插入，见 isBusy）。批次间隔/退避/暂停期为 false。
+  let moduleRunning = false;
 
   // 可被打断的休眠：停止时立即唤醒，无需等满整个间隔。
   // 空转等待与模块内的拟人化停顿都走这里，保证停止响应及时。
@@ -139,7 +151,14 @@ export function createEngine(deps: EngineDeps): Engine {
         }
         idleLogged = false;
 
+        // 发布正在驱动 WDA（同一手机前台）→ 养号暂停、不开新批次，避免两者抢前台互相踩。
+        if (deps.isPaused?.()) {
+          await interruptibleSleep(1);
+          continue;
+        }
+
         try {
+          moduleRunning = true; // 本批开始驱动 WDA（发布会等到此为 false 再插入）
           // 脱困：每个批次开始前先回到"基地"（推荐流干净状态）。
           // 失败/异常会被本 try 捕获 → 退避重试。
           if (ui.recoverToFeed) await ui.recoverToFeed();
@@ -160,8 +179,6 @@ export function createEngine(deps: EngineDeps): Engine {
           }
 
           consecutiveErrors = 0;
-          // 批次间兜底间隔：防止"空批次"零延迟热循环 + 拟人化停顿。
-          await interruptibleSleep(jitter(MIN_BATCH_GAP));
         } catch (e) {
           // 单次批次失败不杀引擎：退避重试；连续失败过多 → 长冷却（熔断）。
           consecutiveErrors++;
@@ -181,7 +198,11 @@ export function createEngine(deps: EngineDeps): Engine {
             );
             await interruptibleSleep(backoff);
           }
+        } finally {
+          moduleRunning = false; // 本批结束（成功/出错都）→ 进入空闲，允许发布插入
         }
+        // 批次间兜底间隔：防"空批次"零延迟热循环 + 拟人化停顿（成功/退避后都走）。
+        await interruptibleSleep(jitter(MIN_BATCH_GAP));
       }
     } finally {
       running = false;
@@ -198,6 +219,7 @@ export function createEngine(deps: EngineDeps): Engine {
     getStats: () => ({ ...stats }),
     isRunning: () => running,
     getModule: () => currentModule,
+    isBusy: () => moduleRunning,
     updateParams: (next, g) => {
       params = next;
       if (g) gen = g;

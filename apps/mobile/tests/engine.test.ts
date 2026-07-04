@@ -95,3 +95,33 @@ test("updateParams：运行中热更即时生效（postReplies 由 false→true�
     await runP;
   }
 });
+
+test("isPaused：发布占用 WDA 时养号暂停不开新批次，恢复后继续（修 #3 互斥）", async () => {
+  let paused = true;
+  const params: AutomationParams = {
+    ...DEFAULT_PARAMS,
+    allDay: true,
+    kwSearchExecRatio: 0, // 只跑推荐页
+    posPrompts: ["*"],
+    clickWaitTime: 0.01,
+  };
+  const engine = createEngine({
+    params,
+    ui: createMockUI(() => {}),
+    gen: createFixedReplyGenerator([]),
+    logger: { log: () => {} },
+    isPaused: () => paused,
+  });
+  const runP = engine.start();
+  try {
+    await new Promise((r) => setTimeout(r, 1500));
+    assert.equal(engine.getModule(), undefined, "暂停时不应跑任何模块");
+    assert.ok(!engine.isBusy(), "暂停时不应处于忙碌");
+    paused = false; // 模拟发布结束 → 养号恢复
+    await new Promise((r) => setTimeout(r, 2500));
+    assert.ok(engine.getModule() !== undefined, "恢复后应开始跑模块: " + engine.getModule());
+  } finally {
+    engine.stop();
+    await runP;
+  }
+});
