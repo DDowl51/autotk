@@ -79,6 +79,12 @@ export function createEngine(deps: EngineDeps): Engine {
   let currentModule: string | undefined;
   // 本批是否正在驱动 WDA（供发布等它跑完再插入，见 isBusy）。批次间隔/退避/暂停期为 false。
   let moduleRunning = false;
+  // 「本批已被超时放弃」标志：模块超时后置 true，被放弃的模块循环下次 shouldStop() 即退出，
+  // 不至于和新批次并发驱动同一手机。每个新批次开始时清零（此前的退避窗口足够旧循环自行退出）。
+  let aborting = false;
+  const markAborted = () => {
+    aborting = true;
+  };
 
   // 可被打断的休眠：停止时立即唤醒，无需等满整个间隔。
   // 空转等待与模块内的拟人化停顿都走这里，保证停止响应及时。
@@ -105,7 +111,8 @@ export function createEngine(deps: EngineDeps): Engine {
     },
     stats,
     logger,
-    shouldStop: () => stopped,
+    // 停机 或 本批已被超时放弃 → 模块循环应尽快退出。
+    shouldStop: () => stopped || aborting,
     withinWindow: () => !!params.allDay || isWithinAnyWindow(params.taskWindows),
     sleep: interruptibleSleep,
   };
@@ -128,10 +135,10 @@ export function createEngine(deps: EngineDeps): Engine {
       const kind = pickModule(params.kwSearchExecRatio);
       if (kind === "kwSearch") {
         currentModule = "kwSearch";
-        await withTimeout(runKwSearch(ctx, ui, gen, randInt(3, 8)), MODULE_TIMEOUT_SECONDS);
+        await withTimeout(runKwSearch(ctx, ui, gen, randInt(3, 8)), MODULE_TIMEOUT_SECONDS, markAborted);
       } else {
         currentModule = "forYou";
-        await withTimeout(runForYou(ctx, ui, gen, randInt(5, 15)), MODULE_TIMEOUT_SECONDS);
+        await withTimeout(runForYou(ctx, ui, gen, randInt(5, 15)), MODULE_TIMEOUT_SECONDS, markAborted);
       }
     };
 
@@ -157,6 +164,9 @@ export function createEngine(deps: EngineDeps): Engine {
           continue;
         }
 
+        // 清「本批放弃」标志：上一批若超时被放弃，其残留循环已在退避窗口内因 shouldStop 退出。
+        aborting = false;
+
         try {
           moduleRunning = true; // 本批开始驱动 WDA（发布会等到此为 false 再插入）
           // 脱困：每个批次开始前先回到"基地"（推荐流干净状态）。
@@ -168,12 +178,12 @@ export function createEngine(deps: EngineDeps): Engine {
           //   关 = 日常养号（个人主页每天一次 + 推荐/搜索按比例）。
           if (params.following.moduleEnable) {
             currentModule = "following";
-            await withTimeout(runFollowingFeed(ctx, ui, gen, randInt(3, 8)), MODULE_TIMEOUT_SECONDS);
+            await withTimeout(runFollowingFeed(ctx, ui, gen, randInt(3, 8)), MODULE_TIMEOUT_SECONDS, markAborted);
           } else if (params.persHome.moduleEnable && persHomeRanOn !== todayKey()) {
             // 个人主页：每天仅一次，时间段内优先。先标记"今天已尝试"再执行，避免失败整天重试。
             persHomeRanOn = todayKey();
             currentModule = "persHome";
-            await withTimeout(runPersHome(ctx, ui, gen), MODULE_TIMEOUT_SECONDS);
+            await withTimeout(runPersHome(ctx, ui, gen), MODULE_TIMEOUT_SECONDS, markAborted);
           } else {
             await runGrooming();
           }
