@@ -14,6 +14,7 @@ import type { DeviceRegistry } from "./domain/registry";
 import type { LogHub } from "./domain/log-hub";
 import { ConfigDispatcher } from "./domain/config-dispatcher";
 import { PublishCoordinator } from "./domain/publish-coordinator";
+import { PendingStore } from "./domain/pending-store";
 
 const OPERATORS = "operators";
 const deviceRoom = (deviceId: string) => `dev:${deviceId}`;
@@ -33,26 +34,47 @@ interface DeviceAuth {
  *   收到 logs:wanted（首个/最后一个观看者变化时）切上报频率；断开→广播下线。
  * handshake.auth.role 区分角色（device 还需 deviceId/deviceName）。
  */
-export function attachGateway(io: Server, registry: DeviceRegistry, logHub: LogHub): void {
-  // 批量配置下发协调器：在线才下发，逐台进度广播给所有操作员。
+export function attachGateway(
+  io: Server,
+  registry: DeviceRegistry,
+  logHub: LogHub,
+  pending: PendingStore = new PendingStore(),
+): void {
+  // 批量配置下发协调器：在线才下发，逐台进度广播给所有操作员；
+  // 离线台入「待补发」队列（重连时补发），而非静默丢弃。
   const dispatcher = new ConfigDispatcher(
     (deviceId, jobId, patch) => {
-      if (!registry.isOnline(deviceId)) return false;
+      if (!registry.isOnline(deviceId)) {
+        void pending.enqueueConfig(deviceId, jobId, patch);
+        return false;
+      }
       io.to(deviceRoom(deviceId)).emit(EVT.configApply, { jobId, patch });
       return true;
     },
     (p) => io.to(OPERATORS).emit(EVT.configProgress, p),
   );
 
-  // 发布任务协调器：在线才下发，逐步进度广播给操作员。
+  // 发布任务协调器：在线才下发，逐步进度广播给操作员；离线台同样入队补发。
   const publisher = new PublishCoordinator(
     (deviceId, task) => {
-      if (!registry.isOnline(deviceId)) return false;
+      if (!registry.isOnline(deviceId)) {
+        void pending.enqueuePublish(deviceId, task);
+        return false;
+      }
       io.to(deviceRoom(deviceId)).emit(EVT.publishTask, task);
       return true;
     },
     (p) => io.to(OPERATORS).emit(EVT.publishProgress, p),
   );
+
+  // 设备（重）连上后，把它离线期间积压的下发/发布补发下去（重新走协调器 → 正常进度/超时）。
+  const flushPending = async (deviceId: string): Promise<void> => {
+    const items = await pending.take(deviceId);
+    for (const it of items) {
+      if (it.kind === "config") dispatcher.start(it.jobId, [deviceId], it.patch);
+      else publisher.start({ ...it.task, deviceId });
+    }
+  };
 
   // 异步链兜底：registry 若因存储 IO 失败而 reject，记日志而非未捕获 rejection 崩 Hub。
   const logErr = (label: string) => (e: unknown) => {
@@ -143,7 +165,10 @@ export function attachGateway(io: Server, registry: DeviceRegistry, logHub: LogH
 
       void registry
         .register({ deviceId, deviceName: auth.deviceName, version: auth.version }, socket.id)
-        .then(broadcast)
+        .then((info) => {
+          broadcast(info);
+          void flushPending(deviceId).catch(logErr("flushPending")); // 补发离线期间积压的下发/发布
+        })
         .catch(logErr("register"));
       return;
     }

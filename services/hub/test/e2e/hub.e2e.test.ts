@@ -257,4 +257,34 @@ describe("Hub 实时协议（真 socket.io）", () => {
     device.close();
     operator.close();
   });
+
+  it("离线设备下发被排队，重连时自动补发（持久化/补发）", async () => {
+    const operator = Client(url, { auth: { role: "operator" }, transports: ["websocket"] });
+    const prog: any[] = [];
+    operator.on(EVT.configProgress, (p) => prog.push(p));
+    await once(operator, EVT.devicesSnapshot);
+
+    // dflush 尚未连 = 离线 → 下发被排队（进度先报 offline，不再静默丢弃）。
+    operator.emit(EVT.configPush, { jobId: "jf", deviceIds: ["dflush"], patch: { clickWaitTime: 3 } });
+    await waitFor(() => prog.some((p) => p.deviceId === "dflush" && p.status === "offline"));
+
+    // dflush 上线 → register 触发补发，设备应收到刚才排队的 apply。
+    const device = Client(url, {
+      auth: { role: "device", deviceId: "dflush", deviceName: "补发机" },
+      transports: ["websocket"],
+    });
+    const applied: any[] = [];
+    device.on(EVT.configApply, (m) => {
+      applied.push(m);
+      device.emit(EVT.configResult, { jobId: m.jobId, ok: true });
+    });
+
+    await waitFor(() => applied.some((m) => m.patch?.clickWaitTime === 3));
+    expect(applied[0].patch).toMatchObject({ clickWaitTime: 3 });
+    // 补发后队列已清空：操作员能看到这台从 sent 走到 ok。
+    await waitFor(() => prog.some((p) => p.deviceId === "dflush" && p.status === "ok"));
+
+    device.close();
+    operator.close();
+  });
 });
