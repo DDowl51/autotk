@@ -176,6 +176,11 @@ app.whenReady().then(async () => {
 
 app.on("window-all-closed", () => {
   if (lan) lan.close().catch(() => {});
+  // 置空（对齐 stopHub 里 hub=null 的做法）：macOS 关窗后 app 不退出，
+  // 若不清 lan/agent，再开窗 ensureAgent 会复用这台**已关闭**的 LanFileServer，
+  // 导致手机下载视频连不上（死连）。清掉 → 下次重开窗重新起一台。
+  lan = null;
+  agent = null;
   stopHub();
   if (process.platform !== "darwin") app.quit();
 });
