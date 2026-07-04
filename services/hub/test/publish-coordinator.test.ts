@@ -129,6 +129,20 @@ describe("PublishCoordinator", () => {
     expect(dropped).toEqual(["t1"]); // 出盘（不再是「定时待发」）
   });
 
+  it("定时·过点重排：直接 dispatch 也 dropScheduled 出盘（Hub 重启不重复下发同一视频）", () => {
+    const added: string[] = [];
+    const dropped: string[] = [];
+    const c = new PublishCoordinator(() => true, () => {}, {
+      now: () => 10_000,
+      persistScheduled: (t) => added.push(t.taskId),
+      dropScheduled: (id) => dropped.push(id),
+    });
+    // 模拟 Hub 重启后对一条已过点(scheduledAtMs<now)的持久化定时任务重排
+    c.start({ ...task("t1"), scheduledAtMs: 5000 });
+    expect(added).toEqual([]); // 过点不再落盘（非未来任务）
+    expect(dropped).toEqual(["t1"]); // 但下发即出盘 → 不会每次重启都重发
+  });
+
   it("定时·过去时刻：等同立即下发", () => {
     const { c, progress, sent } = mk(new Set(["d"]), undefined, () => 10_000);
     c.start({ ...task("t1"), scheduledAtMs: 5000 });

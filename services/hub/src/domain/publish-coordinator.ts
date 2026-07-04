@@ -65,10 +65,7 @@ export class PublishCoordinator {
       // 落盘持久化，Hub（内嵌桌面 App）重启后可 list() 出来重新排程，定时发布不丢。
       this.emit(task.taskId, task.deviceId, "scheduled");
       this.persistScheduled?.(task);
-      const cancel = this.timers.set(() => {
-        this.dropScheduled?.(task.taskId); // 到点：出「定时」持久化，进入正常下发流程
-        this.dispatch(task);
-      }, at - this.now());
+      const cancel = this.timers.set(() => this.dispatch(task), at - this.now());
       this.pending.set(task.taskId, { deviceId: task.deviceId, cancel });
       return;
     }
@@ -77,6 +74,9 @@ export class PublishCoordinator {
 
   /** 立即把任务下发到设备并装上「无进展超时」；离线则终态 offline。 */
   private dispatch(task: PublishTask): void {
+    // 一旦真正下发即出「定时」持久化——无论是到点定时器触发，还是 Hub 重启后对**过点**任务
+    // 的重排（走此路径而非定时分支）。否则过点任务永留 scheduled.json、每次重启重复下发同一视频。
+    this.dropScheduled?.(task.taskId);
     const online = this.send(task.deviceId, {
       taskId: task.taskId,
       videoName: task.videoName,

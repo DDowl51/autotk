@@ -79,11 +79,17 @@ export function attachGateway(
   if (scheduled) for (const t of scheduled.list()) publisher.start(t);
 
   // 设备（重）连上后，把它离线期间积压的下发/发布补发下去（重新走协调器 → 正常进度/超时）。
+  // 补发配置必须用**新 jobId**：ConfigDispatcher.start 会用新 Map 覆盖同 jobId 的等待表，
+  // 若沿用原 jobId，会把同一批里仍在等回执的**在线**设备条目冲掉、其成功回执被静默吞、误报 timeout。
+  let redeliverSeq = 0;
   const flushPending = async (deviceId: string): Promise<void> => {
     const items = await pending.take(deviceId);
     for (const it of items) {
-      if (it.kind === "config") dispatcher.start(it.jobId, [deviceId], it.patch);
-      else publisher.start({ ...it.task, deviceId });
+      if (it.kind === "config") {
+        dispatcher.start(`${it.jobId}~redeliver~${++redeliverSeq}`, [deviceId], it.patch);
+      } else {
+        publisher.start({ ...it.task, deviceId });
+      }
     }
   };
 

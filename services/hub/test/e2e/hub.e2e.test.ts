@@ -287,4 +287,40 @@ describe("Hub 实时协议（真 socket.io）", () => {
     device.close();
     operator.close();
   });
+
+  it("混合批次：离线台重连补发不吞掉同 job 在线台的回执（修 A 覆盖回归）", async () => {
+    const operator = Client(url, { auth: { role: "operator" }, transports: ["websocket"] });
+    const prog: any[] = [];
+    operator.on(EVT.configProgress, (p) => prog.push(p));
+    await once(operator, EVT.devicesSnapshot);
+
+    // dOn 在线，收到 apply 后**故意先不回**（模拟仍在 Jmix 等待表里）；dOff 尚未连=离线。
+    const dOn = Client(url, {
+      auth: { role: "device", deviceId: "dOn", deviceName: "在线台" },
+      transports: ["websocket"],
+    });
+    const onApplied: any[] = [];
+    dOn.on(EVT.configApply, (m) => onApplied.push(m));
+    await once(dOn, "connect");
+
+    operator.emit(EVT.configPush, { jobId: "Jmix", deviceIds: ["dOn", "dOff"], patch: { clickWaitTime: 2 } });
+    await waitFor(() => onApplied.length > 0); // dOn 收到 apply，进入 Jmix 等待表
+    await waitFor(() => prog.some((p) => p.jobId === "Jmix" && p.deviceId === "dOff" && p.status === "offline"));
+
+    // dOff 上线 → 补发（修复后用新 jobId，不覆盖 Jmix 的等待表）。
+    const dOff = Client(url, {
+      auth: { role: "device", deviceId: "dOff", deviceName: "补发台" },
+      transports: ["websocket"],
+    });
+    dOff.on(EVT.configApply, (m) => dOff.emit(EVT.configResult, { jobId: m.jobId, ok: true }));
+    await new Promise((r) => setTimeout(r, 300)); // 等补发跑完
+
+    // dOn 此刻才回 Jmix 的回执 → 必须仍被正确结算为 ok（旧代码里会被 dOff 补发覆盖后吞掉）。
+    dOn.emit(EVT.configResult, { jobId: "Jmix", ok: true });
+    await waitFor(() => prog.some((p) => p.jobId === "Jmix" && p.deviceId === "dOn" && p.status === "ok"));
+
+    dOn.close();
+    dOff.close();
+    operator.close();
+  });
 });
