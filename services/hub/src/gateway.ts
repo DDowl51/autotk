@@ -137,11 +137,12 @@ export function attachGateway(io: Server, registry: DeviceRegistry, logHub: LogH
       });
 
       socket.on("disconnect", () => {
-        void registry.disconnect(deviceId).then(broadcast).catch(logErr("disconnect"));
+        // 传 socket.id：只有当前在线 socket 断开才标离线，旧 socket 迟到 disconnect 被忽略。
+        void registry.disconnect(deviceId, socket.id).then(broadcast).catch(logErr("disconnect"));
       });
 
       void registry
-        .register({ deviceId, deviceName: auth.deviceName, version: auth.version })
+        .register({ deviceId, deviceName: auth.deviceName, version: auth.version }, socket.id)
         .then(broadcast)
         .catch(logErr("register"));
       return;

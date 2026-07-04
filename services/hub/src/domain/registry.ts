@@ -21,7 +21,9 @@ export function statsProgressed(prev: Stats | undefined, next: Stats | undefined
  * 不碰 socket.io —— gateway 调用本类并把返回的 DeviceInfo 广播给操作员，便于纯单测。
  */
 export class DeviceRegistry {
-  private readonly online = new Set<string>();
+  // deviceId → 当前拥有「在线」态的 socketId。用 Map（非 Set）以便区分「哪个 socket 在线」，
+  // 避免旧 socket 的迟到 disconnect 把已用新 socket 重连的设备误标离线（幽灵下线）。
+  private readonly online = new Map<string, string>();
 
   constructor(
     private readonly store: DeviceStore,
@@ -49,9 +51,9 @@ export class DeviceRegistry {
     return r ? this.toInfo(r) : null;
   }
 
-  /** 手机连上并注册：标在线 + 落库，返回最新 DeviceInfo（供广播）。 */
-  async register(msg: DeviceRegisterMsg): Promise<DeviceInfo> {
-    this.online.add(msg.deviceId);
+  /** 手机连上并注册：记住这条 socket 拥有在线态 + 落库，返回最新 DeviceInfo（供广播）。 */
+  async register(msg: DeviceRegisterMsg, socketId: string): Promise<DeviceInfo> {
+    this.online.set(msg.deviceId, socketId);
     await this.store.upsert({
       deviceId: msg.deviceId,
       deviceName: msg.deviceName,
@@ -74,8 +76,13 @@ export class DeviceRegistry {
     return this.toInfo(r as DeviceRecord);
   }
 
-  /** 手机断开：标离线（仍保留在列表里），返回离线后的 DeviceInfo。 */
-  async disconnect(deviceId: string): Promise<DeviceInfo | null> {
+  /**
+   * 手机断开：**仅当断开的正是当前在线 socket** 才标离线（仍保留在列表里）。
+   * 旧 socket 的迟到 disconnect（设备已用新 socket 重连）→ owner 已不是它 → 忽略、返回 null
+   * 不广播离线，避免幽灵下线导致后续下发/发布被静默丢弃。
+   */
+  async disconnect(deviceId: string, socketId: string): Promise<DeviceInfo | null> {
+    if (this.online.get(deviceId) !== socketId) return null; // 陈旧断开：设备已重连，忽略
     this.online.delete(deviceId);
     const r = await this.store.get(deviceId);
     return r ? this.toInfo(r) : null;

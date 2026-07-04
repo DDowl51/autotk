@@ -11,7 +11,7 @@ function mk() {
 describe("DeviceRegistry", () => {
   it("注册 → 在线 + 进快照", async () => {
     const { reg } = mk();
-    const info = await reg.register({ deviceId: "d1", deviceName: "手机A", version: "1.0" });
+    const info = await reg.register({ deviceId: "d1", deviceName: "手机A", version: "1.0" }, "s1");
     expect(info).toMatchObject({ deviceId: "d1", deviceName: "手机A", online: true, lastSeen: 1000 });
     const snap = await reg.snapshot();
     expect(snap).toHaveLength(1);
@@ -21,7 +21,7 @@ describe("DeviceRegistry", () => {
   it("上报状态：已注册更新，未注册返回 null", async () => {
     const { reg } = mk();
     expect(await reg.updateStatus("ghost", { running: true, ts: 1 })).toBe(null);
-    await reg.register({ deviceId: "d1", deviceName: "A" });
+    await reg.register({ deviceId: "d1", deviceName: "A" }, "s1");
     const info = await reg.updateStatus("d1", {
       running: true,
       module: "forYou",
@@ -34,8 +34,8 @@ describe("DeviceRegistry", () => {
 
   it("断开 → 离线但仍在快照", async () => {
     const { reg } = mk();
-    await reg.register({ deviceId: "d1", deviceName: "A" });
-    const off = await reg.disconnect("d1");
+    await reg.register({ deviceId: "d1", deviceName: "A" }, "s1");
+    const off = await reg.disconnect("d1", "s1");
     expect(off?.online).toBe(false);
     expect(reg.isOnline("d1")).toBe(false);
     const snap = await reg.snapshot();
@@ -52,7 +52,7 @@ describe("DeviceRegistry", () => {
 
   it("lastProgressAt：进展时更新，停滞时保持", async () => {
     const { reg, setTime } = mk();
-    await reg.register({ deviceId: "d1", deviceName: "A" });
+    await reg.register({ deviceId: "d1", deviceName: "A" }, "s1");
     setTime(2000);
     let info = await reg.updateStatus("d1", { running: true, stats: { likes: 0, follows: 0, comments: 0, videos: 1 }, ts: 0 });
     expect(info?.lastProgressAt).toBe(2000);
@@ -64,11 +64,23 @@ describe("DeviceRegistry", () => {
     expect(info?.lastProgressAt).toBe(9000);
   });
 
+  it("乱序重连：旧 socket 迟到 disconnect 不误标离线（防幽灵下线）", async () => {
+    const { reg } = mk();
+    await reg.register({ deviceId: "d1", deviceName: "A" }, "sockA"); // 旧连接
+    await reg.register({ deviceId: "d1", deviceName: "A" }, "sockB"); // 新连接（重连，owner→sockB）
+    const stale = await reg.disconnect("d1", "sockA"); // 旧连接迟到断开
+    expect(stale).toBe(null); // 忽略：不返回可广播的离线 info
+    expect(reg.isOnline("d1")).toBe(true); // 仍在线（sockB 拥有）
+    const off = await reg.disconnect("d1", "sockB"); // 当前 socket 真断开
+    expect(off?.online).toBe(false);
+    expect(reg.isOnline("d1")).toBe(false);
+  });
+
   it("重连 → 重新在线 + 更新名字", async () => {
     const { reg } = mk();
-    await reg.register({ deviceId: "d1", deviceName: "A" });
-    await reg.disconnect("d1");
-    await reg.register({ deviceId: "d1", deviceName: "A改名" });
+    await reg.register({ deviceId: "d1", deviceName: "A" }, "s1");
+    await reg.disconnect("d1", "s1");
+    await reg.register({ deviceId: "d1", deviceName: "A改名" }, "s2");
     expect(reg.isOnline("d1")).toBe(true);
     const snap = await reg.snapshot();
     expect(snap[0].deviceName).toBe("A改名");

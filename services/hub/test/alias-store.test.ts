@@ -43,7 +43,7 @@ describe("DeviceRegistry × 别名", () => {
   it("有别名时 deviceName 用别名；rename 即时生效", async () => {
     const alias = new AliasStore();
     const reg = new DeviceRegistry(new MemoryDeviceStore(), () => 1000, alias);
-    await reg.register({ deviceId: "d1", deviceName: "iPhone", version: "1" });
+    await reg.register({ deviceId: "d1", deviceName: "iPhone", version: "1" }, "s1");
 
     let snap = await reg.snapshot();
     expect(snap[0].deviceName).toBe("iPhone"); // 未改名 = 上报名
