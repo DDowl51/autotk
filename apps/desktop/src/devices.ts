@@ -74,10 +74,13 @@ export function summarize(map: DeviceMap): Summary {
   let interactions = 0;
   for (const d of map.values()) {
     if (d.online) online++;
-    if (d.status?.running) running++;
-    if (d.status?.alert) alerts++;
+    // running/alert 是「实时态」，只统计在线设备：Hub 重启后从持久化读回的离线设备会残留
+    // 陈旧的 running:true/alert，若不按 online 过滤会让顶栏「运行中/告警」虚高
+    // （与 statusKind:34 先判 !online、collectAlerts:111 要求 d.online 保持一致）。
+    if (d.online && d.status?.running) running++;
+    if (d.online && d.status?.alert) alerts++;
     const s = d.status?.stats;
-    if (s) interactions += s.likes + s.follows + s.comments;
+    if (s) interactions += s.likes + s.follows + s.comments; // 互动是累计量，离线设备的历史值仍计入
   }
   return { total: map.size, online, running, alerts, interactions };
 }

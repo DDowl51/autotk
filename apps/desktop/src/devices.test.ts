@@ -74,6 +74,16 @@ describe("devices reducer", () => {
     expect(summarize(m)).toEqual({ total: 3, online: 2, running: 1, alerts: 1, interactions: 8 });
   });
 
+  it("summarize：离线设备残留的 running/alert 不计入实时统计（防 Hub 重启幽灵计数）", () => {
+    const m = applySnapshot([
+      dev("a", { online: true, status: { running: true, stats: { likes: 3, follows: 0, comments: 0, videos: 1 }, ts: 0 } }),
+      // 重启后从持久化读回：离线却带陈旧 running:true + alert + 历史 stats
+      dev("z", { online: false, status: { running: true, alert: "验证码", stats: { likes: 10, follows: 2, comments: 3, videos: 5 }, ts: 0 } }),
+    ]);
+    // running/alerts 只算在线的 a；interactions 累计（含离线 z 的历史值）。
+    expect(summarize(m)).toEqual({ total: 2, online: 1, running: 1, alerts: 0, interactions: 18 });
+  });
+
   it("filterDevices：按名 + 按状态", () => {
     const list = [
       dev("a", { deviceName: "手机A", online: true, status: { running: true, ts: 0 } }),
