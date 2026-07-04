@@ -58,11 +58,11 @@ export function ScheduleTab({
         />
         <StepperField
           label="点赞间隔"
-          hint="每次点赞动作之间的停顿，太快不像真人"
+          hint="每次点赞动作之间的停顿，太快不像真人（必须 >0）"
           value={params.clickWaitTime}
           onChange={(v) => patch({ clickWaitTime: v })}
           step={0.5}
-          min={0}
+          min={0.5}
           max={10}
           suffix=" 秒"
         />

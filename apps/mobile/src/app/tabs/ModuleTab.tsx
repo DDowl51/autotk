@@ -87,10 +87,10 @@ export function ModuleTab({
         />
         <StepperField
           label="评论点赞上限"
-          hint="单个视频评论区最多给几条评论点赞"
+          hint="单个视频评论区最多给几条评论点赞（上限 30，防封号）"
           value={value.commentLikeMaxCount}
           onChange={(v) => set({ commentLikeMaxCount: v })}
-          max={100}
+          max={30}
         />
         <PercentField
           label="单条评论回复概率"
@@ -101,10 +101,10 @@ export function ModuleTab({
         />
         <StepperField
           label="评论回复上限"
-          hint="单个视频最多回复几条。回复太频繁易触发风控，建议 1~3"
+          hint="单个视频最多回复几条。回复太频繁易触发风控，建议 1~3（上限 10，防封号）"
           value={value.commentReplyMaxCount}
           onChange={(v) => set({ commentReplyMaxCount: v })}
-          max={20}
+          max={10}
         />
       </Section>
 

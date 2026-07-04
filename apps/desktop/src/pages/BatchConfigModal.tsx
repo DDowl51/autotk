@@ -107,9 +107,9 @@ function ModuleFields({
       </Section>
       <Section title="评论区动作" hint="进入评论区后的点赞与回复行为">
         <PercentRow label="单条评论点赞概率" value={value.commentLikeProb} onChange={(v) => set({ commentLikeProb: v })} />
-        <StepperRow label="评论点赞上限" hint="单个视频最多给几条评论点赞" value={value.commentLikeMaxCount} onChange={(v) => set({ commentLikeMaxCount: v })} max={100} />
+        <StepperRow label="评论点赞上限" hint="单个视频最多给几条评论点赞（上限 30，防封号）" value={value.commentLikeMaxCount} onChange={(v) => set({ commentLikeMaxCount: v })} max={30} />
         <PercentRow label="单条评论回复概率" hint="比点赞更易触发风控，建议设低" value={value.commentReplyProb} onChange={(v) => set({ commentReplyProb: v })} />
-        <StepperRow label="评论回复上限" hint="建议 1~3" value={value.commentReplyMaxCount} onChange={(v) => set({ commentReplyMaxCount: v })} max={20} />
+        <StepperRow label="评论回复上限" hint="建议 1~3（上限 10，防封号）" value={value.commentReplyMaxCount} onChange={(v) => set({ commentReplyMaxCount: v })} max={10} />
       </Section>
     </>
   );
@@ -285,7 +285,7 @@ export function BatchConfigModal({
           <GroupGate {...gate("schedule")} />
           <Section title="运行节奏" hint="决定时间更多花在「搜索拉粉」还是「推荐页养号」上">
             <PercentRow label="搜索互动占比" hint="越高越偏营销拉粉；越低越偏养号" value={draft.kwSearchExecRatio} onChange={(v) => setD({ kwSearchExecRatio: v })} />
-            <StepperRow label="点赞间隔" hint="每次点赞动作之间的停顿，太快不像真人" value={draft.clickWaitTime} onChange={(v) => setD({ clickWaitTime: v })} step={0.5} max={10} suffix=" 秒" />
+            <StepperRow label="点赞间隔" hint="每次点赞动作之间的停顿，太快不像真人（必须 >0）" value={draft.clickWaitTime} onChange={(v) => setD({ clickWaitTime: v })} step={0.5} min={0.5} max={10} suffix=" 秒" />
             <SwitchRow label="真实发送评论回复" hint="关闭时只预览不发送（先验证内容）；确认无误再打开真发" value={draft.postReplies} onChange={(v) => setD({ postReplies: v })} />
           </Section>
           <Section title="任务时间段" hint="在哪些时间段内运行（手机本地时间，HH:MM:SS）。各段不重叠、按先后排列">
