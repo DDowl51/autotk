@@ -79,11 +79,12 @@ export function createEngine(deps: EngineDeps): Engine {
   let currentModule: string | undefined;
   // 本批是否正在驱动 WDA（供发布等它跑完再插入，见 isBusy）。批次间隔/退避/暂停期为 false。
   let moduleRunning = false;
-  // 「本批已被超时放弃」标志：模块超时后置 true，被放弃的模块循环下次 shouldStop() 即退出，
-  // 不至于和新批次并发驱动同一手机。每个新批次开始时清零（此前的退避窗口足够旧循环自行退出）。
-  let aborting = false;
-  const markAborted = () => {
-    aborting = true;
+  // 批次代号：每开一批 +1。模块超时 → invalidateRunningBatch() 让它前进一格，于是被放弃的那一批
+  // 的 ctx.shouldStop 就**永久**为真（不像布尔量复位后会复活），其残留循环下次检查即退出、绝不与
+  // 新批并发驱动同一手机；新批拿到新代号正常跑。（JS 无法取消在飞的 await，故这是能达到的最强保证。）
+  let batchGen = 0;
+  const invalidateRunningBatch = () => {
+    batchGen++;
   };
 
   // 可被打断的休眠：停止时立即唤醒，无需等满整个间隔。
@@ -104,19 +105,7 @@ export function createEngine(deps: EngineDeps): Engine {
     });
   }
 
-  const ctx: RunContext = {
-    // getter：模块每次读到的是最新 params（updateParams 热更后即时生效）。
-    get params() {
-      return params;
-    },
-    stats,
-    logger,
-    // 停机 或 本批已被超时放弃 → 模块循环应尽快退出。
-    shouldStop: () => stopped || aborting,
-    withinWindow: () => !!params.allDay || isWithinAnyWindow(params.taskWindows),
-    sleep: interruptibleSleep,
-  };
-
+  // ctx 每个批次单独建（见 while 循环内）——因为 shouldStop 要绑定该批的 batchGen 代号。
   async function start(): Promise<void> {
     const errors = validateParams(params);
     if (errors.length > 0) {
@@ -131,14 +120,14 @@ export function createEngine(deps: EngineDeps): Engine {
     let consecutiveErrors = 0;
 
     // 养号一批：按搜索占比分发推荐页 / 搜索页。
-    const runGrooming = async () => {
+    const runGrooming = async (ctx: RunContext) => {
       const kind = pickModule(params.kwSearchExecRatio);
       if (kind === "kwSearch") {
         currentModule = "kwSearch";
-        await withTimeout(runKwSearch(ctx, ui, gen, randInt(3, 8)), MODULE_TIMEOUT_SECONDS, markAborted);
+        await withTimeout(runKwSearch(ctx, ui, gen, randInt(3, 8)), MODULE_TIMEOUT_SECONDS, invalidateRunningBatch);
       } else {
         currentModule = "forYou";
-        await withTimeout(runForYou(ctx, ui, gen, randInt(5, 15)), MODULE_TIMEOUT_SECONDS, markAborted);
+        await withTimeout(runForYou(ctx, ui, gen, randInt(5, 15)), MODULE_TIMEOUT_SECONDS, invalidateRunningBatch);
       }
     };
 
@@ -164,8 +153,20 @@ export function createEngine(deps: EngineDeps): Engine {
           continue;
         }
 
-        // 清「本批放弃」标志：上一批若超时被放弃，其残留循环已在退避窗口内因 shouldStop 退出。
-        aborting = false;
+        // 每批一份 ctx：shouldStop 绑定本批代号 myGen。超时时 batchGen 前进 → 本批 shouldStop
+        // 永久为真、残留循环下次检查即退，绝不复活与新批并发（见 batchGen 注释）。
+        const myGen = ++batchGen;
+        const ctx: RunContext = {
+          // getter：模块每次读到最新 params（updateParams 热更即时生效）。
+          get params() {
+            return params;
+          },
+          stats,
+          logger,
+          shouldStop: () => stopped || myGen !== batchGen,
+          withinWindow: () => !!params.allDay || isWithinAnyWindow(params.taskWindows),
+          sleep: interruptibleSleep,
+        };
 
         try {
           moduleRunning = true; // 本批开始驱动 WDA（发布会等到此为 false 再插入）
@@ -178,14 +179,14 @@ export function createEngine(deps: EngineDeps): Engine {
           //   关 = 日常养号（个人主页每天一次 + 推荐/搜索按比例）。
           if (params.following.moduleEnable) {
             currentModule = "following";
-            await withTimeout(runFollowingFeed(ctx, ui, gen, randInt(3, 8)), MODULE_TIMEOUT_SECONDS, markAborted);
+            await withTimeout(runFollowingFeed(ctx, ui, gen, randInt(3, 8)), MODULE_TIMEOUT_SECONDS, invalidateRunningBatch);
           } else if (params.persHome.moduleEnable && persHomeRanOn !== todayKey()) {
             // 个人主页：每天仅一次，时间段内优先。先标记"今天已尝试"再执行，避免失败整天重试。
             persHomeRanOn = todayKey();
             currentModule = "persHome";
-            await withTimeout(runPersHome(ctx, ui, gen), MODULE_TIMEOUT_SECONDS, markAborted);
+            await withTimeout(runPersHome(ctx, ui, gen), MODULE_TIMEOUT_SECONDS, invalidateRunningBatch);
           } else {
-            await runGrooming();
+            await runGrooming(ctx);
           }
 
           consecutiveErrors = 0;
