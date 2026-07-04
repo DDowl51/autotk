@@ -5,8 +5,8 @@ import { DEFAULT_PARAMS } from "../src/params/defaults";
 import { validateParams } from "../src/params/parse";
 import type { AutomationParams } from "../src/params/types";
 
-// DEFAULT_PARAMS 故意带「缺搜索关键词」一条（启用了搜索但没填词）。
-// 补一个关键词得到一个「干净合法」的基准，便于验证补丁行为。
+// DEFAULT_PARAMS 现已开箱即合法（kwSearchExecRatio=0）。这里补个关键词，
+// 便于验证「开了搜索又清空关键词 → 拒绝」等补丁行为。
 const BASE: AutomationParams = { ...DEFAULT_PARAMS, searchKeywords: ["test"] };
 
 test("基准参数合法（前提）", () => {

@@ -195,13 +195,35 @@ export function validateParams(p: AutomationParams): string[] {
     if (!isProb(v)) errors.push(`${name} 必须在 0~1 之间（当前 ${v}）`);
   }
 
-  if (p.clickWaitTime < 0) errors.push("点赞间隔时间不能为负");
+  if (!(p.clickWaitTime > 0)) {
+    // 必须为正：0 = 零延迟连点，比真人快几十倍，极易触发风控（防呆，也挡 NaN）。
+    errors.push(`点击间隔时间必须大于 0（当前 ${p.clickWaitTime}；0=零延迟连点，极易触发风控）`);
+  }
 
   if (p.kwSearchExecRatio > 0 && p.searchKeywords.length === 0) {
     errors.push("启用了搜索页互动，但未设置任何搜索关键词");
   }
   if (p.persHome.moduleEnable && p.persHome.maxVideoCount < 1) {
     errors.push("开启了个人主页互动，但最大互动视频数小于 1");
+  }
+
+  // 单视频评论互动数防呆：非技术买家手滑填个大数字 → 单条视频狂赞/狂回 → 封号。
+  // 上限取「明显安全」的值：赞≤30、回复≤10（都高于产品与原版默认，正常配置不受影响）。
+  const MAX_COMMENT_LIKE = 30;
+  const MAX_COMMENT_REPLY = 10;
+  const counts: [string, number, number][] = [
+    ["推荐页单视频评论点赞数", p.forYou.commentLikeMaxCount, MAX_COMMENT_LIKE],
+    ["推荐页单视频评论回复数", p.forYou.commentReplyMaxCount, MAX_COMMENT_REPLY],
+    ["搜索页单视频评论点赞数", p.kwSearch.commentLikeMaxCount, MAX_COMMENT_LIKE],
+    ["搜索页单视频评论回复数", p.kwSearch.commentReplyMaxCount, MAX_COMMENT_REPLY],
+    ["个人主页单视频评论点赞数", p.persHome.commentLikeMaxCount, MAX_COMMENT_LIKE],
+    ["个人主页单视频评论回复数", p.persHome.commentReplyMaxCount, MAX_COMMENT_REPLY],
+    ["关注监控单视频评论点赞数", p.following.commentLikeMaxCount, MAX_COMMENT_LIKE],
+    ["关注监控单视频评论回复数", p.following.commentReplyMaxCount, MAX_COMMENT_REPLY],
+  ];
+  for (const [name, v, cap] of counts) {
+    if (!Number.isFinite(v) || v < 0) errors.push(`${name} 不能为负`);
+    else if (v > cap) errors.push(`${name} 过大（当前 ${v}，上限 ${cap}，防封号）`);
   }
 
   // —— 时间窗校验 ——

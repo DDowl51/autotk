@@ -303,6 +303,9 @@ export function useEngine(initialParams?: AutomationParams): EngineState {
             // 批量配置下发：深合并到最新 params + 校验，整体接受或整体拒绝并回执。
             const res = applyConfigPatch(paramsRef.current, m.patch);
             if (res.ok) {
+              // 同步推进 ref：背靠背连续下发时，第二条也基于「已并入第一条」的最新值再合并，
+              // 不会因 setParams 是异步、ref 要下次渲染才刷新而丢掉前一条更新。
+              paramsRef.current = res.next;
               setParams(res.next);
               // 关键：同步热更到「正在运行的引擎」，真生效后再回 ok；
               // 否则运行中的引擎读的是旧闭包，下发静默失灵还伪报成功（审计 critical）。

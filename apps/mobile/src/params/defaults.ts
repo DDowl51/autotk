@@ -10,7 +10,9 @@ export const DEFAULT_PARAMS: AutomationParams = {
   negPrompts: [],
   commentMatchKeywords: [], // 空=不按词筛选评论；填词则只回复命中该词的评论作者（#3）
 
-  kwSearchExecRatio: 0.8,
+  // 默认 0：新机开箱即「推荐页养号」，无需先配搜索关键词就能合法启动（防新买家一开机就撞校验错）。
+  // 要跑搜索养号：先填 searchKeywords，再把此值调 >0（否则参数校验会拦下「缺搜索关键词」）。
+  kwSearchExecRatio: 0,
   fixedReplies: [
     "{love this|so true|needed this} {emoji}",
     "this is everything {emoji}",
