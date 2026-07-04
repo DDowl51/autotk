@@ -18,14 +18,21 @@ test("candidateUrls：按共享端口表在已知 host 上生成候选地址", (
   );
 });
 
-test("probeHub：握手体含 sid → 判定为我们的 Hub（true）", async () => {
-  const fakeFetch = async () => ({ ok: true, text: async () => '0{"sid":"abc","upgrades":["websocket"]}' });
+test("probeHub：/whoami 返回 svc=autotk-hub → 判定为我们的 Hub（true）", async () => {
+  const fakeFetch = async (u: string) => {
+    assert.match(u, /\/whoami$/, "应打 /whoami 身份端点");
+    return { ok: true, text: async () => '{"svc":"autotk-hub"}' };
+  };
   assert.equal(await probeHub("http://h:4000", fakeFetch), true);
 });
 
-test("probeHub：非 200 / 无 sid / 抛错 → false", async () => {
+test("probeHub：非 200 / 别的 socket.io 服务（无 autotk-hub 标识）/ 抛错 → false", async () => {
   assert.equal(await probeHub("http://h:4000", async () => ({ ok: false, text: async () => "" })), false);
-  assert.equal(await probeHub("http://h:4000", async () => ({ ok: true, text: async () => "hello" })), false);
+  // 别的 socket.io 服务：握手含 sid 但没有我们的 svc 标识 → 认作「不是我们的」。
+  assert.equal(
+    await probeHub("http://h:4000", async () => ({ ok: true, text: async () => '0{"sid":"abc"}' })),
+    false,
+  );
   assert.equal(
     await probeHub("http://h:4000", async () => {
       throw new Error("connection refused");

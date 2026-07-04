@@ -95,7 +95,14 @@ export async function startHub(opts: StartHubOptions = {}): Promise<HubHandle> {
 
   const relay = new RelayStore();
   // 先处理 /relay 的跨网中转，其余请求交给 socket.io。
+  // （socket.io attach 后会把 /socket.io/* 请求截走，这里的 handler 只见到非 socket.io 请求。）
   const httpServer = createServer((req, res) => {
+    // 身份探测端点：手机端「按端口表兜底重连」时用它确认这端口确是 autotk-hub，
+    // 而非碰巧占用同端口的别的 socket.io 服务（svc 与自动发现广播 beacon 同一标识）。
+    if (req.method === "GET" && (req.url === "/whoami" || (req.url ?? "").startsWith("/whoami?"))) {
+      res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ svc: "autotk-hub" }));
+      return;
+    }
     if (!handleRelay(relay, req, res)) {
       res.writeHead(426).end("upgrade required");
     }
