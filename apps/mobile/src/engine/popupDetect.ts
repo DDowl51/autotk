@@ -79,6 +79,13 @@ export const SIGNATURES: PopupSignature[] = [
     ],
     dismiss: ["closeText", "back"],
   },
+  // 发评论后：「…在其他用户与你的评论互动时收到通知」，红「接收通知」(勿点) + 卡片右上 ✕。
+  {
+    id: "notif-comment",
+    strong: true,
+    markers: [/评论互动时收到通知/, /与你的评论互动/, /你已发布\s*\d+\s*条评论/, /interact.*with your comment/i],
+    dismiss: ["closeIcon", "tapOutside", "back"],
+  },
   // 个人主页：「让我们快速做个安全检查」，红「继续」(勿点) + 卡片右上 ✕。
   {
     id: "security-check",

@@ -74,6 +74,10 @@ test("浮层：虚拟头像（强标题）", () => {
   assert.equal(detectAppPopup([box("你的虚拟头像，你的专属风格", 0.3, 0.7)])?.id, "avatar");
 });
 
+test("浮层：发评论后通知提示（✕ 脱困，不点接收通知）", () => {
+  assert.equal(detectAppPopup([box("在其他用户与你的评论互动时收到通知", 0.3, 0.6)])?.id, "notif-comment");
+});
+
 test("浮层：安全检查（个人主页，✕ 脱困，不点继续）", () => {
   const hit = detectAppPopup([box("让我们快速做个安全检查", 0.3, 0.6)]);
   assert.equal(hit?.id, "security-check");
