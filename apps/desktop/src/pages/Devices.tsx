@@ -132,7 +132,31 @@ export function Devices({ goGuide }: { goGuide: () => void }) {
         }}
       />
 
-      <Drawer open={!!sel} onClose={() => setSel(null)} title={selected?.deviceName} width={560}>
+      <Drawer
+        open={!!sel}
+        onClose={() => setSel(null)}
+        title={selected?.deviceName}
+        width={560}
+        extra={
+          selected ? (
+            <Popconfirm
+              title="删除设备"
+              description="删除后该设备从列表移除，手机重连会重新出现。"
+              okText="删除"
+              okButtonProps={{ danger: true }}
+              cancelText="取消"
+              onConfirm={() => {
+                removeDevice(selected.deviceId);
+                setSel(null);
+              }}
+            >
+              <Button danger size="small">
+                删除设备
+              </Button>
+            </Popconfirm>
+          ) : null
+        }
+      >
         {selected && (
           <Descriptions column={1} bordered size="small">
             <Descriptions.Item label="名称">
@@ -205,24 +229,6 @@ export function Devices({ goGuide }: { goGuide: () => void }) {
           </>
         )}
 
-        {selected && (
-          <>
-            <Divider style={{ margin: "20px 0 12px" }} />
-            <Popconfirm
-              title="删除设备"
-              description="删除后该设备从列表移除，手机重连会重新出现。"
-              okText="删除"
-              okButtonProps={{ danger: true }}
-              cancelText="取消"
-              onConfirm={() => {
-                removeDevice(selected.deviceId);
-                setSel(null);
-              }}
-            >
-              <Button danger>删除设备</Button>
-            </Popconfirm>
-          </>
-        )}
       </Drawer>
 
       <BatchConfigModal open={batchOpen} onClose={() => setBatchOpen(false)} targets={selectedDevices} />
