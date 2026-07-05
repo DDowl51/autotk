@@ -241,6 +241,10 @@ export function createOnDeviceUI(deps: {
     await sleep(900);
   };
   const rawCloseComments = async () => {
+    // 空评论区会自动聚焦输入框、弹键盘挡住关闭。先点面板标题区（在输入框与列表之上，安全）收起键盘，
+    // 再走关闭流程——否则 ✕ 会被键盘干扰，得手动先关键盘再关面板。
+    await tap({ x: size.width * 0.5, y: size.height * 0.3 });
+    await sleep(350);
     for (let i = 0; i < 3; i++) {
       const x = detectCommentCloseButton(await shot(), size.width, size.height);
       if (!x) return;

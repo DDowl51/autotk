@@ -20,6 +20,9 @@ export async function interactWithVideo(
   const { stats, params } = ctx;
   const keywords = matchKeywords ?? params.commentMatchKeywords;
 
+  // 停止请求后立即不再驱动 TikTok（否则会继续点赞/开评论区、把 autotk 又顶到后台）。
+  if (ctx.shouldStop()) return;
+
   // —— 视频级：点赞 / 收藏 / 关注 ——
   if (chance(mp.videoLikeProb)) {
     await ui.likeVideo();

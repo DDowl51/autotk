@@ -35,6 +35,8 @@ export interface EngineState {
   params: AutomationParams;
   setParams: (p: AutomationParams) => void;
   running: boolean;
+  /** 已点停止、引擎正在收尾（给按钮即时反馈，避免以为没点到）。 */
+  stopping: boolean;
   mode: EngineMode;
   logs: string[];
   stats: RunStats;
@@ -66,6 +68,7 @@ async function makeUI(log: (m: string) => void): Promise<{ ui: TikTokUI; mode: E
 export function useEngine(initialParams?: AutomationParams): EngineState {
   const [params, setParams] = useState<AutomationParams>(initialParams ?? DEFAULT_PARAMS);
   const [running, setRunning] = useState(false);
+  const [stopping, setStopping] = useState(false);
   const [mode, setMode] = useState<EngineMode>("mock");
   const [logs, setLogs] = useState<string[]>([]);
   const [stats, setStats] = useState<RunStats>(emptyStats());
@@ -155,6 +158,7 @@ export function useEngine(initialParams?: AutomationParams): EngineState {
 
   const stop = useCallback(() => {
     track("engine_stop");
+    setStopping(true); // 即时反馈：引擎收尾要点时间，先把按钮变「停止中…」，别让用户以为没点到
     engineRef.current?.stop();
     stopKeepAlive().catch(() => {});
   }, []);
@@ -166,6 +170,7 @@ export function useEngine(initialParams?: AutomationParams): EngineState {
     logBufRef.current = [];
     setLogs([]);
     setStats(emptyStats());
+    setStopping(false);
 
     const launch = async () => {
       try {
@@ -214,6 +219,7 @@ export function useEngine(initialParams?: AutomationParams): EngineState {
           setStats(engine.getStats());
           if (!engine.isRunning()) {
             setRunning(false);
+            setStopping(false);
             if (pollRef.current) clearInterval(pollRef.current);
             pollRef.current = null;
           }
@@ -403,6 +409,7 @@ export function useEngine(initialParams?: AutomationParams): EngineState {
     params,
     setParams,
     running,
+    stopping,
     mode,
     logs,
     stats,

@@ -54,6 +54,7 @@ export async function runForYou(
 
     // 模拟观看时长后切下一个。
     await ctx.sleep(jitter(3));
+    if (ctx.shouldStop()) break; // 停止后不再滑动（避免又把 TikTok 切到前台）
     await ui.swipeToNextVideo();
   }
 

@@ -35,6 +35,7 @@ export async function runFollowingFeed(
   logger.log("info", `[关注监控] 开始，计划查看 ${maxVideos} 条关注视频`);
   await ui.openFollowingFeed();
 
+  let prevSig = ""; // 上一条视频签名，用于「滑不动=已到底」检测
   for (let i = 0; i < maxVideos; i++) {
     if (ctx.shouldStop()) break;
     if (!ctx.withinWindow()) {
@@ -50,6 +51,15 @@ export async function runFollowingFeed(
     const video = await ui.readCurrentVideo();
     stats.videosWatched++;
 
+    // 关注流是有限的（就关注的那几号）。滑不动会一直停在最后一条、重复处理同一视频。
+    // 连续读到同一条（文案+标签签名非空且相同）→ 判定到底、结束本轮。OCR 关时签名为空则跳过此判断。
+    const sig = `${video.caption}|${video.tags.join(",")}`;
+    if (sig.replace(/[|,\s]/g, "") && sig === prevSig) {
+      logger.log("info", "[关注监控] 关注流已到底（滑不动了），结束本轮");
+      break;
+    }
+    prevSig = sig;
+
     if (video.isLive) {
       // 直播卡：不互动，直接下滑。
       await ui.swipeToNextVideo();
@@ -61,6 +71,7 @@ export async function runFollowingFeed(
     await interactWithVideo(ctx, ui, replyGen, mp, video, matchKeywords);
 
     await ctx.sleep(jitter(3));
+    if (ctx.shouldStop()) break; // 停止后不再滑动（避免又把 TikTok 切到前台）
     await ui.swipeToNextVideo();
   }
 

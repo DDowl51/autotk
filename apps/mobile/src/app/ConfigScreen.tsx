@@ -45,7 +45,7 @@ const TABS: { key: TabKey; label: string }[] = [
 ];
 
 export default function ConfigScreen({ initialParams }: { initialParams?: AutomationParams }) {
-  const { params, setParams, running, mode, logs, stats, start, stop, hubConnected, hubUrl, setHubEndpoint } =
+  const { params, setParams, running, stopping, mode, logs, stats, start, stop, hubConnected, hubUrl, setHubEndpoint } =
     useEngine(initialParams);
   const [tab, setTab] = useState<TabKey>("kw");
   const [wdaMsg, setWdaMsg] = useState("未测试");
@@ -142,7 +142,7 @@ export default function ConfigScreen({ initialParams }: { initialParams?: Automa
                 style={[styles.dot, running ? styles.dotOn : styles.dotOff]}
               />
               <Text style={styles.statusText}>
-                {running ? "运行中" : "已停止"} · {mode === "real" ? "真机" : "演示"}
+                {running ? (stopping ? "停止中…" : "运行中") : "已停止"} · {mode === "real" ? "真机" : "演示"}
               </Text>
             </View>
             <TouchableOpacity style={styles.statusRow} onPress={() => setShowHubConnect(true)} activeOpacity={0.7}>
@@ -156,11 +156,12 @@ export default function ConfigScreen({ initialParams }: { initialParams?: Automa
             </TouchableOpacity>
           </View>
           <TouchableOpacity
-            style={[styles.runBtn, running ? styles.stopBtn : styles.startBtn]}
+            style={[styles.runBtn, running ? styles.stopBtn : styles.startBtn, stopping ? { opacity: 0.6 } : null]}
             onPress={running ? stop : onStart}
+            disabled={stopping}
             activeOpacity={0.8}
           >
-            <Text style={styles.runBtnText}>{running ? "停止" : "启动"}</Text>
+            <Text style={styles.runBtnText}>{stopping ? "停止中…" : running ? "停止" : "启动"}</Text>
           </TouchableOpacity>
         </View>
 
