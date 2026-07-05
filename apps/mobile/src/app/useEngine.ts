@@ -125,6 +125,13 @@ export function useEngine(initialParams?: AutomationParams): EngineState {
               saveToAlbum: saveBytesToAlbum,
             }),
           publishVideo: async (assetUri, caption) => {
+            // 发布常在**未启动养号**时由 Hub 直接触发，而 uiRef 只在 start() 时建 → 这里按需懒建真机 UI，
+            // 否则会误报「本机未适配发布功能」。有 vision-ocr 原生模块的 dev build 会得到真机 UI。
+            if (!uiRef.current) {
+              const picked = await makeUI(pushLog);
+              uiRef.current = picked.ui;
+              setMode(picked.mode);
+            }
             const pv = uiRef.current?.publishVideo;
             if (!pv) throw new Error("本机未适配发布功能（机型适配阶段接入）");
             await pv(assetUri, caption);
