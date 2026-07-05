@@ -35,6 +35,16 @@
     "web": {
       "favicon": "./assets/favicon.png"
     },
-    "plugins": ["expo-location"]
+    "plugins": [
+      "expo-location",
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "用于把要发布的视频存入相册后再发布",
+          "savePhotosPermission": "用于把要发布的视频存入相册后再发布",
+          "isAccessMediaLocationEnabled": false
+        }
+      ]
+    ]
   }
 }
