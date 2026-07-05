@@ -169,27 +169,32 @@ export function useEngine(initialParams?: AutomationParams): EngineState {
 
     const launch = async () => {
       try {
+        // 后台保活必须在 **makeUI 之前** 起：makeUI 里的首跑标定会 activateApp(TikTok) 把 autotk
+        // 顶到后台；若那之前没起保活，autotk 一退后台 JS 就被 iOS 挂起（~30s），引擎起不来/中断、
+        // 日志停同步——正是真机所见「点启动跳 TikTok 后要手动切回等引擎起」。请求「始终」定位的弹窗
+        // 也必须在 autotk 仍前台时弹。故顺序：先保活 → 再 makeUI 切 TikTok。
+        // （Expo Go/未编入原生模块时这里抛「找不到模块」→ 属预期，正式 dev build 才有此能力。）
+        try {
+          const ka = await startKeepAlive();
+          if (ka.always) {
+            pushLog("后台保活已开启（始终定位）");
+          } else {
+            pushLog(
+              "保活未生效：定位仅「使用App时」。请到 设置→隐私与安全性→定位服务→autotk 改为「始终」,再重新启动。",
+            );
+          }
+        } catch (e: unknown) {
+          const msg = e instanceof Error ? e.message : String(e);
+          if (/native module|KeepAlive/i.test(msg)) {
+            pushLog("后台保活模块未编入（当前为 Expo Go/测试包，正式 dev build 才生效）——后台会被挂起、日志只在前台同步");
+          } else {
+            pushLog(`后台保活未开启（后台会被挂起）：${msg}`);
+          }
+        }
+
         const picked = await makeUI(pushLog);
         uiRef.current = picked.ui;
         setMode(picked.mode);
-
-        // 真机模式:先把后台保活权限处理完（弹窗要在 autotk 仍在前台时弹）,
-        // 再启动引擎切到 TikTok,否则切前台会把定位授权弹窗冲掉。
-        // 没有保活,App 退后台(TikTok 前台时)~30s 就被 iOS 挂起、自动化中断。
-        if (picked.mode === "real") {
-          try {
-            const ka = await startKeepAlive();
-            if (ka.always) {
-              pushLog("后台保活已开启（始终定位）");
-            } else {
-              pushLog(
-                "保活未生效：定位仅「使用App时」。请到 设置→隐私与安全性→定位服务→autotk 改为「始终」,再重新启动。",
-              );
-            }
-          } catch (e: unknown) {
-            pushLog(`后台保活未开启（后台会被挂起）：${e instanceof Error ? e.message : String(e)}`);
-          }
-        }
 
         const engine = createEngine({
           params,

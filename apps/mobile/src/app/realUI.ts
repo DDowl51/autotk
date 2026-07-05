@@ -28,28 +28,37 @@ async function tryAutoCalibrate(
   h: number,
   log: (m: string) => void,
 ): Promise<DeviceProfile | undefined> {
-  try {
-    await activateApp(TIKTOK_BUNDLE_ID);
-    const rail = detectRail(decode(await screenshot()), w, h); // 白带 <4 会抛
-    const v = validateRail(rail, w, h);
-    if (!v.ok) {
-      log(`自动标定放弃：${v.reason}（多半此刻不在干净视频页）`);
-      return undefined;
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  await activateApp(TIKTOK_BUNDLE_ID);
+  // activateApp 只是把 TikTok 切前台，视频页/右侧动作栏还要额外时间渲染——立刻截图必检测失败
+  // （真机实测第一条日志就是「自动标定未成功」）。先给 1.5s 打底，再轮询「检测到干净视频页」为止，
+  // 最多 ~6s；期间失败不吭声，只有全程都没成才在最后报一次。
+  await sleep(1500);
+  let lastReason = "未在干净视频页";
+  for (let attempt = 0; attempt < 6; attempt++) {
+    try {
+      const rail = detectRail(decode(await screenshot()), w, h); // 白带 <4 会抛
+      const v = validateRail(rail, w, h);
+      if (v.ok) {
+        const prof: DeviceProfile = {
+          screen: { w, h },
+          like: rail.like,
+          comment: rail.comment,
+          save: rail.save,
+          share: rail.share,
+          follow: rail.follow,
+        };
+        await saveStoredProfile(`${w}x${h}`, prof);
+        return prof;
+      }
+      lastReason = v.reason ?? "校验未通过";
+    } catch (e) {
+      lastReason = e instanceof Error ? e.message : String(e);
     }
-    const prof: DeviceProfile = {
-      screen: { w, h },
-      like: rail.like,
-      comment: rail.comment,
-      save: rail.save,
-      share: rail.share,
-      follow: rail.follow,
-    };
-    await saveStoredProfile(`${w}x${h}`, prof);
-    return prof;
-  } catch (e) {
-    log(`自动标定未成功（可能不在干净视频页）：${e instanceof Error ? e.message : String(e)}`);
-    return undefined;
+    await sleep(750);
   }
+  log(`自动标定未成功（可能不在干净视频页）：${lastReason}`);
+  return undefined;
 }
 
 /**
