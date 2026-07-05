@@ -11,12 +11,22 @@ import {
 } from "react-native";
 import { activationErrorMessage } from "../license/gate";
 import { licenseConfigured } from "../license/config";
+import { isDeveloperMode } from "./devtools";
 
-export function ActivationScreen({ onActivate }: { onActivate: (code: string) => Promise<void> }) {
+export function ActivationScreen({
+  onActivate,
+  onDevSkip,
+}: {
+  onActivate: (code: string) => Promise<void>;
+  /** 仅测试版传入：点「跳过激活」直接进入。生产发行版不传/不显示。 */
+  onDevSkip?: () => void;
+}) {
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const configured = licenseConfigured();
+  // 跳过入口只在测试版出现（与「调试」Tab 同一开关）；生产构建 __DEV__=false 且未置 EXPO_PUBLIC_DEV_TOOLS 时隐藏。
+  const showSkip = !!onDevSkip && isDeveloperMode(__DEV__, process.env.EXPO_PUBLIC_DEV_TOOLS);
 
   const submit = async () => {
     if (busy) return;
@@ -76,6 +86,16 @@ export function ActivationScreen({ onActivate }: { onActivate: (code: string) =>
         </TouchableOpacity>
 
         <Text style={styles.hint}>激活码由管理员在授权后台发放</Text>
+
+        {showSkip && (
+          <TouchableOpacity
+            style={styles.skip}
+            onPress={onDevSkip}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.skipText}>跳过激活（仅测试版）</Text>
+          </TouchableOpacity>
+        )}
       </View>
     </KeyboardAvoidingView>
   );
@@ -109,4 +129,6 @@ const styles = StyleSheet.create({
   btnDisabled: { opacity: 0.6 },
   btnText: { color: "#fff", fontSize: 16, fontWeight: "600" },
   hint: { color: "#64748b", fontSize: 12, textAlign: "center", marginTop: 16 },
+  skip: { marginTop: 14, alignItems: "center", paddingVertical: 6 },
+  skipText: { color: "#64748b", fontSize: 12, textDecorationLine: "underline" },
 });
