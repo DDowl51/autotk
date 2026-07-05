@@ -14,7 +14,7 @@ import {
   status,
   TIKTOK_BUNDLE_ID,
 } from "../../wda";
-import { createRealUI } from "../realUI";
+import { createRealUI, calibrateNow } from "../realUI";
 import type { TikTokUI } from "../../engine/tiktok-ui";
 import { COLORS, Section } from "../fields";
 
@@ -126,6 +126,29 @@ export function InspectorTab() {
           <DebugBtn label="抓取界面元素" primary disabled={busy} onPress={grab} />
         </View>
         {msg ? <Text style={styles.msg}>{msg}</Text> : null}
+      </Section>
+
+      <Section
+        title="标定本机坐标"
+        hint="换新机型（如 iPhone 8）没有出厂标定档时用。先在 TikTok 停到一条干净的推荐视频（右侧点赞/评论/收藏/分享都清晰可见、无广告/无弹窗），再回到这里点「标定本机」。成功后按分辨率记住，下次直接用。"
+      >
+        <View style={styles.btnRow}>
+          <DebugBtn
+            label="标定本机"
+            primary
+            disabled={busy}
+            onPress={() =>
+              run("标定本机", async () => {
+                const r = await calibrateNow((m) => setMsg(m));
+                setMsg(
+                  r.ok
+                    ? `✅ 已标定本机 ${r.key}，下次直接用`
+                    : "标定未成功：请确认 TikTok 正停在干净的推荐视频页（右栏四个动作图标都清晰可见），再点一次",
+                );
+              })
+            }
+          />
+        </View>
       </Section>
 
       <Section

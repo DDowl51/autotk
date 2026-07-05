@@ -128,3 +128,24 @@ export async function createRealUI(log: (msg: string) => void): Promise<TikTokUI
 
   return createOnDeviceUI({ profile, ocr, log, onEvent: track });
 }
+
+/**
+ * 手动标定本机（供调试页「标定本机」按钮，也给买家自助换机标定）。
+ * 用户先把 TikTok 停在一条**干净的推荐视频页**（右栏点赞/评论/收藏/分享都清晰可见），回到 autotk 点按钮：
+ * 确保会话 → 取真机分辨率 → 切 TikTok 检测右栏 → 校验通过就按分辨率存 AsyncStorage，下次直接用。
+ * 复用 tryAutoCalibrate（含「切前台后等页面渲染再轮询检测」），成功返回 {ok,key}，失败 {ok:false}。
+ */
+export async function calibrateNow(log: (m: string) => void): Promise<{ ok: boolean; key?: string }> {
+  setBaseUrl("http://localhost:8100");
+  if (!getSessionId()) {
+    await createSession();
+    await applyFastSettings();
+  }
+  const s = await windowSize();
+  const prof = await tryAutoCalibrate(s.width, s.height, log);
+  if (prof) {
+    log(`已标定本机 ${s.width}x${s.height} 并记住（下次直接用）`);
+    return { ok: true, key: `${s.width}x${s.height}` };
+  }
+  return { ok: false };
+}
