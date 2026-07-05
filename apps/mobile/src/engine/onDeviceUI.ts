@@ -581,9 +581,27 @@ export function createOnDeviceUI(deps: {
      * 必须真机 calibrate 覆盖后才可靠——否则会点偏（见 anchors.ts publish* 与收尾清单）。
      */
     async publishVideo(_assetUri: string, caption: string) {
+      // ⚠️ 关键：发布必须从「能看到底部导航 [+]」的干净基地开始。下发时引擎可能停在**任意页**——
+      // 评论区/搜索结果/作品详情/个人主页/关注流……直接点 [+] 会点偏。先复位：
+      //   1) 关系统权限弹窗 + 应用内浮层；2) 关残留评论区；3) 退出「搜索结果/作品详情」等看不到底部
+      //   导航的 pushed 页（不在已知页就左滑返回，最多 4 次）。这样无论从哪儿发起，都先回到基地。
+      log("发布⓪：复位到基地（关评论/浮层、退出内层页）");
       await ensure();
-      // 每步都打日志（卡在哪一步一眼看出→调对应 publish 锚点）；权限用 settleAlerts 轮询清，
-      // 有没有弹窗都不卡（首次弹相机/麦克风/相册 → 自动点允许；后续已授权不弹 → 很快跳过）。
+      await handleSystemAlert();
+      for (let i = 0; i < 3; i++) {
+        const cx = detectCommentCloseButton(await shot(), size.width, size.height);
+        if (!cx) break;
+        await tap(cx);
+        await sleep(450);
+      }
+      await dismissPopup();
+      for (let i = 0; i < 4; i++) {
+        if (onKnownPage(decode(await screenshot()))) break; // 回到视频流/评论区即停（避免在基地乱滑）
+        await doSwipeBack();
+        await sleep(400);
+      }
+      await settleAlerts(2);
+      // 以下每步打日志（卡在哪一步一眼看出→调对应 publish 锚点）；权限用 settleAlerts 轮询清，有没有弹窗都不卡。
       log("发布①：打开创作页（+）");
       await tap(A("publishCreate"));
       await sleep(1500);
