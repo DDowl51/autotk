@@ -29,5 +29,6 @@ export {
   type PublishResultMsg,
   type PublishProgressMsg,
   type DeviceRenameMsg,
+  type DeviceRemoveMsg,
   type ClientRole,
 } from "./protocol";

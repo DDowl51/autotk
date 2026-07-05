@@ -26,4 +26,5 @@ export interface DeviceStore {
   ): Promise<void>;
   get(deviceId: string): Promise<DeviceRecord | null>;
   list(): Promise<DeviceRecord[]>;
+  remove(deviceId: string): Promise<void>;
 }

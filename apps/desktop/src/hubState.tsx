@@ -9,7 +9,7 @@ import {
 } from "react";
 import type { Socket } from "socket.io-client";
 import type { DeviceInfo, DeviceLogMsg, ConfigPatch, PublishTask } from "@mc/shared";
-import { connectHub, watchLogs, pushConfig, enqueuePublish, renameDevice } from "./hub";
+import { connectHub, watchLogs, pushConfig, enqueuePublish, renameDevice, removeDevice } from "./hub";
 import { getPublisherApi } from "./publish-ipc";
 import { getHubApi } from "./hub-ipc";
 import { addRename, loadRenames, saveRenames, type RenameOp } from "./renameHistory";
@@ -27,6 +27,7 @@ import {
 import {
   applySnapshot,
   applyUpdate,
+  removeFromMap,
   toSorted,
   summarize,
   pushSample,
@@ -69,6 +70,8 @@ interface HubContextValue {
   renameDevice: (deviceId: string, oldName: string, newName: string) => void;
   /** 改名审计日志（最近在前）。 */
   renameHistory: RenameOp[];
+  /** 删除设备：通知 Hub 从列表移除（手机重连会重新出现）+ 乐观移除本地。 */
+  removeDevice: (deviceId: string) => void;
 }
 
 const Ctx = createContext<HubContextValue | null>(null);
@@ -102,6 +105,7 @@ export function HubProvider({ children }: { children: ReactNode }) {
       logs: (m) => setLogs((prev) => applyLogs(prev, m.deviceId, m.lines, m.replace)),
       progress: (p) => setConfigJob((prev) => applyProgress(prev, p)),
       publishProgress: (p) => setPublishTasks((prev) => applyPublishProgress(prev, p)),
+      removed: (id) => setMap((m) => removeFromMap(m, id)),
     });
   };
 
@@ -131,6 +135,12 @@ export function HubProvider({ children }: { children: ReactNode }) {
       saveRenames(next);
       return next;
     });
+  };
+
+  const doRemoveDevice = (deviceId: string) => {
+    track("device_remove");
+    removeDevice(socketRef.current, deviceId); // Hub 从列表移除并广播
+    setMap((m) => removeFromMap(m, deviceId)); // 乐观移除本地（不等广播回来）
   };
 
   const watch = (deviceId: string, on: boolean) => {
@@ -269,6 +279,7 @@ export function HubProvider({ children }: { children: ReactNode }) {
         enqueuePublish: doEnqueuePublish,
         renameDevice: doRenameDevice,
         renameHistory,
+        removeDevice: doRemoveDevice,
       }}
     >
       {children}

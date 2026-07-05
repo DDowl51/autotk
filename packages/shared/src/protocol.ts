@@ -219,6 +219,7 @@ export const EVT = {
   // Hub → Electron（操作员）
   devicesSnapshot: "devices:snapshot", // 连上时给全量
   deviceUpdate: "device:update", // 单台变化（上线/下线/状态）
+  deviceRemoved: "device:removed", // 某台被操作员删除，广播给所有操作员 { deviceId }
   deviceLogs: "device:logs", // 某台的日志推送 { deviceId, lines, replace? }
   configProgress: "config:progress", // 批量下发逐台进度 { jobId, deviceId, status, error? }
   publishProgress: "publish:progress", // 发布逐步进度 { taskId, deviceId, status, error? }
@@ -234,12 +235,18 @@ export const EVT = {
   configPush: "config:push", // 批量下发配置 { jobId, deviceIds, patch }
   publishEnqueue: "publish:enqueue", // 发起发布任务 { taskId, deviceId, videoName, caption, source }
   deviceRename: "device:rename", // 给设备改名（别名） { deviceId, alias }
+  deviceRemove: "device:remove", // 删除设备（从列表移除） { deviceId }
 } as const;
 
 /** 操作员给设备改名。alias 为空串=清除别名、恢复上报名。 */
 export interface DeviceRenameMsg {
   deviceId: string;
   alias: string;
+}
+
+/** 操作员手动删除设备（从看板移除；手机重连会重新出现）。 */
+export interface DeviceRemoveMsg {
+  deviceId: string;
 }
 
 /** socket.io handshake 里区分连的是手机还是操作员。 */

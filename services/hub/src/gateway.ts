@@ -9,6 +9,7 @@ import {
   type PublishEnqueueMsg,
   type PublishResultMsg,
   type DeviceRenameMsg,
+  type DeviceRemoveMsg,
 } from "@mc/shared";
 import type { DeviceRegistry } from "./domain/registry";
 import type { LogHub } from "./domain/log-hub";
@@ -137,6 +138,14 @@ export function attachGateway(
             if (info) io.to(OPERATORS).emit(EVT.deviceUpdate, info);
           })
           .catch(logErr("rename"));
+      });
+
+      socket.on(EVT.deviceRemove, (m: DeviceRemoveMsg) => {
+        if (!m?.deviceId) return;
+        void registry
+          .remove(m.deviceId)
+          .then(() => io.to(OPERATORS).emit(EVT.deviceRemoved, { deviceId: m.deviceId }))
+          .catch(logErr("remove"));
       });
 
       socket.on("disconnect", () => {

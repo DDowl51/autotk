@@ -76,6 +76,20 @@ describe("DeviceRegistry", () => {
     expect(reg.isOnline("d1")).toBe(false);
   });
 
+  it("remove：清在线态 + 出快照（手机重连会重新出现）", async () => {
+    const { reg } = mk();
+    await reg.register({ deviceId: "d1", deviceName: "A" }, "s1");
+    await reg.register({ deviceId: "d2", deviceName: "B" }, "s2");
+    await reg.remove("d1");
+    expect(reg.isOnline("d1")).toBe(false); // 在线态已清
+    const snap = await reg.snapshot();
+    expect(snap.map((d) => d.deviceId)).toEqual(["d2"]); // 从存储移除
+    // 重连即重新出现（含改后的上报名）
+    await reg.register({ deviceId: "d1", deviceName: "A重连" }, "s3");
+    const snap2 = await reg.snapshot();
+    expect(snap2.find((d) => d.deviceId === "d1")?.deviceName).toBe("A重连");
+  });
+
   it("重连 → 重新在线 + 更新名字", async () => {
     const { reg } = mk();
     await reg.register({ deviceId: "d1", deviceName: "A" }, "s1");

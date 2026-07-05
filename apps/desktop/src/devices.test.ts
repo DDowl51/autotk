@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   applySnapshot,
   applyUpdate,
+  removeFromMap,
   toSorted,
   summarize,
   statusKind,
@@ -38,6 +39,18 @@ describe("devices reducer", () => {
     m = applyUpdate(m, dev("a", { deviceName: "改名" }));
     expect(m.size).toBe(2);
     expect(m.get("a")?.deviceName).toBe("改名");
+  });
+
+  it("removeFromMap：删掉该 id 返回新 Map；无此 id 原样返回", () => {
+    const m = applySnapshot([dev("a"), dev("b")]);
+    const after = removeFromMap(m, "a");
+    expect(after.size).toBe(1);
+    expect(after.has("a")).toBe(false);
+    expect(after.get("b")?.deviceId).toBe("b");
+    expect(after).not.toBe(m); // 新 Map，原 Map 不动
+    expect(m.size).toBe(2);
+    // 无此 id：原样返回（引用不变）
+    expect(removeFromMap(m, "ghost")).toBe(m);
   });
 
   it("toSorted：在线优先，再按名字", () => {

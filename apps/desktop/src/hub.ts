@@ -16,6 +16,7 @@ export interface HubHandlers {
   logs: (m: DeviceLogsMsg) => void;
   progress: (p: ConfigProgressMsg) => void;
   publishProgress: (p: PublishProgressMsg) => void;
+  removed?: (deviceId: string) => void;
 }
 
 /** 以操作员身份连 Hub，订阅设备快照 + 单台变更 + 日志推送。 */
@@ -33,6 +34,7 @@ export function connectHub(url: string, h: HubHandlers): Socket {
   socket.on(EVT.deviceLogs, h.logs);
   socket.on(EVT.configProgress, h.progress);
   socket.on(EVT.publishProgress, h.publishProgress);
+  socket.on(EVT.deviceRemoved, (m: { deviceId: string }) => h.removed?.(m.deviceId));
   return socket;
 }
 
@@ -44,6 +46,11 @@ export function enqueuePublish(socket: Socket | null, task: PublishTask): void {
 /** 给设备改名（别名，空串=清除）。 */
 export function renameDevice(socket: Socket | null, deviceId: string, alias: string): void {
   socket?.emit(EVT.deviceRename, { deviceId, alias });
+}
+
+/** 删除设备（从列表移除；手机重连会重新出现）。 */
+export function removeDevice(socket: Socket | null, deviceId: string): void {
+  socket?.emit(EVT.deviceRemove, { deviceId });
 }
 
 /** 订阅/取消订阅某台设备的日志（打开/关闭设备详情时调用）。 */

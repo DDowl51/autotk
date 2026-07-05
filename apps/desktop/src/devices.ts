@@ -14,6 +14,14 @@ export function applyUpdate(map: DeviceMap, d: DeviceInfo): DeviceMap {
   return next;
 }
 
+/** 从列表移除某台设备（返回删掉该 id 的新 Map）。 */
+export function removeFromMap(map: DeviceMap, deviceId: string): DeviceMap {
+  if (!map.has(deviceId)) return map;
+  const next = new Map(map);
+  next.delete(deviceId);
+  return next;
+}
+
 /** 在线优先、其次按设备名排序，供表格展示。 */
 export function toSorted(map: DeviceMap): DeviceInfo[] {
   return [...map.values()].sort(

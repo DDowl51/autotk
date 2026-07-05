@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Table, Drawer, Descriptions, Input, Select, Space, Button, Divider, Typography, type TableColumnsType } from "antd";
+import { Table, Drawer, Descriptions, Input, Select, Space, Button, Divider, Typography, Popconfirm, message, type TableColumnsType } from "antd";
 import { SearchOutlined, SettingOutlined } from "@ant-design/icons";
 import { moduleLabel, pageLabel, type DeviceInfo, type DeviceBattery } from "@mc/shared";
 import { useHub } from "../hubState";
@@ -22,7 +22,7 @@ function BatteryCell({ battery }: { battery?: DeviceBattery }) {
 }
 
 export function Devices({ goGuide }: { goGuide: () => void }) {
-  const { devices, connected, stalledMs, logsOf, watch, renameDevice, renameHistory } = useHub();
+  const { devices, connected, stalledMs, logsOf, watch, renameDevice, removeDevice, renameHistory } = useHub();
   const [sel, setSel] = useState<DeviceInfo | null>(null);
 
   // 打开详情 → 订阅该台日志（手机切快频）；关闭/切换 → 取消订阅。
@@ -142,9 +142,13 @@ export function Devices({ goGuide }: { goGuide: () => void }) {
                   maxLength: 40,
                   onChange: (v) => {
                     const next = v.trim();
-                    if (next && next !== selected.deviceName) {
-                      renameDevice(selected.deviceId, selected.deviceName, next);
+                    if (!next || next === selected.deviceName) return;
+                    // 设备名不能重复：与其它设备（除自己）的当前名冲突则拒绝，不发 rename。
+                    if (devices.some((d) => d.deviceId !== selected.deviceId && d.deviceName === next)) {
+                      message.error(`已有设备叫「${next}」，换个名`);
+                      return;
                     }
+                    renameDevice(selected.deviceId, selected.deviceName, next);
                   },
                 }}
                 style={{ color: C.text }}
@@ -198,6 +202,25 @@ export function Devices({ goGuide }: { goGuide: () => void }) {
           <>
             <Divider style={{ margin: "20px 0 12px" }} />
             <LogPanel lines={logsOf(selected.deviceId)} />
+          </>
+        )}
+
+        {selected && (
+          <>
+            <Divider style={{ margin: "20px 0 12px" }} />
+            <Popconfirm
+              title="删除设备"
+              description="删除后该设备从列表移除，手机重连会重新出现。"
+              okText="删除"
+              okButtonProps={{ danger: true }}
+              cancelText="取消"
+              onConfirm={() => {
+                removeDevice(selected.deviceId);
+                setSel(null);
+              }}
+            >
+              <Button danger>删除设备</Button>
+            </Popconfirm>
           </>
         )}
       </Drawer>

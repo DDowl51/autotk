@@ -38,4 +38,8 @@ export class MemoryDeviceStore implements DeviceStore {
   async list(): Promise<DeviceRecord[]> {
     return [...this.m.values()];
   }
+
+  async remove(deviceId: string): Promise<void> {
+    this.m.delete(deviceId);
+  }
 }

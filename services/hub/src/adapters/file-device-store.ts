@@ -76,6 +76,11 @@ export class FileDeviceStore implements DeviceStore {
     return [...this.m.values()];
   }
 
+  async remove(deviceId: string): Promise<void> {
+    this.m.delete(deviceId);
+    await this.flush(); // 删除稀有，立即落盘（仿 upsert）
+  }
+
   /** 停去抖定时器并最后落一次（优雅关闭）。 */
   async close(): Promise<void> {
     if (this.timer) {

@@ -51,6 +51,13 @@ export class DeviceRegistry {
     return r ? this.toInfo(r) : null;
   }
 
+  /** 删除设备（操作员手动移除）：清在线态 + 别名 + 存储。 */
+  async remove(deviceId: string): Promise<void> {
+    this.online.delete(deviceId);
+    await this.alias?.set(deviceId, ""); // 空串=清别名
+    await this.store.remove(deviceId);
+  }
+
   /** 手机连上并注册：记住这条 socket 拥有在线态 + 落库，返回最新 DeviceInfo（供广播）。 */
   async register(msg: DeviceRegisterMsg, socketId: string): Promise<DeviceInfo> {
     this.online.set(msg.deviceId, socketId);
