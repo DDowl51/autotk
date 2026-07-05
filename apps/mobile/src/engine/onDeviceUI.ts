@@ -229,6 +229,21 @@ export function createOnDeviceUI(deps: {
     }
   };
 
+  // 复位到推荐流基地的核心动作：确保 TikTok 前台 → 关系统权限弹窗 → 关残留评论区 → 关登录/passkey 浮层。
+  // recoverToFeed（引擎每批开头）与 publishVideo（发布前）共用，避免重复。
+  const backToFeedBase = async (): Promise<void> => {
+    await ensure();
+    await handleSystemAlert();
+    for (let i = 0; i < 3; i++) {
+      const x = detectCommentCloseButton(await shot(), size.width, size.height);
+      if (!x) break;
+      await tap(x);
+      await sleep(450);
+    }
+    await dismissPopup();
+    page = "feed";
+  };
+
   // 从左边缘往右滑（iOS 返回手势），退出误入的页面。
   const doSwipeBack = async () => {
     await swipe(
@@ -560,17 +575,7 @@ export function createOnDeviceUI(deps: {
     },
 
     async recoverToFeed(): Promise<boolean> {
-      await ensure();
-      await handleSystemAlert(); // 先关 iOS 系统权限弹窗
-      // 关掉残留的评论区/面板（最常见卡点）。
-      for (let i = 0; i < 3; i++) {
-        const x = detectCommentCloseButton(await shot(), size.width, size.height);
-        if (!x) break;
-        await tap(x);
-        await sleep(450);
-      }
-      await dismissPopup(); // 关掉可能出现的登录/passkey 弹窗
-      page = "feed";
+      await backToFeedBase(); // 关系统弹窗 + 残留评论区 + 登录/passkey 浮层 → 回基地
       log("已回到推荐流（基地）");
       return true;
     },
@@ -586,15 +591,8 @@ export function createOnDeviceUI(deps: {
       //   1) 关系统权限弹窗 + 应用内浮层；2) 关残留评论区；3) 退出「搜索结果/作品详情」等看不到底部
       //   导航的 pushed 页（不在已知页就左滑返回，最多 4 次）。这样无论从哪儿发起，都先回到基地。
       log("发布⓪：复位到基地（关评论/浮层、退出内层页）");
-      await ensure();
-      await handleSystemAlert();
-      for (let i = 0; i < 3; i++) {
-        const cx = detectCommentCloseButton(await shot(), size.width, size.height);
-        if (!cx) break;
-        await tap(cx);
-        await sleep(450);
-      }
-      await dismissPopup();
+      await backToFeedBase(); // 与 recoverToFeed 共用：关系统弹窗 + 评论区 + 登录/passkey 浮层
+      // backToFeedBase 不退 pushed 页；发布必须能看到底部 [+]，故补一步：不在已知页(视频流/评论)就左滑返回，最多 4 次。
       for (let i = 0; i < 4; i++) {
         if (onKnownPage(decode(await screenshot()))) break; // 回到视频流/评论区即停（避免在基地乱滑）
         await doSwipeBack();
