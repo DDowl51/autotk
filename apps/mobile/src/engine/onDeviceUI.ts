@@ -65,8 +65,10 @@ export function createOnDeviceUI(deps: {
   log: (msg: string) => void;
   /** 可选埋点回调（app 层注入 telemetry.track；引擎层不直接依赖 RN）。 */
   onEvent?: (name: string, props?: Record<string, unknown>) => void;
+  /** 停止请求信号：为 true 时 ensure() 不再把 TikTok 切前台（停止后不再抢用户的 autotk 前台）。 */
+  isStopping?: () => boolean;
 }): TikTokUI {
-  const { profile: prof, ocr, log, onEvent } = deps;
+  const { profile: prof, ocr, log, onEvent, isStopping } = deps;
   let size = { width: prof.screen.w, height: prof.screen.h };
   // 解析某页面锚点：优先标定档覆盖值，否则用比例默认（anchors.ts 单一真源）。
   const A = (name: AnchorName): Point => resolveAnchor(prof, size.width, size.height, name);
@@ -85,6 +87,8 @@ export function createOnDeviceUI(deps: {
       await createSession();
       await applyFastSettings();
     }
+    // 停止请求后不再把 TikTok 切前台——否则用户切回 autotk 想停，引擎的下一个动作又把 TikTok 顶上来。
+    if (isStopping?.()) return;
     await activateApp(TIKTOK_BUNDLE_ID);
     if (!sized) {
       try {
@@ -629,7 +633,11 @@ export function createOnDeviceUI(deps: {
       await tap(A("publishPost"));
       await sleep(2500);
       await settleAlerts(3); // 发布后常弹「同步 Facebook 好友」等 → 拒绝（取消）
-      log("发布⑧：已提交（若某步点偏，看日志停在哪步 → 调对应 publish 锚点）");
+      // 发布后 TikTok 停在作品/个人主页 → 点底部「首页」回推荐流，便于养号继续/下一条发布从基地开始。
+      await tap(A("homeTab"));
+      await sleep(1000);
+      page = "feed";
+      log("发布⑧：已提交，已回推荐流");
     },
   };
 }

@@ -52,9 +52,12 @@ export interface EngineState {
 }
 
 /** 真机模式优先（dev build 上有 vision-ocr）；不可用则回退演示模式。 */
-async function makeUI(log: (m: string) => void): Promise<{ ui: TikTokUI; mode: EngineMode }> {
+async function makeUI(
+  log: (m: string) => void,
+  isStopping?: () => boolean,
+): Promise<{ ui: TikTokUI; mode: EngineMode }> {
   try {
-    return { ui: await createRealUI(log), mode: "real" };
+    return { ui: await createRealUI(log, isStopping), mode: "real" };
   } catch (e) {
     log(`真机模式不可用，用演示模式：${e instanceof Error ? e.message : e}`);
     return { ui: createMockUI(log), mode: "mock" };
@@ -69,6 +72,7 @@ export function useEngine(initialParams?: AutomationParams): EngineState {
   const [params, setParams] = useState<AutomationParams>(initialParams ?? DEFAULT_PARAMS);
   const [running, setRunning] = useState(false);
   const [stopping, setStopping] = useState(false);
+  const stoppingRef = useRef(false); // 同步版停止信号，供 UI 的 ensure() 立即读到（停止后不再切 TikTok 前台）
   const [mode, setMode] = useState<EngineMode>("mock");
   const [logs, setLogs] = useState<string[]>([]);
   const [stats, setStats] = useState<RunStats>(emptyStats());
@@ -113,7 +117,17 @@ export function useEngine(initialParams?: AutomationParams): EngineState {
     // 占用 WDA：养号暂停开新批次（isPaused），并等它当前批次跑完（isBusy）再发布，
     // 保证养号与发布对同一手机完全串行、绝不并发驱动。
     publishingRef.current = true;
+    // 发布是「主动驱动手机」的意图：若之前养号刚停（stoppingRef=true），必须清掉，
+    // 否则真机 UI 的 ensure() 会跳过 activateApp(TikTok)，发布卡在后台不动。
+    stoppingRef.current = false;
     try {
+      // 后台保活：发布常在没启动养号时由 Hub 直接触发，一旦切到 TikTok 前台，autotk 退后台会被
+      // iOS 挂起、发布中途卡死。与启动养号同理，先起保活（Expo Go/无原生模块时抛错→静默忽略）。
+      try {
+        await startKeepAlive();
+      } catch {
+        // 保活模块未编入（Expo Go/测试包）→ 忽略，dev build 才有此能力
+      }
       while (engineRef.current?.isBusy()) await new Promise((r) => setTimeout(r, 400));
       let item = publishQueueRef.current.nextPending();
       while (item) {
@@ -128,7 +142,7 @@ export function useEngine(initialParams?: AutomationParams): EngineState {
             // 发布常在**未启动养号**时由 Hub 直接触发，而 uiRef 只在 start() 时建 → 这里按需懒建真机 UI，
             // 否则会误报「本机未适配发布功能」。有 vision-ocr 原生模块的 dev build 会得到真机 UI。
             if (!uiRef.current) {
-              const picked = await makeUI(pushLog);
+              const picked = await makeUI(pushLog, () => stoppingRef.current);
               uiRef.current = picked.ui;
               setMode(picked.mode);
             }
@@ -166,6 +180,7 @@ export function useEngine(initialParams?: AutomationParams): EngineState {
   const stop = useCallback(() => {
     track("engine_stop");
     setStopping(true); // 即时反馈：引擎收尾要点时间，先把按钮变「停止中…」，别让用户以为没点到
+    stoppingRef.current = true; // ensure() 立即停止再切 TikTok 前台
     engineRef.current?.stop();
     stopKeepAlive().catch(() => {});
   }, []);
@@ -178,6 +193,7 @@ export function useEngine(initialParams?: AutomationParams): EngineState {
     setLogs([]);
     setStats(emptyStats());
     setStopping(false);
+    stoppingRef.current = false; // 新一轮启动，清掉上次的停止信号
 
     const launch = async () => {
       try {
@@ -204,7 +220,7 @@ export function useEngine(initialParams?: AutomationParams): EngineState {
           }
         }
 
-        const picked = await makeUI(pushLog);
+        const picked = await makeUI(pushLog, () => stoppingRef.current);
         uiRef.current = picked.ui;
         setMode(picked.mode);
 

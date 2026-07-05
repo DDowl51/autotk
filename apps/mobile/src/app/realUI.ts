@@ -70,7 +70,10 @@ async function tryAutoCalibrate(
  *
  * 多机型：按真机实际分辨率选对应标定档案（pickProfile）；查不到精确匹配时用任一份兜底并告警。
  */
-export async function createRealUI(log: (msg: string) => void): Promise<TikTokUI> {
+export async function createRealUI(
+  log: (msg: string) => void,
+  isStopping?: () => boolean,
+): Promise<TikTokUI> {
   // WDA 与本 App 同机,走 localhost。
   setBaseUrl("http://localhost:8100");
 
@@ -126,7 +129,7 @@ export async function createRealUI(log: (msg: string) => void): Promise<TikTokUI
     log("OCR：未接入 VisionOcr 原生模块,降级为不读文案（posPrompts 建议用 [\"*\"] 全互动）");
   }
 
-  return createOnDeviceUI({ profile, ocr, log, onEvent: track });
+  return createOnDeviceUI({ profile, ocr, log, onEvent: track, isStopping });
 }
 
 /**
