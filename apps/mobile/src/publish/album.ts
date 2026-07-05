@@ -29,8 +29,11 @@ function toBase64(bytes: Uint8Array): string {
 
 /** 注入给 downloader 的相册写入实现：写临时文件 → 存入相册 → 返回资源 uri。 */
 export const saveBytesToAlbum: DownloadDeps["saveToAlbum"] = async (bytes, fileName) => {
+  // ⚠️ SDK 54 的 expo-file-system(v19) 默认导出换成了新 File API，老的
+  // cacheDirectory/writeAsStringAsync/EncodingType 移到了 /legacy 子路径。
+  // 不走 legacy 会「Cannot read property 'Base64' of undefined」（EncodingType 为 undefined）。
   // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const FileSystem = require("expo-file-system");
+  const FileSystem = require("expo-file-system/legacy");
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const MediaLibrary = require("expo-media-library");
 
