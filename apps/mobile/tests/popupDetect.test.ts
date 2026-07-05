@@ -74,6 +74,16 @@ test("浮层：虚拟头像（强标题）", () => {
   assert.equal(detectAppPopup([box("你的虚拟头像，你的专属风格", 0.3, 0.7)])?.id, "avatar");
 });
 
+test("浮层：安全检查（个人主页，✕ 脱困，不点继续）", () => {
+  const hit = detectAppPopup([box("让我们快速做个安全检查", 0.3, 0.6)]);
+  assert.equal(hit?.id, "security-check");
+  assert.deepEqual(hit?.dismiss, ["closeIcon", "tapOutside", "back"]);
+});
+
+test("浮层：通行密钥/iCloud 钥匙串（登录 passkey，✕ 脱困，不点设置）", () => {
+  assert.equal(detectAppPopup([box("若要存储通行密钥，你需要启用 iCloud 钥匙串", 0.3, 0.6)])?.id, "passkey");
+});
+
 test("浮层：虚拟物品和奖励政策（可点「知道了」安全关掉）", () => {
   const boxes = [box("虚拟物品和奖励政策更新", 0.3, 0.4), box("知道了", 0.5, 0.7)];
   assert.equal(detectAppPopup(boxes)?.id, "policy");

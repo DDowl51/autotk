@@ -79,6 +79,21 @@ export const SIGNATURES: PopupSignature[] = [
     ],
     dismiss: ["closeText", "back"],
   },
+  // 个人主页：「让我们快速做个安全检查」，红「继续」(勿点) + 卡片右上 ✕。
+  {
+    id: "security-check",
+    strong: true,
+    markers: [/安全检查/, /做个安全检查/, /增强账号安全/, /个性化的安全设定/, /security\s*check(-?up)?/i],
+    dismiss: ["closeIcon", "tapOutside", "back"],
+  },
+  // 个人主页：「若要存储通行密钥，你需要启用 iCloud 钥匙串」，蓝「设置触控ID与密码」(勿点) + 卡片右上 ✕。
+  // （虽是系统 passkey 提示，但呈卡片带 ✕、WDA /alert 未必拦得到，故按应用内浮层用 ✕ 关。）
+  {
+    id: "passkey",
+    strong: true,
+    markers: [/通行密钥/, /iCloud\s*钥匙串/, /钥匙串/, /passkey/i, /icloud\s*keychain/i],
+    dismiss: ["closeIcon", "tapOutside", "back"],
+  },
   {
     id: "follow",
     markers: [/log\s*in to follow/i, /follow back/i, /登录.*关注/],
