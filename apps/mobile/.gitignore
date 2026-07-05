@@ -1,6 +1,8 @@
 node_modules/
-ios/
-android/
+# 只忽略 expo prebuild 生成的**项目根** ios/ android/（构建产物）；
+# 不要忽略 modules/*/ios|android/ 里的**原生模块源码**（KeepAlive/VisionOcr 的 Swift + podspec，必须入库）。
+/ios/
+/android/
 tools/dist/
 .expo/
 
