@@ -188,26 +188,31 @@ export function createOnDeviceUI(deps: {
     return still ? "stuck" : "escaped";
   };
 
-  // iOS 系统权限弹窗：用 WDA alert 接口读按钮、按意图表点（除相册外一律拒绝）。
+  // iOS 系统权限弹窗：用 WDA alert 接口读按钮、按意图表点（发布需要的相机/麦克风/相册 → 允许，其余拒绝）。
   // 关掉了返回 true。比 OCR 可靠（系统 alert 走 springboard）。
+  // **循环清栈**：相机+麦克风等会连续弹两三个，一次调用把当前堆叠的都清掉（最多 4 个防死循环）。
   const handleSystemAlert = async (): Promise<boolean> => {
-    const text = await alertText();
-    if (text === null) return false;
-    const buttons = await alertButtons();
-    const choice = chooseAlertButton(text, buttons);
-    try {
-      if ("label" in choice) {
-        await alertClickButton(choice.label);
-        log(`关闭系统弹窗 → 点「${choice.label}」`);
-      } else {
-        await alertDismiss();
-        log("关闭系统弹窗 → dismiss");
+    let any = false;
+    for (let i = 0; i < 4; i++) {
+      const text = await alertText();
+      if (text === null) break;
+      const buttons = await alertButtons();
+      const choice = chooseAlertButton(text, buttons);
+      try {
+        if ("label" in choice) {
+          await alertClickButton(choice.label);
+          log(`关闭系统弹窗 → 点「${choice.label}」`);
+        } else {
+          await alertDismiss();
+          log("关闭系统弹窗 → dismiss");
+        }
+      } catch {
+        await alertDismiss().catch(() => {});
       }
-    } catch {
-      await alertDismiss().catch(() => {});
+      any = true;
+      await sleep(500);
     }
-    await sleep(500);
-    return true;
+    return any;
   };
 
   // 从左边缘往右滑（iOS 返回手势），退出误入的页面。
@@ -579,7 +584,8 @@ export function createOnDeviceUI(deps: {
       }
       await tap(A("publishPost"));
       await sleep(2000);
-      log("已尝试发布（⚠ 上传流程坐标需真机标定核实）");
+      await handleSystemAlert(); // 发布后常弹「同步 Facebook 好友」等 → 按意图拒绝（取消）
+      log("已尝试发布（上传流程坐标需真机标定核实）");
     },
   };
 }

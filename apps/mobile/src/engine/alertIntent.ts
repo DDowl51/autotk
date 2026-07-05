@@ -1,7 +1,13 @@
-// 系统弹窗按钮意图表（英文为主，含少量中文兜底）。
-// 策略（按用户确认）：除"相册/照片"权限点允许外，其余权限/弹窗一律拒绝/Not Now。
+// 系统弹窗按钮意图表（英文为主，含中文）。
+// 策略（真机确认）：发视频需要的**相机 / 麦克风 / 相册**权限 → 允许；
+// 其余（Facebook 登录、跟踪、通知、保存到 TikTok 等）→ 拒绝 / 取消 / Not Now。
 
 const DENY = [
+  "取消",
+  "不允许",
+  "以后再说",
+  "暂不",
+  "跳过",
   "don't allow",
   "dont allow",
   "ask app not to track",
@@ -12,40 +18,48 @@ const DENY = [
   "cancel",
   "don't save",
   "keep only while using",
-  "不允许",
-  "以后再说",
-  "暂不",
-  "取消",
 ];
 
+// 允许类按钮（精确/子串）。⚠️「不允许」含「允许」子串，故匹配 ALLOW 时必须先排除 DENY 按钮，
+// 否则相机/麦克风弹窗会误点「不允许」。顺序：越具体越靠前（相册「允许访问所有照片」优先）。
 const ALLOW = [
+  "允许访问所有照片",
   "allow access to all photos",
   "allow full access",
-  "allow",
-  "always allow",
-  "ok",
+  "好", // iOS 中文系统弹窗的「OK」（相机/麦克风都是「好」）
   "允许",
+  "always allow",
+  "allow",
+  "ok",
 ];
 
-// 相册/照片权限 → 允许（发视频 #1 需要）。其余 → 拒绝。
-const PHOTO_HINT = /photo|photos|library|相册|照片/i;
+// 发布需要的权限（相机/麦克风/相册）→ 走 ALLOW；命中任一关键词即可。其余 → 走 DENY。
+const ALLOW_HINT = /photo|photos|library|相册|照片|camera|相机|摄像|microphone|麦克风|录音/i;
 
 export type AlertChoice = { label: string } | { dismiss: true };
 
+const isDeny = (l: string): boolean => DENY.some((d) => l === d || l.includes(d));
+
 /**
  * 给定弹窗文字 + 按钮列表，决定点哪个按钮。
- * - 相册/照片弹窗 → 优先点 ALLOW 类按钮。
- * - 其它 → 优先点 DENY 类按钮。
- * - 都没匹配到 → 返回 {dismiss:true}，调用方走 /alert/dismiss（通常= 取消/拒绝）。
+ * - 相机/麦克风/相册权限 → 点 ALLOW 类按钮（且排除 DENY 按钮，防「不允许」被「允许」子串命中）。
+ * - 其它（Facebook/跟踪/通知…）→ 点 DENY 类按钮。
+ * - 都没匹配到 → {dismiss:true}，调用方走 /alert/dismiss（通常= 取消/拒绝）。
  */
 export function chooseAlertButton(text: string, buttons: string[]): AlertChoice {
   const norm = buttons.map((b) => ({ raw: b, l: b.toLowerCase().trim() }));
-  const want = PHOTO_HINT.test(text) ? ALLOW : DENY;
-  for (const w of want) {
-    const exact = norm.find((b) => b.l === w);
-    if (exact) return { label: exact.raw };
-    const partial = norm.find((b) => b.l.includes(w));
-    if (partial) return { label: partial.raw };
+  if (ALLOW_HINT.test(text)) {
+    for (const w of ALLOW) {
+      const wl = w.toLowerCase();
+      const hit = norm.find((b) => !isDeny(b.l) && (b.l === wl || b.l.includes(wl)));
+      if (hit) return { label: hit.raw };
+    }
+  } else {
+    for (const w of DENY) {
+      const wl = w.toLowerCase();
+      const hit = norm.find((b) => b.l === wl || b.l.includes(wl));
+      if (hit) return { label: hit.raw };
+    }
   }
   return { dismiss: true };
 }
