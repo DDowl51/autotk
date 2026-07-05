@@ -215,6 +215,20 @@ export function createOnDeviceUI(deps: {
     return any;
   };
 
+  // 轮询清系统权限弹窗最多 maxSeconds 秒：出现就清（含堆叠），连续两次没有就提前返回。
+  // 兼顾「首次弹权限」与「后续已授权不弹」——有没有弹窗都不卡流程，也不漏迟到几百 ms 才弹的窗。
+  const settleAlerts = async (maxSeconds: number): Promise<void> => {
+    let idle = 0;
+    for (let i = 0; i < maxSeconds * 2; i++) {
+      if (await handleSystemAlert()) {
+        idle = 0;
+        continue;
+      }
+      if (++idle >= 2) return;
+      await sleep(500);
+    }
+  };
+
   // 从左边缘往右滑（iOS 返回手势），退出误入的页面。
   const doSwipeBack = async () => {
     await swipe(
@@ -568,28 +582,38 @@ export function createOnDeviceUI(deps: {
      */
     async publishVideo(_assetUri: string, caption: string) {
       await ensure();
+      // 每步都打日志（卡在哪一步一眼看出→调对应 publish 锚点）；权限用 settleAlerts 轮询清，
+      // 有没有弹窗都不卡（首次弹相机/麦克风/相册 → 自动点允许；后续已授权不弹 → 很快跳过）。
+      log("发布①：打开创作页（+）");
       await tap(A("publishCreate"));
       await sleep(1500);
-      await handleSystemAlert(); // 首次可能弹相机/相册权限
+      await settleAlerts(3); // 相机/麦克风权限（点「好」）
+      log("发布②：进相册上传（左下相册图标）");
       await tap(A("publishUpload"));
       await sleep(1200);
-      await handleSystemAlert();
-      await tap(A("publishAlbumFirst")); // 相册最新一条 = 刚下载的视频
-      await sleep(1000);
-      await tap(A("publishNext")); // 进编辑页
+      await settleAlerts(3); // 相册权限（点「允许访问所有照片」）
+      log("发布③：选相册最新一条（= 刚下载的视频）");
+      await tap(A("publishAlbumFirst"));
+      await sleep(1200);
+      await settleAlerts(2);
+      log("发布④：下一步（预览页）");
+      await tap(A("publishNext"));
       await sleep(2500);
-      await tap(A("publishNext")); // 进发布页（部分版本两段「下一步」）
+      log("发布⑤：下一步（编辑页）");
+      await tap(A("publishNext"));
       await sleep(1500);
       if (caption) {
+        log("发布⑥：填写描述");
         await tap(A("publishCaption"));
         await sleep(600);
         await typeText(caption);
         await sleep(500);
       }
+      log("发布⑦：点「发布」");
       await tap(A("publishPost"));
-      await sleep(2000);
-      await handleSystemAlert(); // 发布后常弹「同步 Facebook 好友」等 → 按意图拒绝（取消）
-      log("已尝试发布（上传流程坐标需真机标定核实）");
+      await sleep(2500);
+      await settleAlerts(3); // 发布后常弹「同步 Facebook 好友」等 → 拒绝（取消）
+      log("发布⑧：已提交（若某步点偏，看日志停在哪步 → 调对应 publish 锚点）");
     },
   };
 }
