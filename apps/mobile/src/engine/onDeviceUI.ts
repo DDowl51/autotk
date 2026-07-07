@@ -6,6 +6,7 @@ import {
   alertText,
   applyFastSettings,
   createSession,
+  resetSession,
   getSessionId,
   screenshot,
   swipe as wdaSwipe,
@@ -104,7 +105,19 @@ export function createOnDeviceUI(deps: {
     }
     // 停止请求后不再把 TikTok 切前台——否则用户切回 autotk 想停，引擎的下一个动作又把 TikTok 顶上来。
     if (isStopping?.()) return;
-    await activateApp(TIKTOK_BUNDLE_ID);
+    try {
+      await activateApp(TIKTOK_BUNDLE_ID);
+    } catch (e) {
+      // WDA 进程可能已重启 → 旧 session 在设备侧失效（404 invalid session），但本地 sessionId 仍非空，
+      // 上面的 getSessionId() 判空就不会重建 → 后续请求全 404 → 整夜熔断死循环、无法自愈。
+      // 这里清掉本地 session 重建一次再试；若 WDA 真宕机则 createSession 也抛错，退化成原来的批次退避。
+      log(`WDA 会话失效，重建后重试：${e instanceof Error ? e.message : String(e)}`);
+      resetSession();
+      await createSession();
+      await applyFastSettings();
+      if (isStopping?.()) return;
+      await activateApp(TIKTOK_BUNDLE_ID);
+    }
     if (!sized) {
       try {
         size = await windowSize();

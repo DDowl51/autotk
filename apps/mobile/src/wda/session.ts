@@ -73,3 +73,12 @@ export async function deleteSession(): Promise<void> {
   await request<null>(`/session/${sessionId}`, { method: "DELETE" });
   sessionId = null;
 }
+
+/**
+ * 仅清空本地 sessionId（不发网络请求）。用于 WDA 进程重启后：旧 session 已在设备侧失效，
+ * 但本地变量仍非空 → ensure() 里 getSessionId() 不为 null 就不会重建、后续请求全 404。
+ * 出错路径调它强制下次 createSession 重建，是「整夜无人值守」的自愈开关。
+ */
+export function resetSession(): void {
+  sessionId = null;
+}
