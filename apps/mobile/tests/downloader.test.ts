@@ -5,65 +5,48 @@ import type { PublishSource } from "../src/hub/protocol";
 
 const src: PublishSource = { kind: "lan", url: "http://op/f/abc" };
 
-function okFetch(bytes: number[]) {
-  return async () => ({
-    ok: true,
-    status: 200,
-    arrayBuffer: async () => new Uint8Array(bytes).buffer,
-  });
-}
-
-test("下载成功 → 写相册 → 返回 assetUri", async () => {
-  let savedName = "";
+test("下载+入相册成功 → 返回 assetUri，传入正确 url/文件名", async () => {
+  let gotUrl = "";
+  let gotName = "";
   const r = await downloadToAlbum(src, "v.mp4", {
-    fetch: okFetch([1, 2, 3, 4]),
-    saveToAlbum: async (bytes, name) => {
-      savedName = name;
-      assert.equal(bytes.length, 4);
+    saveUrlToAlbum: async (url, name) => {
+      gotUrl = url;
+      gotName = name;
       return "asset://123";
     },
   });
   assert.ok(r.ok);
   if (r.ok) assert.equal(r.assetUri, "asset://123");
-  assert.equal(savedName, "v.mp4");
+  assert.equal(gotUrl, "http://op/f/abc");
+  assert.equal(gotName, "v.mp4");
 });
 
-test("HTTP 非 2xx → 失败带状态码", async () => {
+test("下载失败（HTTP 非 2xx）→ 失败带原因", async () => {
   const r = await downloadToAlbum(src, "v.mp4", {
-    fetch: async () => ({ ok: false, status: 404, arrayBuffer: async () => new ArrayBuffer(0) }),
-    saveToAlbum: async () => "x",
+    saveUrlToAlbum: async () => {
+      throw new Error("下载失败：HTTP 404");
+    },
   });
   assert.equal(r.ok, false);
   if (!r.ok) assert.match(r.error, /404/);
 });
 
-test("fetch 抛错 → 失败", async () => {
+test("写相册失败（无权限）→ 失败带原因", async () => {
   const r = await downloadToAlbum(src, "v.mp4", {
-    fetch: async () => {
+    saveUrlToAlbum: async () => {
+      throw new Error("没有相册写入权限");
+    },
+  });
+  assert.equal(r.ok, false);
+  if (!r.ok) assert.match(r.error, /相册.*没有权限|没有相册写入权限/);
+});
+
+test("网络异常 → 失败带原因", async () => {
+  const r = await downloadToAlbum(src, "v.mp4", {
+    saveUrlToAlbum: async () => {
       throw new Error("网络断了");
     },
-    saveToAlbum: async () => "x",
   });
   assert.equal(r.ok, false);
   if (!r.ok) assert.match(r.error, /网络断了/);
-});
-
-test("下载到空内容 → 失败", async () => {
-  const r = await downloadToAlbum(src, "v.mp4", {
-    fetch: okFetch([]),
-    saveToAlbum: async () => "x",
-  });
-  assert.equal(r.ok, false);
-  if (!r.ok) assert.match(r.error, /空/);
-});
-
-test("写相册失败 → 失败带原因", async () => {
-  const r = await downloadToAlbum(src, "v.mp4", {
-    fetch: okFetch([1, 2, 3]),
-    saveToAlbum: async () => {
-      throw new Error("没有权限");
-    },
-  });
-  assert.equal(r.ok, false);
-  if (!r.ok) assert.match(r.error, /相册.*没有权限/);
 });

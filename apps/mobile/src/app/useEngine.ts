@@ -13,14 +13,14 @@ import { getStoredHubUrl, setStoredHubUrl } from "../hub/hubUrlStore";
 import { startHubDiscovery } from "../hub/discovery";
 import { candidateUrls, hostOf } from "../hub/hubUrl";
 import { probeHub } from "../hub/probe";
-import { resolveDeviceName } from "../hub/deviceName";
+import { resolveDeviceName, uniqueDeviceName } from "../hub/deviceName";
 import { buildStatus, mapBattery } from "../hub/reporter";
 import { applyConfigPatch } from "../hub/configInbox";
 import { batteryInfo } from "../wda";
 import type { PublishTaskMsg, DeviceBattery } from "../hub/protocol";
 import { PublishQueue, runPublish } from "../publish/publishQueue";
 import { downloadToAlbum } from "../publish/downloader";
-import { saveBytesToAlbum } from "../publish/album";
+import { saveUrlToAlbum } from "../publish/album";
 import { resolveDeviceId } from "../license/deviceId";
 import { saveParams } from "./paramsStorage";
 import { track } from "../telemetry";
@@ -137,11 +137,7 @@ export function useEngine(initialParams?: AutomationParams): EngineState {
           /* 保活模块未编入（Expo Go/测试包）→ 忽略 */
         }
         await runPublish(task, {
-          download: (t) =>
-            downloadToAlbum(t.source, t.videoName, {
-              fetch: (u) => fetch(u),
-              saveToAlbum: saveBytesToAlbum,
-            }),
+          download: (t) => downloadToAlbum(t.source, t.videoName, { saveUrlToAlbum }),
           publishVideo: async (assetUri, caption) => {
             // 发布常在**未启动养号**时由 Hub 直接触发，而 uiRef 只在 start() 时建 → 这里按需懒建真机 UI，
             // 否则会误报「本机未适配发布功能」。有 vision-ocr 原生模块的 dev build 会得到真机 UI。
@@ -337,7 +333,7 @@ export function useEngine(initialParams?: AutomationParams): EngineState {
         client = new HubClient({
           url: hubUrl,
           deviceId,
-          deviceName: resolveDeviceName(),
+          deviceName: uniqueDeviceName(resolveDeviceName(), deviceId),
           version: "autotk",
           onConnectionChange: (c) => setHubConnected(c),
           onConfigApply: (m) => {
