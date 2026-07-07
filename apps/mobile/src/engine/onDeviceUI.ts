@@ -8,9 +8,9 @@ import {
   createSession,
   getSessionId,
   screenshot,
-  swipe,
-  tap,
-  typeText,
+  swipe as wdaSwipe,
+  tap as wdaTap,
+  typeText as wdaTypeText,
   windowSize,
   TIKTOK_BUNDLE_ID,
   type Point,
@@ -69,6 +69,21 @@ export function createOnDeviceUI(deps: {
   isStopping?: () => boolean;
 }): TikTokUI {
   const { profile: prof, ocr, log, onEvent, isStopping } = deps;
+  // 停止请求后，所有**触控**动作整体变 no-op：ensure() 那时已不再把 TikTok 切前台，
+  // 若继续 tap/type，会落在前台的 autotk 自己身上（最坏把评论话术敲进配置输入框）。
+  // 读操作（截图/检测/OCR）无副作用，不拦。发布流程另有守卫（停止时抛错而非静默空走）。
+  const tap = async (p: Point) => {
+    if (isStopping?.()) return;
+    await wdaTap(p);
+  };
+  const swipe = async (from: Point, to: Point, duration?: number) => {
+    if (isStopping?.()) return;
+    await wdaSwipe(from, to, duration);
+  };
+  const typeText = async (text: string) => {
+    if (isStopping?.()) return;
+    await wdaTypeText(text);
+  };
   let size = { width: prof.screen.w, height: prof.screen.h };
   // 解析某页面锚点：优先标定档覆盖值，否则用比例默认（anchors.ts 单一真源）。
   const A = (name: AnchorName): Point => resolveAnchor(prof, size.width, size.height, name);
@@ -154,6 +169,8 @@ export function createOnDeviceUI(deps: {
 
   // 应用内浮层（TikTok 自有弹窗/底部单，/alert 看不到）：检测→按计划脱困→重检，最多 3 轮。
   const escapeAppPopup = async (): Promise<"none" | "escaped" | "stuck"> => {
+    // 停止后触控全是 no-op，脱困尝试注定失败——直接返回，别空转 3 轮截图+OCR（约 20-30s）。
+    if (isStopping?.()) return "none";
     let detected = false;
     for (let attempt = 0; attempt < 3; attempt++) {
       const boxes = await ocr(await screenshot());
@@ -196,6 +213,8 @@ export function createOnDeviceUI(deps: {
   // 关掉了返回 true。比 OCR 可靠（系统 alert 走 springboard）。
   // **循环清栈**：相机+麦克风等会连续弹两三个，一次调用把当前堆叠的都清掉（最多 4 个防死循环）。
   const handleSystemAlert = async (): Promise<boolean> => {
+    // 停止后不再碰系统弹窗（WDA /alert 不分 app——用户此刻可能正看着 autotk 自己的权限对话框）。
+    if (isStopping?.()) return false;
     let any = false;
     for (let i = 0; i < 4; i++) {
       const text = await alertText();
@@ -224,6 +243,7 @@ export function createOnDeviceUI(deps: {
   const settleAlerts = async (maxSeconds: number): Promise<void> => {
     let idle = 0;
     for (let i = 0; i < maxSeconds * 2; i++) {
+      if (isStopping?.()) return; // 停止后立即退出轮询（handleSystemAlert 也已不再点弹窗）
       if (await handleSystemAlert()) {
         idle = 0;
         continue;
@@ -590,10 +610,16 @@ export function createOnDeviceUI(deps: {
      * 必须真机 calibrate 覆盖后才可靠——否则会点偏（见 anchors.ts publish* 与收尾清单）。
      */
     async publishVideo(_assetUri: string, caption: string) {
+      // 停止守卫：发布期间用户点了停止 → 触控已全部变 no-op，若不检查会「八步空走」伪报发布成功。
+      // 每步开头查一次，命中就抛错中止，上层如实回报 failed（管理中心可重派）。
+      const st = (step: string) => {
+        if (isStopping?.()) throw new Error(`已请求停止，发布中止（${step}）`);
+      };
       // ⚠️ 关键：发布必须从「能看到底部导航 [+]」的干净基地开始。下发时引擎可能停在**任意页**——
       // 评论区/搜索结果/作品详情/个人主页/关注流……直接点 [+] 会点偏。先复位：
       //   1) 关系统权限弹窗 + 应用内浮层；2) 关残留评论区；3) 退出「搜索结果/作品详情」等看不到底部
       //   导航的 pushed 页（不在已知页就左滑返回，最多 4 次）。这样无论从哪儿发起，都先回到基地。
+      st("发布⓪");
       log("发布⓪：复位到基地（关评论/浮层、退出内层页）");
       await backToFeedBase(); // 与 recoverToFeed 共用：关系统弹窗 + 评论区 + 登录/passkey 浮层
       // backToFeedBase 不退 pushed 页；发布必须能看到底部 [+]，故补一步：不在已知页(视频流/评论)就左滑返回，最多 4 次。
@@ -604,31 +630,38 @@ export function createOnDeviceUI(deps: {
       }
       await settleAlerts(2);
       // 以下每步打日志（卡在哪一步一眼看出→调对应 publish 锚点）；权限用 settleAlerts 轮询清，有没有弹窗都不卡。
+      st("发布①");
       log("发布①：打开创作页（+）");
       await tap(A("publishCreate"));
       await sleep(1500);
       await settleAlerts(3); // 相机/麦克风权限（点「好」）
+      st("发布②");
       log("发布②：进相册上传（左下相册图标）");
       await tap(A("publishUpload"));
       await sleep(1200);
       await settleAlerts(3); // 相册权限（点「允许访问所有照片」）
+      st("发布③");
       log("发布③：选相册最新一条（= 刚下载的视频）");
       await tap(A("publishAlbumFirst"));
       await sleep(1200);
       await settleAlerts(2);
+      st("发布④");
       log("发布④：下一步（预览页）");
       await tap(A("publishNext"));
       await sleep(2500);
+      st("发布⑤");
       log("发布⑤：下一步（编辑页）");
       await tap(A("publishNext"));
       await sleep(1500);
       if (caption) {
+        st("发布⑥");
         log("发布⑥：填写描述");
         await tap(A("publishCaption"));
         await sleep(600);
         await typeText(caption);
         await sleep(500);
       }
+      st("发布⑦");
       log("发布⑦：点「发布」");
       await tap(A("publishPost"));
       await sleep(2500);

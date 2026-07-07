@@ -117,21 +117,25 @@ export function useEngine(initialParams?: AutomationParams): EngineState {
     // 占用 WDA：养号暂停开新批次（isPaused），并等它当前批次跑完（isBusy）再发布，
     // 保证养号与发布对同一手机完全串行、绝不并发驱动。
     publishingRef.current = true;
-    // 发布是「主动驱动手机」的意图：若之前养号刚停（stoppingRef=true），必须清掉，
-    // 否则真机 UI 的 ensure() 会跳过 activateApp(TikTok)，发布卡在后台不动。
-    stoppingRef.current = false;
     try {
-      // 后台保活：发布常在没启动养号时由 Hub 直接触发，一旦切到 TikTok 前台，autotk 退后台会被
-      // iOS 挂起、发布中途卡死。与启动养号同理，先起保活（Expo Go/无原生模块时抛错→静默忽略）。
-      try {
-        await startKeepAlive();
-      } catch {
-        // 保活模块未编入（Expo Go/测试包）→ 忽略，dev build 才有此能力
-      }
+      // 先等养号当前批次收尾（isBusy）再动手。注意必须在清停止信号**之前**等：
+      // 用户刚点停止时引擎还在收尾，若这时清早了，收尾中的残余触控会重新落地、
+      // ensure() 又把 TikTok 顶回前台——正是停止守卫要杜绝的行为。
       while (engineRef.current?.isBusy()) await new Promise((r) => setTimeout(r, 400));
       let item = publishQueueRef.current.nextPending();
       while (item) {
         const task = item.task;
+        // 每条任务都是操作员的新意图 → 清停止信号。只在 drain 入口清一次不够：用户点过停止后、
+        // 排空中途新到的任务会被残留信号误杀（下载白跑、发布⓪即抛「已请求停止」报 failed）。
+        stoppingRef.current = false;
+        // 每条任务发布前都确保保活开启（不能只在 drain 入口起一次：stop() 会杀保活）。
+        // 没保活时一切 TikTok 前台，autotk 退后台即被 iOS 挂起、发布中途卡死。
+        // Expo Go/无原生模块时抛错 → 静默忽略，dev build 才有此能力。
+        try {
+          await startKeepAlive();
+        } catch {
+          /* 保活模块未编入（Expo Go/测试包）→ 忽略 */
+        }
         await runPublish(task, {
           download: (t) =>
             downloadToAlbum(t.source, t.videoName, {
@@ -165,6 +169,9 @@ export function useEngine(initialParams?: AutomationParams): EngineState {
     } finally {
       drainingRef.current = false;
       publishingRef.current = false; // 发布队列清空 → 养号恢复
+      // 纯发布场景（养号没在跑）：回收发布起的保活——否则「始终定位」发完还一直跑，
+      // 买家侧表现为发过一次视频后定位常亮、掉电快。养号在跑则保活归 stop() 管，不动。
+      if (!engineRef.current?.isRunning()) stopKeepAlive().catch(() => {});
     }
   }, [pushLog]);
 
