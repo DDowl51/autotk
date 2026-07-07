@@ -114,11 +114,19 @@ function stopHub() {
 let lan = null;
 let agent = null;
 
+// 局域网直传服务：带持久化文件，桌面重启后恢复 token→路径映射 + 端口，
+// 让定时/离线补发任务里持久化的旧下发 URL 仍能被手机下载（否则重启后必 404）。
+async function ensureLan() {
+  if (lan) return lan;
+  const persistFile = path.join(app.getPath("userData"), "lan-tokens.json");
+  lan = new publisher.LanFileServer(persistFile);
+  const savedPort = await lan.restore(); // 恢复旧映射 + 上次端口
+  await lan.start("0.0.0.0", savedPort ?? 0); // 0.0.0.0 让同网手机可访问；优先复用旧端口
+  return lan;
+}
+
 async function ensureAgent(rootDir, schedule) {
-  if (!lan) {
-    lan = new publisher.LanFileServer();
-    await lan.start("0.0.0.0", 0); // 0.0.0.0 让同网手机可访问
-  }
+  await ensureLan();
   if (!agent) {
     agent = new publisher.PublishAgent({ rootDir, schedule, lan });
   } else {
@@ -167,6 +175,9 @@ app.whenReady().then(async () => {
   try {
     await ensureHub(); // 先起内嵌 Hub 再开窗，渲染层一挂载即可连 localhost
     logger.info(`内嵌 Hub 已启动 :${hub ? hub.port : "?"}`);
+    // 内嵌 Hub 会立刻把持久化的定时/离线补发任务重新下发，其下载 URL 指向 LAN 服务——
+    // 故 LAN 服务必须先于「渲染层打开发布页」就绪并恢复旧 token，否则重启后这些任务下载必 404。
+    await ensureLan();
   } catch (e) {
     logger.error("内嵌 Hub 启动失败", e);
     try {

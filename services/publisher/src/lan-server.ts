@@ -18,11 +18,19 @@ export class LanFileServer {
   private readonly tokens = new Map<string, string>(); // token → absPath
   private port = 0;
 
+  /**
+   * @param persistFile 可选：把 token→路径映射 + 端口落盘的文件。传了它，桌面重启后
+   *   restore() 能把旧映射与端口读回来，让**定时/离线补发**任务里持久化的旧下发 URL 仍可下载
+   *   （否则重启后 token（内存）与随机端口都变，手机拿旧 URL 必 404）。不传＝老行为、纯内存。
+   */
+  constructor(private readonly persistFile?: string) {}
+
   /** 注册一个文件，返回访问 token（幂等：同路径复用同 token）。 */
   register(absPath: string): string {
     for (const [t, p] of this.tokens) if (p === absPath) return t;
     const token = randomBytes(12).toString("hex");
     this.tokens.set(token, absPath);
+    void this.persist();
     return token;
   }
 
@@ -35,15 +43,52 @@ export class LanFileServer {
     return this.port;
   }
 
+  /** 从持久化文件恢复 token→路径映射 + 上次端口（供桌面重启后旧 URL 仍可用）。返回上次端口。 */
+  async restore(): Promise<number | undefined> {
+    if (!this.persistFile) return undefined;
+    try {
+      const raw = await fs.readFile(this.persistFile, "utf8");
+      const data = JSON.parse(raw) as { port?: number; tokens?: Array<[string, string]> };
+      if (Array.isArray(data.tokens)) for (const [t, p] of data.tokens) this.tokens.set(t, p);
+      return typeof data.port === "number" ? data.port : undefined;
+    } catch {
+      return undefined; // 首次运行/文件损坏 → 当作没有历史
+    }
+  }
+
+  private async persist(): Promise<void> {
+    if (!this.persistFile) return;
+    try {
+      await fs.writeFile(this.persistFile, JSON.stringify({ port: this.port, tokens: [...this.tokens] }));
+    } catch {
+      /* 持久化失败忽略，下次 register/start 再写 */
+    }
+  }
+
+  /**
+   * 起服务。port 传上次端口时优先复用（让旧 URL 里的端口仍命中）；被占用则回退随机端口
+   * （旧 URL 会失效，但新发布仍可用，不阻塞）。
+   */
   start(host = "0.0.0.0", port = 0): Promise<number> {
-    return new Promise((resolve) => {
-      this.server = http.createServer((req, res) => this.handle(req, res));
-      this.server.listen(port, host, () => {
-        const addr = this.server!.address();
-        this.port = typeof addr === "object" && addr ? addr.port : port;
-        resolve(this.port);
+    const listenOn = (p: number): Promise<number> =>
+      new Promise((resolve, reject) => {
+        const server = http.createServer((req, res) => this.handle(req, res));
+        const onError = (e: NodeJS.ErrnoException) => reject(e);
+        server.once("error", onError);
+        server.listen(p, host, () => {
+          server.removeListener("error", onError);
+          this.server = server;
+          const addr = server.address();
+          this.port = typeof addr === "object" && addr ? addr.port : p;
+          resolve(this.port);
+        });
       });
-    });
+    return listenOn(port)
+      .catch(() => (port !== 0 ? listenOn(0) : Promise.reject(new Error("LAN 端口绑定失败"))))
+      .then(async (p) => {
+        await this.persist(); // 记下实际端口，供下次重启复用
+        return p;
+      });
   }
 
   private async handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
@@ -69,8 +114,9 @@ export class LanFileServer {
     }
   }
 
-  close(): Promise<void> {
-    return new Promise((resolve) => {
+  async close(): Promise<void> {
+    await this.persist(); // 落盘最新 token 映射 + 端口，供下次重启恢复
+    await new Promise<void>((resolve) => {
       if (!this.server) return resolve();
       this.server.close(() => resolve());
       this.server = null;
