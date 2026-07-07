@@ -43,7 +43,7 @@ interface Draft {
 
 const DEFAULT_DRAFT: Draft = {
   kwText: "",
-  posText: "*",
+  posText: "", // 留空＝不下发正向词（保持手机原样）；想全部互动就填 "*"。默认 "*" 会覆盖掉手机上的自定义正向词
   negText: "",
   matchText: "",
   replyText: "",
@@ -140,11 +140,18 @@ export function BatchConfigModal({
   function buildPatch(): ConfigPatch {
     const p: ConfigPatch = {};
     if (groups.kw) {
-      p.searchKeywords = splitWords(draft.kwText);
-      p.posPrompts = splitWords(draft.posText);
-      p.negPrompts = splitWords(draft.negText);
-      p.commentMatchKeywords = splitWords(draft.matchText);
-      p.fixedReplies = splitLines(draft.replyText);
+      // 只下发「填了的」列表，留空的字段不写进补丁——否则空框会把手机上已有的
+      // 固定回复/评论匹配词/提示词整组清空（手机端数组是整体替换）。想清空某列表请在单机设置里改。
+      const kw = splitWords(draft.kwText);
+      const pos = splitWords(draft.posText);
+      const neg = splitWords(draft.negText);
+      const match = splitWords(draft.matchText);
+      const reply = splitLines(draft.replyText);
+      if (kw.length) p.searchKeywords = kw;
+      if (pos.length) p.posPrompts = pos;
+      if (neg.length) p.negPrompts = neg;
+      if (match.length) p.commentMatchKeywords = match;
+      if (reply.length) p.fixedReplies = reply;
     }
     if (groups.forYou) p.forYou = draft.forYou;
     if (groups.kwSearch) p.kwSearch = draft.kwSearch;

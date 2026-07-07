@@ -19,6 +19,7 @@
         "UIBackgroundModes": ["location"],
         "NSLocationAlwaysAndWhenInUseUsageDescription": "用于后台保活，保持自动化在后台持续运行",
         "NSLocationWhenInUseUsageDescription": "用于后台保活，保持自动化在后台持续运行",
+        "NSLocalNetworkUsageDescription": "用于在同一 WiFi 下发现并连接电脑端控制中心、接收要发布的视频",
         "NSAppTransportSecurity": {
           "NSAllowsLocalNetworking": true
         }
@@ -37,6 +38,12 @@
     },
     "plugins": [
       "expo-location",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "用于扫码连接电脑端控制中心"
+        }
+      ],
       [
         "expo-media-library",
         {

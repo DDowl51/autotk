@@ -36,3 +36,8 @@ data/
 *.docx
 *.PNG
 *.pdf
+
+# ---- runtime data / dev leftovers (contain real device IDs; never commit / never ship) ----
+hub-data/
+apps/mobile/chi_sim.traineddata
+apps/mobile/adaptation/screenshots/
