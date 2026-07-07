@@ -15,11 +15,12 @@ python -m pip install --upgrade pyinstaller pymobiledevice3 || goto :err
 echo.
 echo [2/2] 打包（把 pymobiledevice3 及依赖整体收进 exe）…
 REM --collect-all pymobiledevice3：连它的子模块 + 数据文件一起收（它动态导入很多服务类，必须 collect-all）。
-REM --copy-metadata pymobiledevice3：它启动时会用 importlib.metadata 读自己的版本，缺了会报错。
+REM --recursive-copy-metadata pymobiledevice3：它和多个依赖（readchar/typer/rich…）启动时会用
+REM   importlib.metadata 读自己的版本，缺了报 PackageNotFoundError——递归把整个依赖树的 metadata 都收进来。
 REM 其余常见需一并 collect 的传递依赖也带上，避免冻结后 hidden import 缺失。
 pyinstaller --onefile --windowed --uac-admin --name ActivateWDA ^
   --collect-all pymobiledevice3 ^
-  --copy-metadata pymobiledevice3 ^
+  --recursive-copy-metadata pymobiledevice3 ^
   --collect-all ipsw_parser ^
   --collect-all developer_disk_image ^
   --collect-submodules construct ^
