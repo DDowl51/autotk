@@ -66,7 +66,10 @@ let beaconTimer = null;
 
 async function ensureHub() {
   if (hub) return hub.port;
-  hub = await startHub({ ports: HUB_PORTS }); // 按共享端口表挑第一个空闲；手机端按同表兜底重连
+  // 数据目录固定到 userData（如 %APPDATA%/<App>/hub-data），不用 startHub 默认的 cwd 相对 "./hub-data"——
+  // 否则买家用快捷方式/开机自启从不同工作目录启动，设备别名/离线补发/定时任务会分家、像「莫名丢失」。
+  const dataDir = path.join(app.getPath("userData"), "hub-data");
+  hub = await startHub({ ports: HUB_PORTS, dataDir }); // 按共享端口表挑第一个空闲；手机端按同表兜底重连
   startBeacon(hub.port);
   return hub.port;
 }

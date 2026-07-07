@@ -51,7 +51,9 @@ export class PublishCoordinator {
     private readonly progress: EmitPublishProgress,
     opts: PublishOpts = {},
   ) {
-    this.timeoutMs = opts.timeoutMs ?? 120_000;
+    // 无进展超时默认 5 分钟（与手机端引擎单批超时同量级）：给慢网大视频下载/上传留足头寸，
+    // 又能兜住真卡死。批量串行发布的误判由 onResult 里「同设备任一进展即重排其余」根治，不靠调大此值。
+    this.timeoutMs = opts.timeoutMs ?? 300_000;
     this.timers = opts.timers ?? realTimers;
     this.now = opts.now ?? Date.now;
     this.persistScheduled = opts.persistScheduled;
@@ -102,6 +104,25 @@ export class PublishCoordinator {
       this.pending.delete(taskId);
     } else {
       this.arm(taskId, e.deviceId); // 有进展 → 重置超时
+    }
+    // 手机对同一设备是**串行**发布：任一任务有进展 = 该设备活着、终会轮到其余排队任务。
+    // 故把同设备其余在途任务的「无进展超时」一并重排，否则批量「全部发布」时排在后面、
+    // 尚未开始的任务会在漫长等待中被误判 timeout 删除；之后手机真回报又因 taskId 未知被丢弃，
+    // 桌面永远卡「超时·可重试」。（跨设备互不影响，只重排同一 deviceId 的。）
+    this.rearmDevice(e.deviceId, taskId);
+  }
+
+  /** 重排某设备除 exceptTaskId 外所有在途任务的无进展超时（该任务刚在上面单独处理过）。 */
+  private rearmDevice(deviceId: string, exceptTaskId: string): void {
+    const ids: string[] = [];
+    for (const [tid, entry] of this.pending) {
+      if (tid !== exceptTaskId && entry.deviceId === deviceId) ids.push(tid);
+    }
+    for (const tid of ids) {
+      const entry = this.pending.get(tid);
+      if (!entry) continue;
+      entry.cancel();
+      this.arm(tid, deviceId);
     }
   }
 
