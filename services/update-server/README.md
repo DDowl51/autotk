@@ -20,11 +20,17 @@ updates/
 
 ## 发布一次热更（在 Mac 上）
 
+> ⚠️ 拷贝目标必须是 **docker compose 挂载的目录**（下方部署用 compose，宿主机是
+> `<部署目录>/services/update-server/data/updates/`，容器内 `UPDATES_DIR=/data/updates`）。
+> 别拷到 `/srv/...`——那不是容器读取的目录，会导致 `/api/manifest` 恒 404、手机永远收不到热更。
+
 ```bash
 cd apps/mobile
 npx expo export --platform ios          # 产出 dist/（bundle + assets + metadata.json）
-# 把 dist 整个拷到服务器：updates/<runtimeVersion>/<新文件夹>/
-scp -r dist/ user@vps:/srv/update-server/updates/1.0.0/$(date +%F-%H%M)/
+# 首次先在服务器建好 runtimeVersion 目录（如 1.0.0）：
+ssh user@vps 'mkdir -p /srv/update-server/data/updates/1.0.0'   # 路径= compose 所在目录/data/updates
+# 把 dist **内容**拷进一个新文件夹（末尾斜杠很重要，别拷成嵌套 dist/）：
+scp -r dist/ user@vps:/srv/update-server/data/updates/1.0.0/$(date +%F-%H%M)/
 ```
 
 服务端无需重启——下次手机来问就拿到新的（取该 runtimeVersion 下 mtime 最新的文件夹）。
@@ -48,20 +54,26 @@ npx expo-updates codesigning:generate-keypair \
 把 `private-key.pem` 放到服务器，`CODE_SIGNING_PRIVATE_KEY` 指向它。`certificate.pem` 留在
 `apps/mobile/code-signing/` 随 App 一起打包（app.json 的 `updates.codeSigningCertificate` 已配好）。
 
-## 部署（VPS）
+## 部署（VPS）—— 推荐用 docker compose
+
+compose（本目录 `docker-compose.yml`）已配好挂载、env 与 Caddy，是主推方式；env 走容器内 `/data` 路径，别改。
 
 ```bash
-# env（或 docker-compose）：
-#   PORT=4200
-#   UPDATES_DIR=/srv/update-server/updates
-#   BASE_URL=https://updates.你的域名.com      # 必须与 app.json 的 updates.url 同域
-#   CODE_SIGNING_PRIVATE_KEY=/srv/update-server/secrets/private-key.pem
-#   KEYID=main
-pnpm --filter @autotk/update-server build
-node dist/main.js
+cd services/update-server
+mkdir -p data/updates data/secrets                     # 更新包放 data/updates/<rv>/；私钥放 data/secrets/
+cp <你的>/private-key.pem data/secrets/private-key.pem  # 代码签名私钥（勿提交）
+export BASE_URL=https://updates.你的域名.com            # 必须与 app.json 的 updates.url 同域
+# 改 Caddyfile 里的 updates.你的域名.com 为真实域名（DNS 指向本机、放行 80/443）
+docker compose up -d --build
+curl -s http://127.0.0.1:4200/healthz                  # {"ok":true} 即起来了
 ```
 
-Caddy 反代 + 自动 TLS（见 Caddyfile）：`https://updates.你的域名.com` → `127.0.0.1:4200`。
+> compose 内固定：`UPDATES_DIR=/data/updates`、`CODE_SIGNING_PRIVATE_KEY=/data/secrets/private-key.pem`、
+> `KEYID=main`、`PORT=4200`，分别对应宿主机 `./data/updates`、`./data/secrets/private-key.pem`。
+> **裸 `node dist/main.js` 仅供本机调试**，那时 `UPDATES_DIR`/`CODE_SIGNING_PRIVATE_KEY` 用你自定义的路径，
+> 且 scp 目标要与之一致——生产别混用两套路径。
+
+Caddy（compose 内已含）反代 + 自动 TLS：`https://updates.你的域名.com` → update-server:4200。
 app.json 的 `updates.url` 现为 `https://updates.你的域名.com/api/manifest`，改成你的真实域名后重出包。
 
 ## 接口

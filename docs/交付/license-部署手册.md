@@ -33,10 +33,17 @@ printf 'JWT_SECRET=%s\n' "$(openssl rand -hex 32)" > .env
 #   1) 删掉 db 服务的 ports: "55432:5432" 映射——Postgres 不对公网暴露（默认密码是 postgres/postgres！）
 #   2) api 的 3001 建议只 bind 本机："127.0.0.1:3001:3001"（反正走 Caddy 反代）
 
+docker compose config | grep JWT_SECRET   # 确认插值成功：应是 64 位十六进制，不是 change-me-in-prod
 docker compose up -d --build
 docker compose logs -f api        # 看到 license API 启动日志即成功
 
-# 建管理员（幂等，重复跑不重复建；ADMIN_PASS 必须是强密码）
+# ⚠️ 若 api 容器反复重启、日志出现「拒绝启动：JWT_SECRET 未设置或仍为公开默认值」：
+#   说明 .env 没被读到 / 写错键名 / openssl 未装导致上面那行写空 → JWT_SECRET 落到了 compose 默认值。
+#   （这是有意的安全守卫：用公开默认密钥任何人都能自签管理员 token。）
+#   修：确认 .env 与 docker-compose.yml 同目录、内容确为 JWT_SECRET=<64位十六进制>，再 docker compose up -d --build。
+
+# 建管理员（幂等，重复跑不重复建；ADMIN_PASS 必须是强密码，且这是唯一入口——系统暂无强制改密，别先用默认再改）
+# 若报连不上库：db 首次初始化要几秒，等 `docker compose ps` 里 db 显示 healthy 再跑（seed 幂等，重跑即可）
 docker compose exec -e ADMIN_USER=admin -e ADMIN_PASS='<强密码>' api node dist/seed.js
 
 # 时钟同步（HMAC 时间窗 5 分钟，时钟漂移=全体客户端验签失败）
@@ -50,23 +57,30 @@ timedatectl set-ntp true && timedatectl
 ```bash
 pnpm install
 pnpm --filter @license/web build          # 产物 apps/web/dist（纯静态）
-scp -r apps/web/dist user@vps:/srv/license-web
+ssh user@vps 'mkdir -p /srv/license-web'  # 先建目录，避免 scp 把内容错放进 /srv/license-web/dist
+scp -r apps/web/dist/* user@vps:/srv/license-web/   # 让 index.html 落在 root 指向的目录第一层
 ```
 
 ## 3. Caddy 同源反代 + HTTPS（VPS）
+
+用显式 `handle` 分区，避免 reverse_proxy 与 try_files 的隐式排序把 `/admin` 登录吞成 index.html：
 
 ```bash
 apt-get install -y caddy
 cat >/etc/caddy/Caddyfile <<'EOF'
 license.你的域名.com {
-  reverse_proxy /admin* 127.0.0.1:3001
-  reverse_proxy /v1*    127.0.0.1:3001
-  root * /srv/license-web
-  file_server
-  try_files {path} /index.html
+  handle /admin* { reverse_proxy 127.0.0.1:3001 }
+  handle /v1*    { reverse_proxy 127.0.0.1:3001 }
+  handle {
+    root * /srv/license-web
+    file_server
+    try_files {path} /index.html
+  }
 }
 EOF
 systemctl reload caddy
+# 自检：走到了 API（回 400/401）而非被静态站吞成 HTML
+curl -i -X POST https://license.你的域名.com/admin/login    # 应见 400/401；若回 HTML 说明反代顺序不对
 ```
 
 Caddy 自动向 Let's Encrypt 签证书。打开 `https://license.你的域名.com` 应能看到登录页。
