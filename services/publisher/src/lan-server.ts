@@ -58,10 +58,18 @@ export class LanFileServer {
 
   private async persist(): Promise<void> {
     if (!this.persistFile) return;
+    // 原子写：先写唯一临时文件再 rename（同盘原子替换）。register 每次异步写盘，
+    // 并发/进程被杀时直接 writeFile 目标文件会半写损坏；rename 保证读者只会看到完整旧或完整新。
+    const tmp = `${this.persistFile}.${randomBytes(4).toString("hex")}.tmp`;
     try {
-      await fs.writeFile(this.persistFile, JSON.stringify({ port: this.port, tokens: [...this.tokens] }));
+      await fs.writeFile(tmp, JSON.stringify({ port: this.port, tokens: [...this.tokens] }));
+      await fs.rename(tmp, this.persistFile);
     } catch {
-      /* 持久化失败忽略，下次 register/start 再写 */
+      try {
+        await fs.unlink(tmp);
+      } catch {
+        /* 临时文件清理失败忽略 */
+      }
     }
   }
 
