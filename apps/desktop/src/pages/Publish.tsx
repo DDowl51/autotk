@@ -43,11 +43,19 @@ export function Publish() {
 
   const deviceByName = useMemo(() => new Map(devices.map((d) => [d.deviceName, d])), [devices]);
 
+  // 重名设备：按「名=文件夹」匹配时，同名的只会有一台收到视频、其余静默漏发 → 醒目提示去改名。
+  const dupNames = useMemo(() => {
+    const count = new Map<string, number>();
+    for (const d of devices) count.set(d.deviceName, (count.get(d.deviceName) ?? 0) + 1);
+    return [...count.entries()].filter(([, n]) => n > 1).map(([name]) => name);
+  }, [devices]);
+
   async function refresh() {
     if (!api || !root) return;
     setBusy(true);
     try {
-      const next = await api.refresh({ rootDir: root, schedule: SCHEDULE });
+      // 传当前设备名 → 主进程自动建好各设备子文件夹（买家不用手动创建）。
+      const next = await api.refresh({ rootDir: root, schedule: SCHEDULE, deviceNames: devices.map((d) => d.deviceName) });
       setPlans(next);
       setTimes((prev) => initTimes(next, prev)); // 新视频填错峰建议，已改过的沿用
     } catch (e) {
@@ -186,6 +194,16 @@ export function Publish() {
     <>
       <PageHeader title="发布" subtitle="把根目录各设备子文件夹里的视频发到对应手机的 TikTok" />
 
+      {dupNames.length > 0 && (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message="检测到重名设备，请先在「设备」页给它们改成不同的名字"
+          description={`有多台设备叫「${dupNames.join("、")}」。发布按「设备名＝文件夹名」匹配，重名会导致视频只发到其中一台、其余漏发。改名后视频文件夹会一并更名。`}
+        />
+      )}
+
       <SectionCard title="视频根目录">
         <Space.Compact style={{ width: "100%" }}>
           <Input
@@ -219,8 +237,8 @@ export function Publish() {
           <EmptyHint
             title={root ? "该目录下没有视频" : "尚未选择根目录"}
             lines={[
-              "在根目录下按「设备名」建子文件夹，把视频放进去，再点「扫描」",
-              "手机端首次连上会自动建好对应子文件夹",
+              "点「扫描」会自动为当前在线设备建好各自的子文件夹",
+              "把视频（mp4/mov/m4v）放进对应设备的子文件夹，再点「扫描」即可看到待发列表",
             ]}
           />
         </SectionCard>

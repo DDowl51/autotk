@@ -32,7 +32,12 @@ export interface PublishSource {
 export interface PublisherApi {
   available: true;
   chooseRoot(): Promise<string | null>;
-  refresh(opts: { rootDir: string; schedule: ScheduleInput }): Promise<DevicePlan[]>;
+  refresh(opts: {
+    rootDir: string;
+    schedule: ScheduleInput;
+    /** 当前设备名列表：主进程据此自动建好各设备子文件夹。 */
+    deviceNames?: string[];
+  }): Promise<DevicePlan[]>;
   prepareSource(args: {
     deviceName: string;
     fileName: string;

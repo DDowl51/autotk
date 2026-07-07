@@ -137,8 +137,14 @@ handle("publisher:chooseRoot", async () => {
   return r.canceled || r.filePaths.length === 0 ? null : r.filePaths[0];
 });
 
-handle("publisher:refresh", async (_e, { rootDir, schedule }) => {
+handle("publisher:refresh", async (_e, { rootDir, schedule, deviceNames }) => {
   const a = await ensureAgent(rootDir, schedule);
+  // 按当前在线设备名自动建好对应子文件夹，买家直接往里丢视频即可（兑现空态里那句「自动建文件夹」）。
+  if (rootDir && Array.isArray(deviceNames)) {
+    for (const name of deviceNames) {
+      if (name) await publisher.ensureDeviceFolder(rootDir, name).catch(() => {});
+    }
+  }
   return a.refresh();
 });
 
