@@ -9,3 +9,12 @@ export {
   type DeviceBinding,
 } from "./rules";
 export { isProductAllowed, visibleCodes, type Role } from "./whitelist";
+export {
+  createThrottleState,
+  lockedSeconds,
+  recordFailure,
+  recordSuccess,
+  DEFAULT_THROTTLE,
+  type ThrottleState,
+  type ThrottleOpts,
+} from "./login-throttle";

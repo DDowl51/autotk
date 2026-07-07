@@ -3,6 +3,8 @@ import {
   Body,
   Controller,
   Get,
+  HttpException,
+  HttpStatus,
   Post,
   Req,
   UnauthorizedException,
@@ -14,20 +16,34 @@ import { hashPassword, verifyPassword } from "../adapters/password";
 import { AdminJwtGuard, type RequestWithAccount } from "./admin-jwt.guard";
 import { changePasswordSchema, loginSchema } from "./dto";
 import { track } from "../telemetry";
+import { createThrottleState, lockedSeconds, recordFailure, recordSuccess } from "../core/login-throttle";
 
 @Controller("admin")
 export class AdminController {
+  // 登录限流状态（控制器为单例，跨请求保留）。按客户端 IP 计数，挡在线爆破。
+  private readonly loginThrottle = createThrottleState();
+
   constructor(
     private readonly auth: AuthService,
     private readonly prisma: PrismaService,
   ) {}
 
   @Post("login")
-  async login(@Body() body: unknown) {
+  async login(@Body() body: unknown, @Req() req: { ip?: string }) {
+    const key = req.ip ?? "unknown";
+    const now = Date.now();
+    const wait = lockedSeconds(this.loginThrottle, key, now);
+    if (wait > 0) {
+      throw new HttpException(`登录尝试过于频繁，请 ${wait} 秒后再试`, HttpStatus.TOO_MANY_REQUESTS);
+    }
     const { username, password } = loginSchema.parse(body);
     const r = await this.auth.login(username, password);
     track("admin_login", { ok: r.ok });
-    if (!r.ok) throw new UnauthorizedException("bad credentials");
+    if (!r.ok) {
+      recordFailure(this.loginThrottle, key, now);
+      throw new UnauthorizedException("bad credentials");
+    }
+    recordSuccess(this.loginThrottle, key);
     return { token: r.token, expiresAt: r.expiresAt, role: r.role };
   }
 

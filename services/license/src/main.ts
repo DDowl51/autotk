@@ -22,6 +22,8 @@ async function bootstrap(): Promise<void> {
   initTelemetry();
   // rawBody:true 让签名守卫拿到原始请求体做 HMAC 校验。
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { rawBody: true });
+  // 信任前置反代（Caddy/nginx）一层，使 req.ip 反映真实客户端 IP——登录限流按 IP 计数需要它。
+  app.set("trust proxy", 1);
   const port = Number(process.env.PORT ?? 3001);
   await app.listen(port);
   // eslint-disable-next-line no-console
