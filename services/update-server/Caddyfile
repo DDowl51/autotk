@@ -1,0 +1,5 @@
+# 把 https://updates.你的域名.com 反代到本机 update-server；Caddy 自动向 Let's Encrypt 签证书。
+# 域名必须与 apps/mobile/app.json 的 updates.url 同域，且 DNS 已指向本机。
+updates.你的域名.com {
+	reverse_proxy update-server:4200
+}

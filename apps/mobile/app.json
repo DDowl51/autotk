@@ -7,6 +7,15 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
+    "runtimeVersion": "1.0.0",
+    "updates": {
+      "enabled": true,
+      "url": "https://updates.你的域名.com/api/manifest",
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0,
+      "codeSigningCertificate": "./code-signing/certificate.pem",
+      "codeSigningMetadata": { "keyid": "main", "alg": "rsa-v1_5-sha256" }
+    },
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",

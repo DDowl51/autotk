@@ -1,0 +1,31 @@
+services:
+  update-server:
+    build: .
+    restart: unless-stopped
+    environment:
+      PORT: 4200
+      UPDATES_DIR: /data/updates
+      BASE_URL: ${BASE_URL:?请设为 https://updates.你的域名.com}
+      CODE_SIGNING_PRIVATE_KEY: /data/secrets/private-key.pem
+      KEYID: main
+    volumes:
+      - ./data/updates:/data/updates # 把 expo export 产物放这里的 <runtimeVersion>/<文件夹>/
+      - ./data/secrets:/data/secrets:ro # private-key.pem（代码签名，勿提交）
+    # 只 bind 本机，由 Caddy 反代 + TLS 对外（itms/expo 客户端要 HTTPS）
+    ports:
+      - "127.0.0.1:4200:4200"
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

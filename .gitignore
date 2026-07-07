@@ -41,3 +41,9 @@ data/
 hub-data/
 apps/mobile/chi_sim.traineddata
 apps/mobile/adaptation/screenshots/
+
+# ---- OTA update-server: code-signing private key + published update payloads (never commit) ----
+apps/mobile/code-signing/*private*
+apps/mobile/code-signing/*.key
+services/update-server/data/
+services/update-server/updates/
