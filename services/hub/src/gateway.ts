@@ -136,8 +136,13 @@ export function attachGateway(
       socket.on(EVT.deviceRename, (m: DeviceRenameMsg) => {
         if (!m?.deviceId) return;
         void registry
-          .rename(m.deviceId, m.alias ?? "")
-          .then((info) => {
+          .renameChecked(m.deviceId, m.alias ?? "")
+          .then(({ info, conflict }) => {
+            // 冲突（重名）→ 已拒绝改名，info 是未改信息 → 广播回去让操作员看板上的乐观改名回退。
+            if (conflict) {
+              // eslint-disable-next-line no-console
+              console.warn(`[gateway] 设备改名冲突已拒绝：${m.deviceId} → 「${m.alias}」`);
+            }
             if (info) io.to(OPERATORS).emit(EVT.deviceUpdate, info);
           })
           .catch(logErr("rename"));

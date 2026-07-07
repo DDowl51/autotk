@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { DeviceRegistry, statsProgressed } from "../src/domain/registry";
 import { MemoryDeviceStore } from "../src/adapters/memory-store";
+import { AliasStore } from "../src/domain/alias-store";
 
 function mk() {
   let t = 1000;
@@ -99,5 +100,44 @@ describe("DeviceRegistry", () => {
     const snap = await reg.snapshot();
     expect(snap[0].deviceName).toBe("A改名");
     expect(snap[0].online).toBe(true);
+  });
+});
+
+describe("DeviceRegistry.renameChecked 唯一性校验", () => {
+  const mkAlias = () => new DeviceRegistry(new MemoryDeviceStore(), () => 1000, new AliasStore());
+
+  it("改名撞其它设备当前名 → 拒绝、返回未改信息、conflict=true、不落库", async () => {
+    const reg = mkAlias();
+    await reg.register({ deviceId: "d1", deviceName: "机A" }, "s1");
+    await reg.register({ deviceId: "d2", deviceName: "机B" }, "s2");
+    const r = await reg.renameChecked("d2", "机A");
+    expect(r.conflict).toBe(true);
+    expect(r.info?.deviceName).toBe("机B"); // 未改
+    const snap = await reg.snapshot();
+    expect(snap.find((d) => d.deviceId === "d2")?.deviceName).toBe("机B");
+  });
+
+  it("改名到不冲突的新名 → 生效、conflict=false", async () => {
+    const reg = mkAlias();
+    await reg.register({ deviceId: "d1", deviceName: "机A" }, "s1");
+    const r = await reg.renameChecked("d1", "机房1号");
+    expect(r.conflict).toBe(false);
+    expect(r.info?.deviceName).toBe("机房1号");
+  });
+
+  it("撞的是别人的**别名**（非上报名）也拒绝", async () => {
+    const reg = mkAlias();
+    await reg.register({ deviceId: "d1", deviceName: "机A" }, "s1");
+    await reg.register({ deviceId: "d2", deviceName: "机B" }, "s2");
+    await reg.renameChecked("d1", "老王的机"); // d1 设别名
+    const r = await reg.renameChecked("d2", "老王的机"); // d2 撞 d1 别名
+    expect(r.conflict).toBe(true);
+  });
+
+  it("改成自己当前名（无变化）/ 清空别名 → 不算冲突", async () => {
+    const reg = mkAlias();
+    await reg.register({ deviceId: "d1", deviceName: "机A" }, "s1");
+    expect((await reg.renameChecked("d1", "机A")).conflict).toBe(false); // 自己
+    expect((await reg.renameChecked("d1", "")).conflict).toBe(false); // 清空
   });
 });
