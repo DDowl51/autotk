@@ -43,6 +43,36 @@ PMD = "pymobiledevice3"
 TUNNELD_API = "http://127.0.0.1:49151"  # pymobiledevice3 remote tunneld 默认监听端口
 IS_WINDOWS = os.name == "nt"
 
+# 是否运行在 PyInstaller 冻结 exe 里（打包后 python 与 pymobiledevice3 都在 exe 内）。
+FROZEN = bool(getattr(sys, "frozen", False))
+# 冻结后命令行 `pymobiledevice3` 不在 PATH，改用「本 exe 自调用」当 pymobiledevice3：
+#   本 exe 被 `<exe> __pmd__ <子命令...>` 唤起时，转身执行 pymobiledevice3 CLI 再退出。
+PMD_SENTINEL = "__pmd__"
+
+
+def _maybe_handoff_pmd() -> None:
+    """若被自己以 __pmd__ 前缀唤起 → 充当 pymobiledevice3 CLI（等价 `python -m pymobiledevice3`）。"""
+    if len(sys.argv) >= 2 and sys.argv[1] == PMD_SENTINEL:
+        import runpy
+        sys.argv = ["pymobiledevice3"] + sys.argv[2:]
+        try:
+            runpy.run_module("pymobiledevice3", run_name="__main__", alter_sys=True)
+        except SystemExit:
+            raise
+        sys.exit(0)
+
+
+# 必须在任何其它逻辑（含 GUI 导入）之前判定——导入本模块即触发。
+_maybe_handoff_pmd()
+
+
+def pmd_argv(*args: str) -> list[str]:
+    """拼 pymobiledevice3 调用命令：冻结时自调用本 exe，未冻结时用 PATH 上的 pymobiledevice3。"""
+    if FROZEN:
+        return [sys.executable, PMD_SENTINEL, *args]
+    return [PMD, *args]
+
+
 # 尽量让控制台用 UTF-8，Chinese Windows 默认 gbk 编不了 ▶/✅ 等符号（有 _out 兜底，这里只是更好看）。
 try:
     sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
@@ -122,12 +152,20 @@ def elevate_hint() -> str:
 # ----------------------------- 各步骤 -----------------------------
 
 def check_pmd() -> bool:
-    """确认 pymobiledevice3 已安装且可调用。"""
+    """确认 pymobiledevice3 可用（冻结 exe 内已内置；未冻结则查 PATH）。"""
+    if FROZEN:
+        try:
+            import pymobiledevice3  # noqa: F401  内置于 exe
+            ok("pymobiledevice3 已内置于本工具(无需另装)")
+            return True
+        except Exception as e:  # noqa: BLE001
+            err(f"内置 pymobiledevice3 加载失败:{e}")
+            return False
     if shutil.which(PMD) is None:
         err(f"未找到 {PMD}。请先安装:  pip install -U {PMD}")
         return False
     try:
-        cp = run([PMD, "version"])
+        cp = run(pmd_argv("version"))
         ver = (cp.stdout or cp.stderr).strip().splitlines()[0] if (cp.stdout or cp.stderr) else "?"
         ok(f"{PMD} 已安装(version: {ver})")
         return True
@@ -139,7 +177,7 @@ def check_pmd() -> bool:
 def list_device() -> dict | None:
     """取第一台通过 USB 连接的设备信息(含 ProductVersion / UDID)。"""
     try:
-        cp = run([PMD, "usbmux", "list"])
+        cp = run(pmd_argv("usbmux", "list"))
     except Exception as e:  # noqa: BLE001
         err(f"列设备失败:{e}")
         return None
@@ -196,7 +234,7 @@ def start_tunneld() -> subprocess.Popen | None:
     step("启动 RemoteXPC 隧道(remote tunneld)…")
     # 后台常驻,直到本脚本结束再关掉。
     proc = subprocess.Popen(
-        [PMD, "remote", "tunneld"],
+        pmd_argv("remote", "tunneld"),
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
@@ -218,7 +256,7 @@ def auto_mount() -> bool:
     """挂载开发者镜像(DDI)。iOS≥17 会用 personalized image(自动从 Apple 下载)。"""
     step("挂载开发者镜像(DDI)…")
     try:
-        cp = run([PMD, "mounter", "auto-mount"], timeout=300)
+        cp = run(pmd_argv("mounter", "auto-mount"), timeout=300)
     except Exception as e:  # noqa: BLE001
         err(f"挂载命令执行失败:{e}")
         return False

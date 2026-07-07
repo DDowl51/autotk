@@ -52,3 +52,10 @@ services/update-server/updates/
 release/
 apps/desktop/release/
 apps/desktop/build/
+
+# PyInstaller / Python 打包产物（激活WDA 工具）
+apps/mobile/tools/build/
+apps/mobile/tools/dist/
+apps/mobile/tools/*.spec
+apps/mobile/tools/pip-build.log
+apps/mobile/tools/__pycache__/
