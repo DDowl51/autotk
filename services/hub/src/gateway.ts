@@ -42,6 +42,8 @@ export function attachGateway(
   logHub: LogHub,
   pending: PendingStore = new PendingStore(),
   scheduled?: ScheduledStore,
+  /** 发布成功回调（deviceId, videoName）：内嵌桌面据此权威登记已发去重，不依赖发布页是否开着。 */
+  onPublished?: (deviceId: string, videoName: string) => void,
 ): void {
   // 批量配置下发协调器：在线才下发，逐台进度广播给所有操作员；
   // 离线台入「待补发」队列（重连时补发），而非静默丢弃。
@@ -72,6 +74,7 @@ export function attachGateway(
       // 未来定时任务落盘/到点出盘 → Hub 重启后能重新排程。
       persistScheduled: scheduled ? (t) => scheduled.add(t) : undefined,
       dropScheduled: scheduled ? (id) => scheduled.remove(id) : undefined,
+      onPublished, // 发布成功 → 服务端权威登记已发去重
     },
   );
 

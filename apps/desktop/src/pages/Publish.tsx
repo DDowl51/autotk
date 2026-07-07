@@ -79,16 +79,16 @@ export function Publish() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 发布成功 → 登记已发清单（去重）+ 刷新计划。
+  // 发布成功 → 刷新计划把已发的移出待发列表。
+  // 注意：已发去重的**登记**已移到服务端（Hub 的 published 回报驱动 main 进程 markPublished），
+  // 不再由这里写——否则桌面缺席/重启时漏记会重复发，且渲染层与服务端并发写同一 manifest 会丢更新。
+  // 手机对同一设备串行发布，服务端登记天然无并发竞争。这里只负责刷新 UI。
   useEffect(() => {
     if (!api) return;
     for (const row of publishTasks.values()) {
       if (row.status === "published" && !markedRef.current.has(row.taskId)) {
         markedRef.current.add(row.taskId);
-        void api
-          .markPublished({ deviceName: row.deviceName, fileName: row.fileName })
-          .then(() => refresh())
-          .catch(() => {});
+        void refresh(); // 服务端已/即将登记去重，稍后一刷新即从待发移除
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

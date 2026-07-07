@@ -82,6 +82,22 @@ describe("PublishCoordinator", () => {
     expect(c.pendingCount()).toBe(0);
   });
 
+  it("发布成功触发 onPublished(deviceId, videoName)；中间态/失败不触发（服务端权威去重）", () => {
+    const published: Array<[string, string]> = [];
+    const c = new PublishCoordinator(() => true, () => {}, {
+      onPublished: (deviceId, videoName) => published.push([deviceId, videoName]),
+    });
+    c.start(task("t1", "d")); // videoName = "v.mp4"
+    c.onResult("t1", "downloading"); // 中间态不触发
+    expect(published).toEqual([]);
+    c.onResult("t1", "published"); // 终态 published → 触发
+    expect(published).toEqual([["d", "v.mp4"]]);
+
+    c.start(task("t2", "d"));
+    c.onResult("t2", "failed", "x"); // 失败终态不触发
+    expect(published).toEqual([["d", "v.mp4"]]);
+  });
+
   it("批量同设备：任一任务有进展会重排同设备其余在途任务的超时（防误判 timeout）", () => {
     const ft = fakeTimers();
     const { c } = mk(new Set(["d"]), ft.timers);

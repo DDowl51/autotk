@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain, dialog } = require("electron");
 const path = require("node:path");
 const os = require("node:os");
+const fsp = require("node:fs/promises");
 const dgram = require("node:dgram");
 // 阶段3 文件夹工作流的本地逻辑（扫描/去重/文案/排程/局域网直传/中转）。
 // 需先构建：npm run build -w @mc/publisher（产出 dist/，本文件 require 之）。
@@ -69,9 +70,29 @@ async function ensureHub() {
   // 数据目录固定到 userData（如 %APPDATA%/<App>/hub-data），不用 startHub 默认的 cwd 相对 "./hub-data"——
   // 否则买家用快捷方式/开机自启从不同工作目录启动，设备别名/离线补发/定时任务会分家、像「莫名丢失」。
   const dataDir = path.join(app.getPath("userData"), "hub-data");
-  hub = await startHub({ ports: HUB_PORTS, dataDir }); // 按共享端口表挑第一个空闲；手机端按同表兜底重连
+  hub = await startHub({
+    ports: HUB_PORTS, // 按共享端口表挑第一个空闲；手机端按同表兜底重连
+    dataDir,
+    // 发布成功 → 服务端权威登记已发去重（不依赖发布页当时是否开着；桌面缺席/重启也不漏记、不重发）。
+    onPublished: (deviceId, videoName) => void handlePublished(deviceId, videoName),
+  });
   startBeacon(hub.port);
   return hub.port;
+}
+
+// 发布成功后登记「已发去重」：解析设备当前名（含别名）→ 对应文件夹写 manifest。
+// 由 Hub 的 published 回报驱动，与操作员发布页是否开着无关（修 C3 的重复发）。
+async function handlePublished(deviceId, videoName) {
+  try {
+    if (!lastRootDir) return; // 还没配过视频根目录 → 无从登记
+    const list = hub ? await hub.registry.snapshot() : [];
+    const dev = list.find((d) => d.deviceId === deviceId);
+    if (!dev) return;
+    const a = await agentForMark();
+    if (a) await a.markPublished(dev.deviceName, videoName);
+  } catch (e) {
+    logger.error("登记已发去重失败", e);
+  }
 }
 
 // 每 3s 向局域网广播 { svc, port }，供同网手机自动发现（无需扫码）。
@@ -113,6 +134,36 @@ function stopHub() {
 // ——— 发布代理（懒启动）———
 let lan = null;
 let agent = null;
+// 记住最近一次视频根目录（渲染层 refresh 时给），持久化到 userData——
+// 供桌面重启后、渲染层还没打开发布页时，Hub 的 published 回报也能自主 markPublished。
+let lastRootDir = null;
+const rootDirFile = () => path.join(app.getPath("userData"), "publisher-root.json");
+async function loadRootDir() {
+  try {
+    const d = JSON.parse(await fsp.readFile(rootDirFile(), "utf8"));
+    if (d && typeof d.rootDir === "string") lastRootDir = d.rootDir;
+  } catch {
+    /* 首次运行/无文件 → 无 */
+  }
+}
+async function persistRootDir(dir) {
+  if (!dir || dir === lastRootDir) return;
+  lastRootDir = dir;
+  try {
+    await fsp.writeFile(rootDirFile(), JSON.stringify({ rootDir: dir }));
+  } catch {
+    /* 落盘失败忽略 */
+  }
+}
+// 取一个可用于 markPublished 的 agent：优先复用渲染层建好的（不覆盖其 schedule）；
+// 没有则从持久化的 lastRootDir 懒建一个（重启后无渲染层交互也能登记去重）。
+async function agentForMark() {
+  if (agent) return agent;
+  if (!lastRootDir) return null;
+  await ensureLan();
+  agent = new publisher.PublishAgent({ rootDir: lastRootDir, schedule: { allDay: true, taskWindows: [] }, lan });
+  return agent;
+}
 
 // 局域网直传服务：带持久化文件，桌面重启后恢复 token→路径映射 + 端口，
 // 让定时/离线补发任务里持久化的旧下发 URL 仍能被手机下载（否则重启后必 404）。
@@ -146,6 +197,7 @@ handle("publisher:chooseRoot", async () => {
 });
 
 handle("publisher:refresh", async (_e, { rootDir, schedule, deviceNames }) => {
+  await persistRootDir(rootDir); // 记住根目录，供 Hub published 回报自主登记去重
   const a = await ensureAgent(rootDir, schedule);
   // 按当前在线设备名自动建好对应子文件夹，买家直接往里丢视频即可（兑现空态里那句「自动建文件夹」）。
   if (rootDir && Array.isArray(deviceNames)) {
@@ -173,6 +225,7 @@ handle("publisher:renameFolder", async (_e, { oldName, newName }) => {
 
 app.whenReady().then(async () => {
   try {
+    await loadRootDir(); // 先读回持久化的根目录，供 Hub 启动即重排的定时任务发布成功后自主登记去重
     await ensureHub(); // 先起内嵌 Hub 再开窗，渲染层一挂载即可连 localhost
     logger.info(`内嵌 Hub 已启动 :${hub ? hub.port : "?"}`);
     // 内嵌 Hub 会立刻把持久化的定时/离线补发任务重新下发，其下载 URL 指向 LAN 服务——

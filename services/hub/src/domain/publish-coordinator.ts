@@ -26,6 +26,12 @@ export interface PublishOpts {
   persistScheduled?: (task: PublishTask) => void;
   /** 定时任务到点下发（或取消）时回调（出「定时」持久化）。 */
   dropScheduled?: (taskId: string) => void;
+  /**
+   * 一条任务真正发布成功（published 终态）时回调，带 deviceId + 视频名。
+   * 供服务端**权威地**登记「已发去重」——不再依赖操作员桌面当时是否开着那个发布页
+   * （否则桌面缺席/重启时该视频永不写进已发清单，下次扫描又当待发、重复发）。
+   */
+  onPublished?: (deviceId: string, videoName: string) => void;
 }
 
 /**
@@ -39,12 +45,13 @@ export interface PublishOpts {
  * 中间态(downloading 等)会重置超时计时（只要有进展就不算卡）。
  */
 export class PublishCoordinator {
-  private readonly pending = new Map<string, { deviceId: string; cancel: () => void }>();
+  private readonly pending = new Map<string, { deviceId: string; videoName: string; cancel: () => void }>();
   private readonly timeoutMs: number;
   private readonly timers: Timers;
   private readonly now: () => number;
   private readonly persistScheduled?: (task: PublishTask) => void;
   private readonly dropScheduled?: (taskId: string) => void;
+  private readonly onPublished?: (deviceId: string, videoName: string) => void;
 
   constructor(
     private readonly send: SendPublishTask,
@@ -58,6 +65,7 @@ export class PublishCoordinator {
     this.now = opts.now ?? Date.now;
     this.persistScheduled = opts.persistScheduled;
     this.dropScheduled = opts.dropScheduled;
+    this.onPublished = opts.onPublished;
   }
 
   start(task: PublishTask): void {
@@ -68,7 +76,7 @@ export class PublishCoordinator {
       this.emit(task.taskId, task.deviceId, "scheduled");
       this.persistScheduled?.(task);
       const cancel = this.timers.set(() => this.dispatch(task), at - this.now());
-      this.pending.set(task.taskId, { deviceId: task.deviceId, cancel });
+      this.pending.set(task.taskId, { deviceId: task.deviceId, videoName: task.videoName, cancel });
       return;
     }
     this.dispatch(task);
@@ -91,7 +99,7 @@ export class PublishCoordinator {
       return;
     }
     this.emit(task.taskId, task.deviceId, "sent");
-    this.arm(task.taskId, task.deviceId);
+    this.arm(task.taskId, task.deviceId, task.videoName);
   }
 
   /** 手机回报状态。未知 taskId 忽略。 */
@@ -101,9 +109,11 @@ export class PublishCoordinator {
     e.cancel();
     this.emit(taskId, e.deviceId, status, error);
     if (isPublishTerminal(status)) {
+      // 发布成功 → 通知服务端登记已发去重（与操作员桌面是否在场无关）。
+      if (status === "published") this.onPublished?.(e.deviceId, e.videoName);
       this.pending.delete(taskId);
     } else {
-      this.arm(taskId, e.deviceId); // 有进展 → 重置超时
+      this.arm(taskId, e.deviceId, e.videoName); // 有进展 → 重置超时
     }
     // 手机对同一设备是**串行**发布：任一任务有进展 = 该设备活着、终会轮到其余排队任务。
     // 故把同设备其余在途任务的「无进展超时」一并重排，否则批量「全部发布」时排在后面、
@@ -122,7 +132,7 @@ export class PublishCoordinator {
       const entry = this.pending.get(tid);
       if (!entry) continue;
       entry.cancel();
-      this.arm(tid, deviceId);
+      this.arm(tid, deviceId, entry.videoName);
     }
   }
 
@@ -134,10 +144,10 @@ export class PublishCoordinator {
     this.progress({ taskId, deviceId, status, error });
   }
 
-  private arm(taskId: string, deviceId: string): void {
+  private arm(taskId: string, deviceId: string, videoName: string): void {
     const cancel = this.timers.set(() => {
       if (this.pending.delete(taskId)) this.emit(taskId, deviceId, "timeout");
     }, this.timeoutMs);
-    this.pending.set(taskId, { deviceId, cancel });
+    this.pending.set(taskId, { deviceId, videoName, cancel });
   }
 }
