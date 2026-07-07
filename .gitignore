@@ -47,3 +47,8 @@ apps/mobile/code-signing/*private*
 apps/mobile/code-signing/*.key
 services/update-server/data/
 services/update-server/updates/
+
+# electron-builder 打包产物
+release/
+apps/desktop/release/
+apps/desktop/build/

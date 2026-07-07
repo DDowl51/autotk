@@ -43,23 +43,52 @@ PMD = "pymobiledevice3"
 TUNNELD_API = "http://127.0.0.1:49151"  # pymobiledevice3 remote tunneld 默认监听端口
 IS_WINDOWS = os.name == "nt"
 
+# 尽量让控制台用 UTF-8，Chinese Windows 默认 gbk 编不了 ▶/✅ 等符号（有 _out 兜底，这里只是更好看）。
+try:
+    sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
+    sys.stderr.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
+except Exception:  # noqa: BLE001
+    pass
+
 
 # ----------------------------- 小工具 -----------------------------
 
+# 日志输出可被 GUI 接管：默认打到控制台；GUI 调 set_logger() 后所有输出进 GUI 文本框。
+_LOG = None  # type: ignore[var-annotated]
+
+
+def set_logger(fn) -> None:
+    """让 GUI（wda_gui.py）接管输出；传 None 恢复打到控制台。"""
+    global _LOG
+    _LOG = fn
+
+
+def _out(line: str) -> None:
+    if _LOG is not None:
+        _LOG(line)
+        return
+    try:
+        print(line)
+    except UnicodeEncodeError:
+        # 老 Windows 控制台(gbk)编不了 ▶/✅ 等符号 → 退化成可编码形式，别让脚本崩。
+        enc = getattr(sys.stdout, "encoding", None) or "utf-8"
+        print(line.encode(enc, "replace").decode(enc, "replace"))
+
+
 def info(msg: str) -> None:
-    print(f"  {msg}")
+    _out(f"  {msg}")
 
 
 def step(msg: str) -> None:
-    print(f"\n▶ {msg}")
+    _out(f"\n▶ {msg}")
 
 
 def ok(msg: str) -> None:
-    print(f"✅ {msg}")
+    _out(f"✅ {msg}")
 
 
 def err(msg: str) -> None:
-    print(f"❌ {msg}", file=sys.stderr)
+    _out(f"❌ {msg}")
 
 
 def run(args: list[str], capture: bool = True, timeout: int | None = 120) -> subprocess.CompletedProcess:
@@ -227,29 +256,36 @@ def verify_wda(ip: str, timeout: int = 40) -> bool:
     return False
 
 
-# ----------------------------- 主流程 -----------------------------
+# ----------------------------- 主流程（可被 GUI 复用）-----------------------------
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description="激活 WDA(挂载开发者镜像),Windows/Linux 通用。")
-    parser.add_argument("--check", action="store_true", help="只做环境自检,不连设备、不挂载。")
-    parser.add_argument("--wda-ip", metavar="IP", help="激活后轮询此 IP 的 8100 端口验证 WDA。")
-    parser.add_argument("--keep-tunnel", action="store_true", help="结束后不关闭本脚本起的 tunnel。")
-    args = parser.parse_args()
+def banner() -> None:
+    _out("=" * 56)
+    _out(f" 激活 WDA · {platform.system()} {platform.release()} · py{platform.python_version()}")
+    _out(f" 管理员/root 权限:{'是' if is_admin() else '否'}")
+    _out("=" * 56)
 
-    print("=" * 56)
-    print(f" 激活 WDA · {platform.system()} {platform.release()} · py{platform.python_version()}")
-    print(f" 管理员/root 权限:{'是' if is_admin() else '否'}")
-    print("=" * 56)
 
+def check_env() -> int:
+    """环境自检：确认 pymobiledevice3 就绪。不连设备、不挂载。返回 0 成功。"""
+    banner()
     step("检查 pymobiledevice3")
     if not check_pmd():
         return 2
+    ok("自检完成。连上手机后即可正式激活。")
+    if not is_admin():
+        info("提示:iOS 17+ 正式激活时需要管理员/root。" + elevate_hint())
+    return 0
 
-    if args.check:
-        ok("自检完成。连上手机后去掉 --check 即可正式激活。")
-        if not is_admin():
-            info("提示:iOS 17+ 正式激活时需要管理员/root。" + elevate_hint())
-        return 0
+
+def activate(wda_ip: str | None = None, keep_tunnel: bool = False) -> int:
+    """
+    完整激活流程：检查环境 → 检测设备 → (iOS17+ 起隧道) → 挂 DDI。返回 0 成功、非 0 为错误码。
+    GUI 与 CLI 共用这一个函数（GUI 先 set_logger 接管输出）。
+    """
+    banner()
+    step("检查 pymobiledevice3")
+    if not check_pmd():
+        return 2
 
     step("检测设备")
     dev = list_device()
@@ -268,23 +304,34 @@ def main() -> int:
         if not auto_mount():
             return 5
 
-        print()
+        _out("")
         ok("激活完成!(= AScript 的 active.exe 那一步)")
-        print()
-        print("下一步在手机上操作:")
-        print("  1. 点开你的自启动版 WDA(应出现两行英文,代表 WDA 正在运行)。")
-        print("  2. 现在可以拔掉数据线,WDA 会继续在手机上独立运行(绑定 8100)。")
-        print("  3. autotk 连 http://<手机IP>:8100 即可。")
+        _out("")
+        _out("下一步在手机上操作:")
+        _out("  1. 点开你的自启动版 WDA(应出现两行英文,代表 WDA 正在运行)。")
+        _out("  2. 现在可以拔掉数据线,WDA 会继续在手机上独立运行(绑定 8100)。")
+        _out("  3. autotk 连 http://<手机IP>:8100 即可。")
 
-        if args.wda_ip:
-            print()
-            verify_wda(args.wda_ip)
+        if wda_ip:
+            _out("")
+            verify_wda(wda_ip)
     finally:
-        if tunnel_proc is not None and not args.keep_tunnel:
+        if tunnel_proc is not None and not keep_tunnel:
             # DDI 挂好后 tunnel 已无需保留(tap 启动用手机本地框架)。
             tunnel_proc.terminate()
 
     return 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="激活 WDA(挂载开发者镜像),Windows/Linux 通用。")
+    parser.add_argument("--check", action="store_true", help="只做环境自检,不连设备、不挂载。")
+    parser.add_argument("--wda-ip", metavar="IP", help="激活后轮询此 IP 的 8100 端口验证 WDA。")
+    parser.add_argument("--keep-tunnel", action="store_true", help="结束后不关闭本脚本起的 tunnel。")
+    args = parser.parse_args()
+    if args.check:
+        return check_env()
+    return activate(wda_ip=args.wda_ip, keep_tunnel=args.keep_tunnel)
 
 
 if __name__ == "__main__":
