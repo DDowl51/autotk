@@ -51,10 +51,17 @@ pnpm --filter @license/web test    # vitest（纯逻辑，如 status.ts）
 
 ## 角色与权限
 
-- **ADMIN**：管产品、所有码、账号/分销、看板。不受产品白名单约束（全见）。
-- **USER（分销）**：**配额内自助发码**（`Account.codeQuota`，null=不限），只看/管自己名下（`ownerId`）的码，且只在**产品白名单**内可见/发码。
-- 管理端鉴权：`AdminJwtGuard` 注入 `req.account {id,role}`；ADMIN 路由 `requireAdmin`，USER 数据按 owner 收窄。
-- 客户端鉴权（/v1/*）：`SignatureGuard` 用产品 secret 验 HMAC 签名（防伪/防重放）。
+三级角色（`enum Role`）：
+
+- **ADMIN（我们/卖家）**：管产品、所有码、账号（含建运营）、看板。不受产品白名单约束（全见）。**建/改产品仅 ADMIN**。
+- **OPERATOR（运营/需求方）**：比 ADMIN 少一档——**不能建产品**，但能**建分销(USER)账号**、按「额度池」给分销分额度、设分销可见产品（只能从自己可见产品里选）。只看/管**自己创建的**分销（`Account.createdById` 归属），也能自己发码。给需求方在我们服务器上自助售卖用。
+- **USER（分销）**：**配额内自助发码**（`Account.codeQuota`，null=不限），只看/管自己名下（`ownerId`）的码，且只在**产品白名单**内可见/发码。进不了账号/产品管理。
+
+判定点：
+- 管理端鉴权：`AdminJwtGuard` 注入 `req.account {id,role}`；产品路由 `requireAdmin`，账号路由 `requireAdminOrOperator`，USER/OPERATOR 数据按 owner 收窄。
+- **额度池**（`src/core/account-quota.ts`，纯逻辑+单测）：运营总预算 = `codeQuota`；**已提交 = 自己已发码 + 名下分销已分配额度之和 ≤ 总预算**。给分销分额度（建/改）走 `decideQuotaAllocation`；运营自己发码时有效额度 = 总预算 − 已分配（`selfIssuableQuota`，`codes.controller` 用）。有限额运营不能给下级「不限」。
+- **归属收窄**（`accounts.controller`）：运营建账号强制 `role=USER` + `createdById=自己`；列表只列 `createdById=自己`；改/重置密码先 `assertOwnAccount`（防越权改他人/ADMIN/自己的账号→不能自抬额度）；分销 `productIds` 必须 ⊆ 运营自己白名单。运营**看不到**下级分销发的码/统计（如需再放开 `where.ownerId in [self+children]`）。
+- 客户端鉴权（/v1/*）：`SignatureGuard` 用产品 secret 验 HMAC 签名（防伪/防重放），与角色无关。
 
 ## 分销-产品白名单
 

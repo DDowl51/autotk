@@ -21,7 +21,7 @@ export interface Code {
 export interface Account {
   id: string;
   username: string;
-  role: "ADMIN" | "USER";
+  role: "ADMIN" | "OPERATOR" | "USER";
   codeQuota: number | null;
   disabled: boolean;
   codeCount?: number;
@@ -32,7 +32,8 @@ export interface Account {
 export interface Me {
   id: string;
   username: string;
-  role: "ADMIN" | "USER";
+  role: "ADMIN" | "OPERATOR" | "USER";
   codeQuota: number | null;
   used?: number;
+  allocated?: number; // 运营已分配给名下分销的额度之和
 }

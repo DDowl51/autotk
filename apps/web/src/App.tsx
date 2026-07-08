@@ -10,7 +10,7 @@ import {
   LogoutOutlined,
 } from "@ant-design/icons";
 import { Routes, Route, Navigate, useNavigate, useLocation } from "react-router-dom";
-import { getToken, getUsername, setSession, isAdmin } from "./api";
+import { getToken, getUsername, setSession, isAdmin, canManageAccounts, getRole, roleLabel } from "./api";
 import { BRAND } from "./theme";
 import { Login } from "./pages/Login";
 import { Dashboard } from "./pages/Dashboard";
@@ -48,6 +48,8 @@ export default function App() {
   }
 
   const admin = isAdmin();
+  const canAccounts = canManageAccounts(); // ADMIN 或运营
+  const role = getRole();
   const logout = () => {
     setSession(null);
     window.location.href = "/";
@@ -56,12 +58,9 @@ export default function App() {
   const menuItems = [
     { key: "dashboard", icon: <DashboardOutlined />, label: "仪表盘" },
     { key: "codes", icon: <KeyOutlined />, label: admin ? "激活码" : "我的激活码" },
-    ...(admin
-      ? [
-          { key: "products", icon: <AppstoreOutlined />, label: "产品" },
-          { key: "accounts", icon: <TeamOutlined />, label: "账号" },
-        ]
-      : []),
+    // 产品仅 ADMIN；账号（建分销）ADMIN 与运营都能进。
+    ...(admin ? [{ key: "products", icon: <AppstoreOutlined />, label: "产品" }] : []),
+    ...(canAccounts ? [{ key: "accounts", icon: <TeamOutlined />, label: "账号" }] : []),
     { key: "help", icon: <QuestionCircleOutlined />, label: "帮助 / 指南" },
     { key: "settings", icon: <SettingOutlined />, label: "设置" },
   ];
@@ -107,8 +106,11 @@ export default function App() {
                 {(getUsername() ?? "?").slice(0, 1).toUpperCase()}
               </Avatar>
               <span style={{ fontWeight: 500 }}>{getUsername() ?? "用户"}</span>
-              <Tag color={admin ? "geekblue" : "default"} style={{ marginInlineEnd: 0 }}>
-                {admin ? "管理员" : "分销"}
+              <Tag
+                color={role === "ADMIN" ? "geekblue" : role === "OPERATOR" ? "purple" : "default"}
+                style={{ marginInlineEnd: 0 }}
+              >
+                {roleLabel(role)}
               </Tag>
             </div>
           </Dropdown>
@@ -122,7 +124,7 @@ export default function App() {
             <Route path="/settings" element={<Settings />} />
             <Route path="/profile" element={<Profile />} />
             {admin && <Route path="/products" element={<Products />} />}
-            {admin && <Route path="/accounts" element={<Accounts />} />}
+            {canAccounts && <Route path="/accounts" element={<Accounts />} />}
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
         </Layout.Content>

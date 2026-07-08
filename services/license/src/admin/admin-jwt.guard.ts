@@ -33,3 +33,11 @@ export class AdminJwtGuard implements CanActivate {
 export function requireAdmin(req: RequestWithAccount): void {
   if (req.account?.role !== "ADMIN") throw new ForbiddenException("admin only");
 }
+
+/** 要求当前账号为超级管理员或运营（可管理账号；建产品仍仅 ADMIN）。 */
+export function requireAdminOrOperator(req: RequestWithAccount): void {
+  const role = req.account?.role;
+  if (role !== "ADMIN" && role !== "OPERATOR") {
+    throw new ForbiddenException("admin or operator only");
+  }
+}

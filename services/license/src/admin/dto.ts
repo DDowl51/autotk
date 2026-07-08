@@ -36,7 +36,7 @@ export const accountCreateSchema = z.object({
   username: z.string().min(3).max(40),
   password: z.string().min(6),
   codeQuota: z.number().int().min(0).nullable().optional(),
-  role: z.enum(["ADMIN", "USER"]).optional(),
+  role: z.enum(["ADMIN", "OPERATOR", "USER"]).optional(),
   productIds: z.array(z.string().min(1)).optional(), // 分销可见产品白名单
 });
 
