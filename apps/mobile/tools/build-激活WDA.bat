@@ -1,23 +1,21 @@
 @echo off
 chcp 65001 >nul
 REM ============================================================
-REM  把「激活WDA」打包成**完全自包含**的 exe：Python 解释器 + pymobiledevice3
-REM  及其全部依赖都塞进 exe。买家电脑**什么都不用装**，双击即用。
-REM
-REM  在一台 Windows 上（装了 Python 3.9+）运行本脚本一次即可，产出 dist\ActivateWDA.exe。
-REM  （pymobiledevice3 挂开发者镜像不需要 go-ios——go-ios 是装 WDA 用的，装机走装机台。）
+REM  Build "ActivateWDA" into a fully self-contained exe.
+REM  Bundles Python + pymobiledevice3 + all deps, so the buyer's
+REM  PC needs NOTHING installed. Run once on a Windows box with
+REM  Python 3.9+.  Output: dist\ActivateWDA.exe
+REM  (Activation uses pymobiledevice3, NOT go-ios.)
+REM  Usage notes (Chinese): see README-*.md in this folder.
 REM ============================================================
 cd /d "%~dp0"
 
-echo [1/2] 安装打包依赖（pyinstaller + pymobiledevice3）…
-python -m pip install --upgrade pyinstaller pymobiledevice3 || goto :err
+echo [1/2] Installing build deps (pyinstaller + pymobiledevice3)...
+python -m pip install --upgrade pyinstaller pymobiledevice3
+if errorlevel 1 goto :err
 
 echo.
-echo [2/2] 打包（把 pymobiledevice3 及依赖整体收进 exe）…
-REM --collect-all pymobiledevice3：连它的子模块 + 数据文件一起收（它动态导入很多服务类，必须 collect-all）。
-REM --recursive-copy-metadata pymobiledevice3：它和多个依赖（readchar/typer/rich…）启动时会用
-REM   importlib.metadata 读自己的版本，缺了报 PackageNotFoundError——递归把整个依赖树的 metadata 都收进来。
-REM 其余常见需一并 collect 的传递依赖也带上，避免冻结后 hidden import 缺失。
+echo [2/2] Packaging (bundling pymobiledevice3 + deps into the exe)...
 pyinstaller --onefile --windowed --uac-admin --name ActivateWDA ^
   --collect-all pymobiledevice3 ^
   --recursive-copy-metadata pymobiledevice3 ^
@@ -27,16 +25,21 @@ pyinstaller --onefile --windowed --uac-admin --name ActivateWDA ^
   --collect-all zeroconf ^
   --collect-all ifaddr ^
   --hidden-import ctypes ^
-  wda_gui.py || goto :err
+  wda_gui.py
+if errorlevel 1 goto :err
 
 echo.
-echo ✅ 完成。产物： %~dp0dist\ActivateWDA.exe  （完全自包含，买家双击即用）
-echo    首次务必自己在**没装 Python 的干净 Windows** 上双击测一次，确认能起、能检测到手机。
-echo    ⚠️ 若冻结包运行时报某模块 ModuleNotFoundError，按提示再加一条 --collect-all ^<模块名^> 重打。
+echo [OK] Done. Output file: %~dp0dist\ActivateWDA.exe
+echo      Test it once on a clean Windows PC without Python.
+echo      If it fails at runtime with ModuleNotFoundError NAME,
+echo      add a "collect-all NAME" flag above and rebuild.
 pause
 exit /b 0
+
 :err
 echo.
-echo ❌ 打包失败，看上面的报错。常见：pip 装 pymobiledevice3 失败（网络/编译），或缺 hidden import。
+echo [FAILED] See the error above.
+echo   Common causes: pip install of pymobiledevice3 failed (network),
+echo   or a missing hidden import (add --collect-all NAME and rebuild).
 pause
 exit /b 1

@@ -1,7 +1,9 @@
 @echo off
 chcp 65001 >nul
-REM 不打包 exe 时的启动方式：直接用 Python 跑「激活WDA」GUI。
-REM 前置：买家电脑已装 Python + pymobiledevice3 + go-ios（见 README-激活WDA.md）。
-REM iOS 17+ 激活需管理员：建议右键本文件→「以管理员身份运行」，或在 GUI 里点「以管理员身份重开」。
+REM Launch the ActivateWDA GUI using the local Python (for dev, or when
+REM not packaged as an exe). Requires Python + pymobiledevice3 installed.
+REM iOS 17+ activation needs admin: right-click this file -> Run as
+REM administrator, or use the "run as admin" button inside the GUI.
+REM Usage notes (Chinese): see README-*.md in this folder.
 cd /d "%~dp0"
 start "" pythonw wda_gui.py
