@@ -108,7 +108,7 @@ npx expo start                       # 配置/监控面板（Expo Go 扫码）
 WDA_URL=http://<手机IP>:8100 npm run wda:repl   # 电脑驱动调试台 REPL（真机操控走这里，不是 App）
 ```
 
-> ⚠️ 本机 Node 版本（22.x）已**移除 `node --test <目录>` 的目录扫描**。autotk 与 telemetry/license 里用 `bash tests/run.sh` 跑 node:test 的脚本以 `node --test "$OUT/tests/"` 收尾，在 Node 22 下会报 `MODULE_NOT_FOUND`（与 monorepo 迁移无关）。要在本机跑，把那一行改成 glob（`node --test "$OUT/tests/"*.js`），或用 Node ≤20。
+> ⚠️ 本机 Node 版本（22.x）已**移除 `node --test <目录>` 的目录扫描**（用目录会报 `MODULE_NOT_FOUND`，与 monorepo 迁移无关）。**autotk 的 `apps/mobile/tests/run.sh` 已修**：改用 glob `node --test "$OUT/tests/"*.js` 收尾，并加 `NODE_PATH="$PWD/node_modules"`（vision 运行时测试经 detect→png 需 `require('pako')`，OUT 在树外靠 NODE_PATH 才解析得到）。**telemetry/license 里同款脚本仍是老写法**，本机要跑得照此改那一行，或用 Node ≤20。
 
 ## 注意
 

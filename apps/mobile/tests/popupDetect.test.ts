@@ -103,3 +103,29 @@ test("浮层：英文界面也命中（avatar / policy / Got it）", () => {
   assert.equal(detectAppPopup([box("Virtual Items and Rewards Policy", 0.3, 0.4)])?.id, "policy");
   assert.equal(hasDismissControl([box("Got it")]), true);
 });
+
+test("浮层：允许访问位置（强标题，先文字「暂时不要」后视觉 ✕，不点「打开设置」）", () => {
+  const hit = detectAppPopup([box("允许访问位置，解锁本地瑰宝", 0.3, 0.68)]);
+  assert.equal(hit?.id, "location");
+  assert.deepEqual(hit?.dismiss, ["closeText", "closeIcon", "tapOutside", "back"]);
+  // 英文界面同样命中
+  assert.equal(detectAppPopup([box("Allow location access", 0.3, 0.68)])?.id, "location");
+});
+
+test("「暂时不要」是安全关闭词，closeText 定位到它而非红「打开设置」", () => {
+  assert.equal(hasDismissControl([box("暂时不要")]), true);
+  assert.equal(hasDismissControl([box("打开设置")]), false); // 危险按钮不算关闭控件
+  const boxes = [
+    box("允许访问位置，解锁本地瑰宝", 0.3, 0.68),
+    box("暂时不要", 0.29, 0.92, 0.2, 0.04),
+    box("打开设置", 0.71, 0.92, 0.2, 0.04),
+  ];
+  const hit = detectAppPopup(boxes)!;
+  const p = findDismissText(boxes, size)!;
+  // 命中「暂时不要」中心（x≈0.39×1000），不是「打开设置」
+  assert.equal(p.x, (0.29 + 0.1) * 1000);
+  // planDismiss 第一步就是点这个安全文字按钮
+  const steps = planDismiss(hit, boxes, size);
+  assert.equal(steps[0].kind, "tap");
+  if (steps[0].kind === "tap") assert.equal(steps[0].point.x, (0.29 + 0.1) * 1000);
+});

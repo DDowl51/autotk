@@ -23,7 +23,7 @@ export interface PopupHit {
 
 /** 关闭控件文字（整串精确匹配，避免把正文里的词当按钮）。复用 #4 否定词思路。 */
 export const DISMISS_TEXT =
-  /^\s*(✕|×|x|close|not now|no thanks|maybe later|skip|cancel|dismiss|done|not interested|got it|i see|取消|关闭|暂不|以后再说|跳过|不允许|不感兴趣|知道了|我知道了)\s*$/i;
+  /^\s*(✕|×|x|close|not now|no thanks|maybe later|skip|cancel|dismiss|done|not interested|got it|i see|取消|关闭|暂不|暂时不要|以后再说|稍后再说|跳过|不允许|不感兴趣|知道了|我知道了)\s*$/i;
 
 /** 右侧动作栏（点赞/评论计数等），其文字永远不算浮层标记。 */
 export function inActionRail(b: OcrBox): boolean {
@@ -100,6 +100,21 @@ export const SIGNATURES: PopupSignature[] = [
     strong: true,
     markers: [/通行密钥/, /iCloud\s*钥匙串/, /钥匙串/, /passkey/i, /icloud\s*keychain/i],
     dismiss: ["closeIcon", "tapOutside", "back"],
+  },
+  // 视频详情/地点页：「允许访问位置，解锁本地瑰宝」，红「打开设置」(勿点，会跳出 TikTok)
+  // + 灰「暂时不要」(安全) + 卡片右上黑 ✕。✕ 在半屏卡顶（非屏幕右上角），故先文字后视觉 ✕。
+  {
+    id: "location",
+    strong: true,
+    markers: [
+      /允许访问位置/,
+      /解锁本地瑰宝/,
+      /本地瑰宝/,
+      /allow location access/i,
+      /unlock local (gems|treasures?)/i,
+      /local gems/i,
+    ],
+    dismiss: ["closeText", "closeIcon", "tapOutside", "back"],
   },
   {
     id: "follow",
