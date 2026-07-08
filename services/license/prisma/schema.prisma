@@ -23,6 +23,7 @@ model Product {
 
 enum Role {
   ADMIN // 超级管理员（你）
+  OPERATOR // 运营/代理管理员（需求方）：可建分销、按额度池分额度、不能建产品
   USER // 客户/分销
 }
 
@@ -36,8 +37,16 @@ model Account {
   disabled     Boolean  @default(false) // 停用账号（禁止登录）
   createdAt    DateTime @default(now())
 
+  // 账号归属：谁创建了本账号。OPERATOR 只能看/管自己创建的分销（额度池按此聚合）。
+  // null = 早期账号 / seed 的首个 ADMIN。
+  createdById String?
+  createdBy   Account?  @relation("AccountCreator", fields: [createdById], references: [id])
+  created     Account[] @relation("AccountCreator") // 本账号创建的下级账号
+
   codes           ActivationCode[] // 该账号名下的激活码
   allowedProducts AccountProduct[] // 该分销被授权可见/发码的产品白名单
+
+  @@index([createdById])
 }
 
 /// 分销账号-产品白名单（多对多）。仅对 USER 生效；ADMIN 不受限。

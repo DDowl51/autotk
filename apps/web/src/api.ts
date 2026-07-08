@@ -1,4 +1,4 @@
-export type Role = "ADMIN" | "USER";
+export type Role = "ADMIN" | "OPERATOR" | "USER";
 
 const TOKEN_KEY = "license_admin_token";
 const ROLE_KEY = "license_admin_role";
@@ -8,6 +8,13 @@ export const getToken = (): string | null => localStorage.getItem(TOKEN_KEY);
 export const getRole = (): Role | null => localStorage.getItem(ROLE_KEY) as Role | null;
 export const getUsername = (): string | null => localStorage.getItem(USER_KEY);
 export const isAdmin = (): boolean => getRole() === "ADMIN";
+export const isOperator = (): boolean => getRole() === "OPERATOR";
+/** 能否管理账号（建/改分销）：ADMIN 或运营。建产品仍仅 ADMIN。 */
+export const canManageAccounts = (): boolean => isAdmin() || isOperator();
+
+/** 角色中文标签（前端展示统一走这里）。 */
+export const roleLabel = (r: Role | null | undefined): string =>
+  r === "ADMIN" ? "管理员" : r === "OPERATOR" ? "运营" : "分销";
 
 export function setSession(s: { token: string; role: Role; username?: string } | null): void {
   if (!s) {

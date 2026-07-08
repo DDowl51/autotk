@@ -65,7 +65,7 @@ export interface TokenSigner {
   }): Promise<{ token: string; expiresAt: number }>;
 }
 
-export type AdminRole = "ADMIN" | "USER";
+export type AdminRole = "ADMIN" | "OPERATOR" | "USER";
 
 export interface AccountRecord {
   id: string;

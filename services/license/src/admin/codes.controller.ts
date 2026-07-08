@@ -12,7 +12,7 @@ import {
 } from "@nestjs/common";
 import { CodeAdminService, QuotaExceededError } from "../domain/code-admin.service";
 import { PrismaService } from "../prisma/prisma.service";
-import { formatCode, isProductAllowed } from "../core";
+import { formatCode, isProductAllowed, selfIssuableQuota, type Role } from "../core";
 import { AdminJwtGuard, type RequestWithAccount } from "./admin-jwt.guard";
 import { batchDisableSchema, codePatchSchema, issueSchema, revokeSchema } from "./dto";
 import { track } from "../telemetry";
@@ -76,10 +76,16 @@ export class CodesController {
         where: { id: req.account!.id },
         include: { allowedProducts: { select: { productId: true } } },
       });
-      quota = me?.codeQuota ?? null;
-      // 分销只能对白名单内产品发码。
+      // 额度池：运营「自己发码」与「分给下级的额度」共用总预算，
+      // 有效额度 = 总预算 - 已分配给下级之和。普通分销无下级，扣减为 0（行为不变）。
+      const alloc = await this.prisma.account.aggregate({
+        _sum: { codeQuota: true },
+        where: { createdById: req.account!.id },
+      });
+      quota = selfIssuableQuota(me?.codeQuota ?? null, alloc._sum.codeQuota ?? 0);
+      // 分销/运营只能对白名单内产品发码。
       const allowed = me?.allowedProducts.map((p) => p.productId) ?? [];
-      if (!isProductAllowed("USER", allowed, dto.productId)) {
+      if (!isProductAllowed(req.account!.role as Role, allowed, dto.productId)) {
         throw new ForbiddenException("product_not_allowed");
       }
     }

@@ -54,7 +54,16 @@ export class AdminController {
     const a = await this.prisma.account.findUnique({ where: { id } });
     if (!a) throw new UnauthorizedException();
     const used = await this.prisma.activationCode.count({ where: { ownerId: id } });
-    return { id: a.id, username: a.username, role: a.role, codeQuota: a.codeQuota, used };
+    // 运营的额度池：已分配给名下分销的额度之和（前端据此算剩余可分配）。
+    let allocated = 0;
+    if (a.role === "OPERATOR") {
+      const agg = await this.prisma.account.aggregate({
+        _sum: { codeQuota: true },
+        where: { createdById: id },
+      });
+      allocated = agg._sum.codeQuota ?? 0;
+    }
+    return { id: a.id, username: a.username, role: a.role, codeQuota: a.codeQuota, used, allocated };
   }
 
   @Post("me/password")

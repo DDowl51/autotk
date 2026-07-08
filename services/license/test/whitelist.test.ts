@@ -16,6 +16,12 @@ test("isProductAllowed: USER 空白名单一律拒绝（显式授权）", () => 
   assert.equal(isProductAllowed("USER", [], "p1"), false);
 });
 
+test("isProductAllowed: OPERATOR 与 USER 同规则（按白名单，不像 ADMIN 恒 true）", () => {
+  assert.equal(isProductAllowed("OPERATOR", ["p1"], "p1"), true);
+  assert.equal(isProductAllowed("OPERATOR", ["p1"], "p2"), false);
+  assert.equal(isProductAllowed("OPERATOR", [], "p1"), false);
+});
+
 test("visibleCodes: ADMIN 全见", () => {
   const codes = [{ productId: "p1" }, { productId: "p2" }];
   assert.deepEqual(visibleCodes("ADMIN", [], codes), codes);

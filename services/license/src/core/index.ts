@@ -10,6 +10,12 @@ export {
 } from "./rules";
 export { isProductAllowed, visibleCodes, type Role } from "./whitelist";
 export {
+  decideQuotaAllocation,
+  selfIssuableQuota,
+  type QuotaAllocDecision,
+  type QuotaAllocError,
+} from "./account-quota";
+export {
   createThrottleState,
   lockedSeconds,
   recordFailure,
