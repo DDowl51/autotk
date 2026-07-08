@@ -59,3 +59,9 @@ apps/mobile/tools/dist/
 apps/mobile/tools/*.spec
 apps/mobile/tools/pip-build.log
 apps/mobile/tools/__pycache__/
+
+# 装机台母包/开发者镜像（二进制 dev 产物，勿提交）
+services/signing-station/apps/
+# 各包 node:test 垫片临时文件（run.sh 生成，异常退出会残留）
+_tsconfig.test.json
+**/test/_shims.d.ts
