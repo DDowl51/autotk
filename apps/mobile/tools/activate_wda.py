@@ -183,9 +183,17 @@ def list_device() -> dict | None:
         return None
     raw = (cp.stdout or "").strip()
     if not raw:
-        err("没有检测到通过 USB 连接的设备。检查:数据线、手机解锁、已点『信任此电脑』。")
-        if cp.stderr.strip():
-            info(cp.stderr.strip())
+        stderr = (cp.stderr or "")
+        if IS_WINDOWS and "usbmux" in stderr.lower():
+            # Windows 上连不到 usbmuxd = 缺 Apple 的 USB 驱动/服务（Apple Mobile Device Service）。
+            err("连不到 Apple USB 服务(usbmuxd)——本机没装苹果 USB 驱动。")
+            info("解决:装 iTunes（苹果官网 https://www.apple.com/itunes/download/）或 Microsoft Store 的「Apple 设备」App，")
+            info("      装完拔插手机、点『信任此电脑』，确认服务 Apple Mobile Device Service 在运行，再重试。")
+            info("      （只弹「读取照片」是 Windows 自带 MTP，不是苹果驱动。）")
+        else:
+            err("没有检测到通过 USB 连接的设备。检查:数据线、手机解锁、已点『信任此电脑』。")
+            if stderr.strip():
+                info(stderr.strip())
         return None
     try:
         devices = json.loads(raw)

@@ -2,7 +2,8 @@
 
 手机每次重启后，WDA 需要重新「激活」（挂载开发者镜像 DDI）一次，autotk 才能连上。
 本工具打包成**完全自包含的 exe**：Python 解释器 + pymobiledevice3 及全部依赖都在 exe 里，
-**买家电脑什么都不用装，双击即用**。
+买家电脑**只需装 iTunes / 「Apple 设备」App**（提供苹果 USB 驱动，这是任何 iOS 工具连手机的前提，
+无法塞进 exe），其余（Python、pymobiledevice3）全在 exe 里，**双击即用**。
 
 ## 组成
 
@@ -25,9 +26,13 @@
   （PyInstaller 冻结 pymobiledevice3 偶尔会缺 hidden import，报 `ModuleNotFoundError: xxx` 就在
   bat 里加一条 `--collect-all xxx` 重打）。
 
-## 买家：怎么用（零安装）
+## 买家：怎么用
 
-1. 手机重启后，用数据线连电脑，手机解锁、点「信任此电脑」；确保手机
+前置（这台电脑一次性）：装 **iTunes**（苹果官网 https://www.apple.com/itunes/download/）或 Microsoft Store 的
+**「Apple 设备」App**——它提供苹果 USB 驱动（Apple Mobile Device Service），没有它任何工具都连不上 iPhone
+（只会弹「读取照片」的 Windows MTP 提示、不弹「信任此电脑」）。
+
+1. 手机重启后，用数据线连电脑，手机解锁、点「信任此电脑」（装了 iTunes 后才会弹）；确保手机
    设置→隐私与安全性→**开发者模式**已开。
 2. 双击「激活WDA」（`ActivateWDA.exe`，会自动弹 UAC 请求管理员——点「是」）。
 3. 点「①  激活手机 WDA」，等显示「✅ 激活成功」。
@@ -36,4 +41,4 @@
 
 失败时看窗口里日志的红色 ❌ 提示（多为：不是管理员 / 开发者模式没开 / 没插稳 / 没点信任）。
 
-> 交付时把 `ActivateWDA.exe` 拷到买家桌面、重命名「激活WDA」即可。买家电脑**无需 Python、无需 pip、无需 go-ios**。
+> 交付时把 `ActivateWDA.exe` 拷到买家桌面、重命名「激活WDA」即可。买家电脑**无需 Python / pip / go-ios**；只需一次性装 iTunes/「Apple 设备」App（苹果 USB 驱动）。
