@@ -25,6 +25,7 @@ import {
   detectCommentCloseButton,
   detectCommentHearts,
   detectFollow,
+  detectModalCard,
   detectRail,
   detectSendButton,
   railBandCenters,
@@ -186,9 +187,24 @@ export function createOnDeviceUI(deps: {
     if (isStopping?.()) return "none";
     let detected = false;
     for (let attempt = 0; attempt < 3; attempt++) {
-      const boxes = await ocr(await screenshot());
+      const png = await screenshot();
+      const boxes = await ocr(png);
       const hit = detectAppPopup(boxes);
       if (!hit) {
+        // OCR 无签名命中 → 再用「通用模态卡」纯视觉兜底：TikTok 层出不穷的推广浮层未必有已知词，
+        // 但结构一致（顶部变暗 + 白卡 + 卡片右上黑 ✕）。只在**非评论页**试——评论面板同为白卡+右上✕，
+        // 不能被当浮层关掉。找到 ✕ 就点、回到循环顶重检。
+        if (page !== "comments") {
+          const mc = detectModalCard(decode(png), size.width, size.height);
+          if (mc) {
+            detected = true;
+            log("应用内浮层(模态卡·视觉)：点卡片右上 ✕");
+            onEvent?.("popup_detected", { id: "modal-card" });
+            await tap(mc);
+            await sleep(700);
+            continue;
+          }
+        }
         if (detected) onEvent?.("popup_escaped", { ok: true });
         return detected ? "escaped" : "none";
       }
@@ -216,7 +232,10 @@ export function createOnDeviceUI(deps: {
         }
       }
     }
-    const still = !!detectAppPopup(await ocr(await screenshot()));
+    const finalPng = await screenshot();
+    const still =
+      !!detectAppPopup(await ocr(finalPng)) ||
+      (page !== "comments" && !!detectModalCard(decode(finalPng), size.width, size.height));
     onEvent?.("popup_escaped", { ok: !still });
     if (still) log("⚠ 应用内浮层多次未能自动关闭");
     return still ? "stuck" : "escaped";
@@ -271,12 +290,9 @@ export function createOnDeviceUI(deps: {
   const backToFeedBase = async (): Promise<void> => {
     await ensure();
     await handleSystemAlert();
-    for (let i = 0; i < 3; i++) {
-      const x = detectCommentCloseButton(await shot(), size.width, size.height);
-      if (!x) break;
-      await tap(x);
-      await sleep(450);
-    }
+    // 关残留评论区并确认回到已知页；旧版这里直接连点 detectCommentCloseButton 3 次、无「误进地点页则脱困」
+    // 兜底（比 rawCloseComments 还危险，且被发布前复位复用），统一改走安全闭环。
+    await closeCommentPanelSafely();
     await dismissPopup();
     page = "feed";
   };
@@ -302,26 +318,41 @@ export function createOnDeviceUI(deps: {
     }
   };
 
+  // 关评论面板并**确认真回到已知页**：每轮找到关闭 ✕ 就点；找不到 ✕ 时——在已知页(视频流/评论)才算
+  // 关成功返回，否则说明关的过程中被误点进了 pushed 页（最典型：评论顶端地点横幅 → 地点页），立即左滑
+  // 返回脱困。最多 3 轮，仍未回则从面板中部下滑 dismiss 兜底 + 最后再校验一次。
+  // 这补上了旧版的致命缺口：旧版「detectCommentCloseButton 返回 null 就当已回 feed」——但地点页同样没有
+  // 白 ✕，两者被混为一谈，于是误进地点页却把 page 置成 'feed'，状态机自信卡死。
+  const closeCommentPanelSafely = async (): Promise<void> => {
+    for (let i = 0; i < 3; i++) {
+      const img = await shot();
+      const x = detectCommentCloseButton(img, size.width, size.height);
+      if (!x) {
+        if (onKnownPage(img)) return; // 真回到视频流/已知页
+        await doSwipeBack(); // 误进地点页等 pushed 页 → 退
+        continue;
+      }
+      await tap(x);
+      await sleep(450);
+    }
+    await swipe(
+      { x: size.width * 0.5, y: size.height * 0.5 },
+      { x: size.width * 0.5, y: size.height * 0.95 },
+      0.3,
+    );
+    await sleep(400);
+    if (!onKnownPage(await shot())) await doSwipeBack();
+  };
+
   const rawOpenComments = async () => {
     await tap((await currentRail()).comment);
     await sleep(900);
   };
   const rawCloseComments = async () => {
-    // 空评论区会自动聚焦输入框、弹键盘挡住关闭。先点面板标题区（在输入框与列表之上，安全）收起键盘，
-    // 再走关闭流程——否则 ✕ 会被键盘干扰，得手动先关键盘再关面板。
-    await tap({ x: size.width * 0.5, y: size.height * 0.3 });
-    await sleep(350);
-    for (let i = 0; i < 3; i++) {
-      const x = detectCommentCloseButton(await shot(), size.width, size.height);
-      if (!x) return;
-      await tap(x);
-      await sleep(400);
-    }
-    await swipe(
-      { x: size.width * 0.5, y: size.height * 0.3 },
-      { x: size.width * 0.5, y: size.height * 0.95 },
-      0.3,
-    );
+    // 关闭 ✕ 在「评论 N | 评价 M | ✕」tab 栏（detectCommentCloseButton 已下探到那儿并跳过顶端地点横幅）。
+    // 直接点真 ✕ 即关面板并收键盘（✕ 在 tab 栏、在键盘之上，不被遮挡）；关后校验真回到已知页，误进地点页
+    // 即时脱困——不再像旧版那样「找不到 ✕ 就当已回 feed」，也不再先盲点 0.3H（实测落在面板外的蒙层上）。
+    await closeCommentPanelSafely();
   };
 
   const goTo = async (target: Page) => {
