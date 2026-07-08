@@ -8,9 +8,16 @@
 
 ```bash
 cd apps/mobile
-npx expo-updates codesigning:generate-keypair \
-  --key-output-directory code-signing \
-  --certificate-output-directory code-signing
+# 命令是 codesigning:generate（不是 generate-keypair），且输出目录必须为空——
+# 本目录有 README 占着，先生成到空子目录 _gen，再把证书挪出来。参数名以 --help 为准。
+mkdir -p _gen
+npx expo-updates codesigning:generate \
+  --key-output-directory _gen \
+  --certificate-output-directory _gen \
+  --certificate-validity-duration-years 10 \
+  --certificate-common-name "autotk"
+mv _gen/certificate.pem ./certificate.pem      # app.json 引用此路径（可提交）
+# _gen/private-key.pem → 移到更新服务器 data/secrets/；_gen/public-key.pem 用不到（都勿提交）
 ```
 
 产出两个文件：

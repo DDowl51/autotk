@@ -28,9 +28,9 @@ updates/
 cd apps/mobile
 npx expo export --platform ios          # 产出 dist/（bundle + assets + metadata.json）
 # 首次先在服务器建好 runtimeVersion 目录（如 1.0.0）：
-ssh user@vps 'mkdir -p /srv/update-server/data/updates/1.0.0'   # 路径= compose 所在目录/data/updates
+ssh user@vps 'mkdir -p 〖update-server部署目录〗/data/updates/1.0.0'   # 〖update-server部署目录〗= 你跑 docker compose 的那个目录（里有 docker-compose.yml + data/）
 # 把 dist **内容**拷进一个新文件夹（末尾斜杠很重要，别拷成嵌套 dist/）：
-scp -r dist/ user@vps:/srv/update-server/data/updates/1.0.0/$(date +%F-%H%M)/
+scp -r dist/ user@vps:〖update-server部署目录〗/data/updates/1.0.0/$(date +%F-%H%M)/
 ```
 
 服务端无需重启——下次手机来问就拿到新的（取该 runtimeVersion 下 mtime 最新的文件夹）。
@@ -44,9 +44,14 @@ scp -r dist/ user@vps:/srv/update-server/data/updates/1.0.0/$(date +%F-%H%M)/
 
 ```bash
 cd apps/mobile
-npx expo-updates codesigning:generate-keypair \
-  --key-output-directory code-signing \
-  --certificate-output-directory code-signing
+# 命令是 codesigning:generate（不是 generate-keypair），输出目录须为空 → 生成到空子目录 _gen 再挪
+mkdir -p code-signing/_gen
+npx expo-updates codesigning:generate \
+  --key-output-directory code-signing/_gen \
+  --certificate-output-directory code-signing/_gen \
+  --certificate-validity-duration-years 10 \
+  --certificate-common-name "autotk"
+mv code-signing/_gen/certificate.pem code-signing/certificate.pem
 # 产出 code-signing/certificate.pem（打进 App，已在 app.json 引用）
 #     + code-signing/private-key.pem（**只给服务器**，勿进 App、勿提交）
 ```
