@@ -33,6 +33,7 @@ import {
 import { railOffsetY } from "./railCheck";
 import { isLivePage } from "./livePage";
 import { captionFromBoxes, type OcrBox } from "../vision/caption";
+import { looksSameCaption, isCaptionComparable } from "./captionSimilarity";
 import { detectAppPopup } from "./popupDetect";
 import { planDismiss } from "./popupDismiss";
 import { resolveAnchor, type AnchorName } from "./anchors";
@@ -98,6 +99,8 @@ export function createOnDeviceUI(deps: {
   let commentCache: ParsedComment[] = [];
   // 连续"不在正常页面"的次数；用于避免横屏/图文帖偶发漏检导致在正常视频上误返回。
   let lostStreak = 0;
+  // 上一条视频的文案（由 readCurrentVideo 记录）；swipeToNextVideo 用它判断「上划后是否仍是同一条」。
+  let lastCaption = "";
 
   const ensure = async () => {
     if (!getSessionId()) {
@@ -376,6 +379,7 @@ export function createOnDeviceUI(deps: {
       await ensure();
       page = "feed";
       railCache = null;
+      lastCaption = ""; // 进新流 → 上一条文案作废，首次上划不做「同一条」判定
       log("已确保 TikTok 在前台（推荐页）");
     },
 
@@ -387,16 +391,55 @@ export function createOnDeviceUI(deps: {
       await dismissPopup(); // 切流概率弹登录/passkey 窗
       page = "feed"; // 关注流与推荐流操作一致，视作 feed
       railCache = null;
+      lastCaption = "";
       log("已切到「关注」视频流");
     },
 
+    // 上划切下一条，并**验证真的划动了**：
+    //  上划后读新文案，若与上一条**高度相似**（looksSameCaption），说明多半没划动（被弹窗/可交互元素
+    //  拦截了手势）→ 换个位置/加长再划，最多试 3 个位置；全试完仍是同一条 → 大概率不是上划问题，而是
+    //  困在某个弹窗里 → 启动脱困（关系统弹窗 + 应用内浮层）。
+    //  ⚠️ 判定依赖 OCR：上一条文案为空/过短（如未接 VisionOcr、或该视频无文案）时**无法判定**，
+    //  自动退回旧的「单次上划」行为，绝不会陷入「永远判同一条 → 每次都脱困」。
     async swipeToNextVideo() {
       await ensure();
       await goTo("feed");
       const { width: w, height: h } = size;
-      await swipe({ x: w * 0.5, y: h * 0.72 }, { x: w * 0.5, y: h * 0.26 }, 0.25);
-      railCache = null; // 换视频 → 右栏可能整体上下移，下次动作重测
-      log("上滑切换视频");
+      // 上划位置变体：验证疑似没划动时依次换位置/加长重试。
+      const variants = [
+        { x1: 0.5, y1: 0.72, x2: 0.5, y2: 0.26 }, // 标准（中列）
+        { x1: 0.7, y1: 0.8, x2: 0.7, y2: 0.2 }, // 右列、加长
+        { x1: 0.3, y1: 0.8, x2: 0.3, y2: 0.2 }, // 左列、加长
+      ];
+      const before = lastCaption;
+      // 上一条文案够长才谈得上「是否同一条」；停止请求时不做验证（触控已 no-op，验证注定失败还白读 OCR）。
+      const canVerify = isCaptionComparable(before) && !isStopping?.();
+
+      for (let attempt = 0; attempt < variants.length; attempt++) {
+        const v = variants[attempt];
+        await swipe({ x: w * v.x1, y: h * v.y1 }, { x: w * v.x2, y: h * v.y2 }, 0.25);
+        railCache = null; // 换视频 → 右栏可能整体上下移，下次动作重测
+
+        if (!canVerify) {
+          log("上滑切换视频");
+          return; // 无法验证 → 旧行为，单次上划即返回
+        }
+        await sleep(500); // 等新页文案渲染再读（真机可调）
+        const after = captionFromBoxes(await ocr(await screenshot()));
+        if (!looksSameCaption(before, after)) {
+          lastCaption = after; // 确实换了一条
+          log(attempt === 0 ? "上滑切换视频" : `上滑切换视频（换第 ${attempt + 1} 个位置后成功）`);
+          return;
+        }
+        log(`上划疑似未生效（文案高度相似），换位置重试 ${attempt + 1}/${variants.length}`);
+      }
+
+      // 多次换位置仍是同一条 → 大概率困在弹窗里 → 脱困。
+      log("⚠ 多次上划文案仍相似，疑似困在弹窗，尝试脱困");
+      onEvent?.("swipe_stuck_escape", {});
+      await handleSystemAlert();
+      await escapeAppPopup();
+      lastCaption = ""; // 状态已不确定 → 清空，下次 readCurrentVideo 重新同步
     },
 
     async readCurrentVideo(): Promise<VideoInfo> {
@@ -404,6 +447,7 @@ export function createOnDeviceUI(deps: {
       await goTo("feed");
       const boxes = await ocr(await screenshot());
       const caption = captionFromBoxes(boxes);
+      lastCaption = caption; // 记录当前条文案，供下次 swipeToNextVideo 判「是否划动」
       const tags = caption
         .split(/\s+/)
         .map((t) => t.replace(/^#/, ""))
