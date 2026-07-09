@@ -19,9 +19,11 @@ node test/admin-smoke.mjs
 node test/smoke.mjs
 # SDK ↔ 服务端 全栈 e2e（确保 admin 存在 + SDK 已构建）
 node dist/seed.js >/dev/null 2>&1 || true
-( cd ../../packages/sdk && npm run build >/dev/null )
-PORT="$PORT" node ../../packages/sdk/test/sdk-e2e.mjs
+( cd ../../packages/license-sdk && npm run build >/dev/null )
+PORT="$PORT" node ../../packages/license-sdk/test/sdk-e2e.mjs
 # 管理端新功能：账号/配额/编辑/批量/重置 secret/改密（seed 已建 admin）
 PORT="$PORT" node test/admin-features.mjs
 # 分销-产品白名单：可见性收窄、发码授权、连带隐藏、配额仍计入、客户端激活不受影响
 PORT="$PORT" node test/admin-whitelist.mjs
+# 运营(OPERATOR)角色：提权/归属越权(IDOR)/额度池/白名单子集/可见性收窄
+PORT="$PORT" node test/operator-role.mjs
