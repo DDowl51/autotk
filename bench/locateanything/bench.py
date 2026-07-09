@@ -62,6 +62,7 @@ def ground(model, tokenizer, processor, image, phrase, max_new_tokens):
         tokenizer=tokenizer,
         max_new_tokens=max_new_tokens,
         generation_mode="hybrid",
+        use_cache=True,  # 模型自定义 generate 强制要求（否则 assert 报错）
     )
     return resp if isinstance(resp, str) else str(resp)
 
