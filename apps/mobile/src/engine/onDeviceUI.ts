@@ -415,9 +415,9 @@ export function createOnDeviceUI(deps: {
       const { width: w, height: h } = size;
       // 上划位置变体：验证疑似没划动时依次换位置/加长重试。
       const variants = [
-        { x1: 0.5, y1: 0.72, x2: 0.5, y2: 0.26 }, // 标准（中列）
-        { x1: 0.7, y1: 0.8, x2: 0.7, y2: 0.2 }, // 右列、加长
-        { x1: 0.3, y1: 0.8, x2: 0.3, y2: 0.2 }, // 左列、加长
+        { x1: 0.5, y1: 0.66, x2: 0.5, y2: 0.26 }, // 标准（中列，起点上移一点，避开底部导航/输入区）
+        { x1: 0.7, y1: 0.74, x2: 0.7, y2: 0.2 }, // 右列、加长
+        { x1: 0.3, y1: 0.74, x2: 0.3, y2: 0.2 }, // 左列、加长
       ];
       const before = lastCaption;
       // 上一条文案够长才谈得上「是否同一条」；停止请求时不做验证（触控已 no-op，验证注定失败还白读 OCR）。
@@ -558,11 +558,11 @@ export function createOnDeviceUI(deps: {
       await sleep(700);
       await tap(A("searchSubmit"));
       await sleep(10000);
-      await tap(A("searchFirstResult"));
+      await tap(A("searchSecondResult")); // 点第二个结果——第一个大概率是广告位，跳过
       await sleep(1500);
       page = "feed";
       railCache = null;
-      log(`已搜索「${keyword}」并进入结果视频流`);
+      log(`已搜索「${keyword}」并进入结果视频流（跳过第一个广告位、从第二个进）`);
     },
     // 真机无法可靠数搜索结果数；返回大值，让调用方的 maxResults 决定遍历多少条。
     countSearchResults: async () => 999,

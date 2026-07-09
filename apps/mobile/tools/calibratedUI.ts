@@ -157,7 +157,7 @@ export function createCalibratedUI(log: Log): TikTokUI {
       await ensure();
       await goTo("feed");
       const { width: w, height: h } = size;
-      await swipe({ x: w * 0.5, y: h * 0.72 }, { x: w * 0.5, y: h * 0.26 }, 0.25);
+      await swipe({ x: w * 0.5, y: h * 0.66 }, { x: w * 0.5, y: h * 0.26 }, 0.25); // 起点上移一点
       railCache = null; // 换视频 → 右栏可能整体上下移，下次动作重测
       log("上滑切换视频");
     },
@@ -258,7 +258,7 @@ export function createCalibratedUI(log: Log): TikTokUI {
       await sleep(700);
       await tap(A("searchSubmit")); // 红色 Search 提交
       await sleep(10000); // 等结果加载
-      await tap(A("searchFirstResult")); // 打开第一个结果，进入结果视频流
+      await tap(A("searchSecondResult")); // 打开第二个结果（第一个大概率广告，跳过），进入结果视频流
       await sleep(1500);
       page = "feed"; // 结果视频流与推荐页操作相同，视作 feed
       railCache = null;
