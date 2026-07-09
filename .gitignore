@@ -15,6 +15,7 @@ tools/dist/
 # ---- env / local config ----
 .env
 .env.*
+!.env.example
 *.log
 # signing-station real config carries credential paths; only the example is tracked
 config.json

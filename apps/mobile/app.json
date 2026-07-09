@@ -9,8 +9,8 @@
     "newArchEnabled": true,
     "runtimeVersion": "1.0.0",
     "updates": {
-      "enabled": false,
-      "url": "https://updates.你的域名.com/api/manifest",
+      "enabled": true,
+      "url": "https://autotk-ota.ddowl.tech/api/manifest",
       "checkAutomatically": "ON_LOAD",
       "fallbackToCacheTimeout": 0
     },
