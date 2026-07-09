@@ -565,16 +565,18 @@ export function createOnDeviceUI(deps: {
     },
 
     async search(keyword: string) {
+      // 慢网络易出错：搜索每步操作后固定停 2s，给页面切换/网络请求留足时间，避免在半加载的页面上误点。
       await ensure();
       await goTo("feed");
+      await sleep(2000);
       await tap(A("searchIcon"));
-      await sleep(1000);
+      await sleep(2000);
       await typeText(keyword);
-      await sleep(700);
+      await sleep(2000);
       await tap(A("searchSubmit"));
-      await sleep(10000);
+      await sleep(10000); // 等结果加载（本就 >2s）
       await tap(A("searchSecondResult")); // 点第二个结果——第一个大概率是广告位，跳过
-      await sleep(1500);
+      await sleep(2000);
       page = "feed";
       railCache = null;
       log(`已搜索「${keyword}」并进入结果视频流（跳过第一个广告位、从第二个进）`);
@@ -590,6 +592,7 @@ export function createOnDeviceUI(deps: {
           { x: size.width * 0.5, y: size.height * 0.26 },
           0.25,
         );
+        await sleep(2000); // 慢网络：等下一个结果视频加载再读，避免读到半加载的帧
         railCache = null;
         log(`上滑到第 ${index + 1} 个结果`);
       }

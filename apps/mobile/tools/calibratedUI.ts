@@ -250,16 +250,18 @@ export function createCalibratedUI(log: Log): TikTokUI {
 
     // —— 搜索：桥接到「结果是可上滑视频流」的现实 ——
     async search(keyword: string) {
+      // 慢网络易出错：搜索每步操作后固定停 2s，给页面切换/网络请求留足时间，避免在半加载的页面上误点。
       await ensure();
       await goTo("feed");
+      await sleep(2000);
       await tap(A("searchIcon")); // 放大镜
-      await sleep(1000);
+      await sleep(2000);
       await typeText(keyword);
-      await sleep(700);
+      await sleep(2000);
       await tap(A("searchSubmit")); // 红色 Search 提交
       await sleep(10000); // 等结果加载
       await tap(A("searchSecondResult")); // 打开第二个结果（第一个大概率广告，跳过），进入结果视频流
-      await sleep(1500);
+      await sleep(2000);
       page = "feed"; // 结果视频流与推荐页操作相同，视作 feed
       railCache = null;
       log(`已搜索「${keyword}」并进入结果视频流`);
@@ -276,6 +278,7 @@ export function createCalibratedUI(log: Log): TikTokUI {
           { x: size.width * 0.5, y: size.height * 0.26 },
           0.25,
         );
+        await sleep(2000); // 慢网络：等下一个结果视频加载再读
         railCache = null;
       }
     },
