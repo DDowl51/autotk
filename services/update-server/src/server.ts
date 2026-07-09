@@ -1,4 +1,4 @@
-import Fastify, { type FastifyInstance } from "fastify";
+import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import { UpdateStore } from "./store";
 import { signManifest } from "./core/sign";
 import { contentTypeForExt } from "./core/manifest";
@@ -17,7 +17,7 @@ export function buildServer(cfg: Config): FastifyInstance {
 
   app.get("/healthz", async () => ({ ok: true }));
 
-  app.get("/api/manifest", async (req, reply) => {
+  const manifestHandler = async (req: FastifyRequest, reply: FastifyReply) => {
     const h = req.headers;
     const platform = String(h["expo-platform"] ?? "ios");
     const runtimeVersion = String(h["expo-runtime-version"] ?? "");
@@ -58,7 +58,11 @@ export function buildServer(cfg: Config): FastifyInstance {
       .header("cache-control", "private, max-age=0")
       .header("content-type", `multipart/mixed; boundary=${boundary}`)
       .send(body);
-  });
+  };
+
+  // ⚠️ 已安装设备包里的 updates.url 路径是烤死的、改不了。历史上出现过 /manifest、/manifest.json，
+  // 现配的是 /api/manifest——三条都注册到同一 handler，让旧包（请求 /manifest）也能拿到更新，无需重装。
+  for (const p of ["/api/manifest", "/manifest", "/manifest.json"]) app.get(p, manifestHandler);
 
   app.get<{ Params: { rv: string; folder: string; "*": string } }>(
     "/assets/:rv/:folder/*",
