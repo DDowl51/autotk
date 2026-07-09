@@ -134,14 +134,19 @@ def main():
             med = statistics.median(ms_list)
             all_ms.append(med)
             boxes = BOX_RE.findall(last)
-            # 画框核对精度（归一化 0-1000 → 像素）。
-            draw = ImageDraw.Draw(img)
             W, H = img.size
-            for (x1, y1, x2, y2) in boxes:
-                x1, y1, x2, y2 = int(x1)/1000*W, int(y1)/1000*H, int(x2)/1000*W, int(y2)/1000*H
-                draw.rectangle([x1, y1, x2, y2], outline=(255, 0, 0), width=4)
-            img.save(os.path.join(args.out, "boxed_" + os.path.basename(p)))
+            # 先打印（延迟+框），确保关键数据一定可见，画框失败也不影响。
             print(f"  {os.path.basename(p):22s} {W}x{H} | 「{phrase}」 | 中位 {med:7.1f} ms | 框 {boxes}")
+            # 画框核对精度（归一化 0-1000 → 像素）。min/max 排序，模型返回顺序反了也不崩。
+            try:
+                draw = ImageDraw.Draw(img)
+                for (a, b, c, d) in boxes:
+                    xs = sorted([int(a) / 1000 * W, int(c) / 1000 * W])
+                    ys = sorted([int(b) / 1000 * H, int(d) / 1000 * H])
+                    draw.rectangle([xs[0], ys[0], xs[1], ys[1]], outline=(255, 0, 0), width=4)
+                img.save(os.path.join(args.out, "boxed_" + os.path.basename(p)))
+            except Exception as e:
+                print(f"    (画框跳过：{e})")
 
     med = statistics.median(all_ms)
     ips = 1000.0 / med
