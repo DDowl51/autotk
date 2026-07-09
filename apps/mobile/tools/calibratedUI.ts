@@ -107,21 +107,17 @@ export function createCalibratedUI(log: Log): TikTokUI {
     await sleep(900); // 等评论面板上滑动画完成
   };
   const rawCloseComments = async () => {
-    // 循环：检测 ✕ → 点 → 再检测。最多 3 次。
-    // 空评论区会自动聚焦输入框弹键盘，此时第一次点 ✕ 只收起键盘、面板没关，
-    // 需再点一次才真正关闭；正常情况一次就关、第二次检测无 ✕ 直接返回。
+    // 关评论面板：**直接从面板顶部往下拖关闭**（TikTok 标准手势）。纯竖直下滑，不依赖 ✕ 位置、
+    // 也不会误触链接/进商店/地点页。最多拖 3 次，每次拖完检测面板还在不在。
     for (let i = 0; i < 3; i++) {
-      const x = await detectCommentCloseButton(size.width, size.height);
-      if (!x) return; // 已无面板 = 已关闭
-      await tap(x);
-      await sleep(400);
+      if (!(await detectCommentCloseButton(size.width, size.height))) return; // 已无面板 = 已关闭
+      await swipe(
+        { x: size.width * 0.5, y: size.height * 0.4 },
+        { x: size.width * 0.5, y: size.height * 0.96 },
+        0.25,
+      );
+      await sleep(500);
     }
-    // 仍未关：下滑兜底。
-    await swipe(
-      { x: size.width * 0.5, y: size.height * 0.3 },
-      { x: size.width * 0.5, y: size.height * 0.95 },
-      0.3,
-    );
   };
 
   /** 页面状态机：转到目标页（必要时执行转换）。 */

@@ -331,26 +331,26 @@ export function createOnDeviceUI(deps: {
   // 这补上了旧版的致命缺口：旧版「detectCommentCloseButton 返回 null 就当已回 feed」——但地点页同样没有
   // 白 ✕，两者被混为一谈，于是误进地点页却把 page 置成 'feed'，状态机自信卡死。
   const closeCommentPanelSafely = async (): Promise<void> => {
+    // 关评论面板：**直接从面板顶部往下拖关闭**（TikTok 标准手势）。纯竖直下滑——不依赖检测 ✕ 的精确位置、
+    // 绝不会误触链接/进商店/地点页，比"点 ✕"稳。最多拖 3 次（有时一次拖不到底），每次拖完检测面板还在不在。
     for (let i = 0; i < 3; i++) {
       const img = await shot();
-      const x = detectCommentCloseButton(img, size.width, size.height);
-      if (!x) {
-        if (onKnownPage(img)) return; // 真回到视频流/已知页
-        // 不在已知页（可能误进地点页）：**不再自动左滑**（易把正常页误判→误跳），只记日志 + 通知管理中心。
+      if (!detectCommentCloseButton(img, size.width, size.height)) {
+        // 已经没有评论面板的 ✕ → 离开了评论面板。在已知页(视频流)即成功；否则只告警不动作（绝不左滑）。
+        if (onKnownPage(img)) return;
         stuckAlert = "关评论后疑似误入页面，需人工处理";
-        log("⚠ 关评论后疑似不在已知页（或误进地点页）；不自动左滑，已通知管理中心");
+        log("⚠ 关评论后疑似不在已知页；不自动脱困，已通知管理中心");
         onEvent?.("stuck_after_close_comments", {});
         return;
       }
-      await tap(x);
-      await sleep(450);
+      // 从面板头部（tab 栏一带）往下快拖到底 → 关闭 sheet（键盘也随之收起）。
+      await swipe(
+        { x: size.width * 0.5, y: size.height * 0.4 },
+        { x: size.width * 0.5, y: size.height * 0.96 },
+        0.25,
+      );
+      await sleep(500);
     }
-    // 仍未关掉：下滑 dismiss 兜底（下滑只关面板、不会误跳页面），不再左滑。
-    await swipe(
-      { x: size.width * 0.5, y: size.height * 0.5 },
-      { x: size.width * 0.5, y: size.height * 0.95 },
-      0.3,
-    );
   };
 
   const rawOpenComments = async () => {
