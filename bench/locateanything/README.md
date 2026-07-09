@@ -106,10 +106,22 @@ python <autotk>\bench\locateanything\bench.py --model .\LocateAnything-3B --imag
 
 ---
 
-## 3. 准备测试截图（现成的）
+## 3. 准备测试截图
 
-仓库里就有 iPhone 8 真机 TikTok 截图，含点赞键/×/Don't Allow/文案/评论——正好覆盖要定位的目标。
-⚠️ 那个目录里混了少数 **1170×2532（别的机型）和 calib_\* 裁片**，别拷进来（会污染延迟）。只拷 750×1334 的：
+**最简单：仓库已内置 10 张 iPhone 8(750×1334) 基准截图**在 `bench/locateanything/shots/`（涵盖点赞键/×/Don't Allow/文案/评论/搜索页）。git clone 的直接就有；下 ZIP 的可用这条一键拉到 `shots/`：
+
+```powershell
+$base = "https://raw.githubusercontent.com/DDowl51/autotk/main/bench/locateanything/shots"
+$files = "IMG_0001.PNG","IMG_0002.PNG","IMG_0003.PNG","IMG_0007.PNG","IMG_0008.PNG","comment.png","location-comment.png","location-popup.png","search-result.png","stream-video.png"
+New-Item -ItemType Directory -Force shots | Out-Null
+foreach ($f in $files) { Invoke-WebRequest "$base/$f" -OutFile "shots\$f" -Proxy "http://127.0.0.1:7897"; Write-Host "OK $f" }
+```
+
+之后 `--images shots` 整目录一次测 10 张。
+
+---
+
+（可选）想从 `apps/mobile/adaptation/screenshots` 原目录拷（那里还有更多，但混了 1170×2532/calib_\* 别的机型，别拷进来）：
 
 仓库路径：Windows 本地是 `I:\projects\开发tk养号-发布自动化\apps\mobile\adaptation\screenshots`；
 WSL 里同一盘符是 `/mnt/i/projects/开发tk养号-发布自动化/apps/mobile/adaptation/screenshots`。
