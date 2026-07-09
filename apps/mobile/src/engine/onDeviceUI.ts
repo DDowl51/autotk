@@ -321,6 +321,17 @@ export function createOnDeviceUI(deps: {
     }
   };
 
+  // 左滑脱困后「等页面稳定再判定是否回到已知页」：doSwipeBack 已 sleep 800ms，但刚滑回正常页时页面常还在
+  // 转场动画/动作栏渲染中，detectRail 要 4 个白带才认，**单次检测易瞬时漏判 → 白滑下一次、滑过头误触**。
+  // 故滑后再轮询几拍（每拍重新截图检测），一旦 onKnownPage 就 true，确保「回到就立刻停、绝不多滑」。
+  const settledOnKnownPage = async (): Promise<boolean> => {
+    for (let k = 0; k < 3; k++) {
+      if (onKnownPage(await shot())) return true;
+      await sleep(350);
+    }
+    return false;
+  };
+
   // 关评论面板并**确认真回到已知页**：每轮找到关闭 ✕ 就点；找不到 ✕ 时——在已知页(视频流/评论)才算
   // 关成功返回，否则说明关的过程中被误点进了 pushed 页（最典型：评论顶端地点横幅 → 地点页），立即左滑
   // 返回脱困。最多 3 轮，仍未回则从面板中部下滑 dismiss 兜底 + 最后再校验一次。
@@ -664,11 +675,12 @@ export function createOnDeviceUI(deps: {
         log("可能离开正常页面（观察中，暂不返回）");
         return;
       }
-      // 连续 ≥2 次都不在正常页面 → 确实卡住 → 左滑返回脱困（回到已知页即停，最多 3 下）。
+      // 连续 ≥2 次都不在正常页面 → 确实卡住 → 左滑返回脱困：**每滑一次就（轮询到稳定）检测一次**，
+      // 一回到已知页立刻停，最多 3 下（避免回到正常页后还白滑、滑过头误触别的页面）。
       for (let i = 0; i < 3; i++) {
-        log("⚠ 连续多次未在正常页面，左滑返回脱困");
+        log(`⚠ 连续多次未在正常页面，左滑返回脱困（第 ${i + 1}/3 次）`);
         await doSwipeBack();
-        if (onKnownPage(decode(await screenshot()))) {
+        if (await settledOnKnownPage()) {
           lostStreak = 0;
           return;
         }

@@ -359,6 +359,15 @@ export function createCalibratedUI(log: Log): TikTokUI {
         );
         await sleep(800);
       };
+      // 左滑脱困后轮询到页面稳定再判是否回到已知页：刚滑回正常页时还在转场动画/动作栏渲染，
+      // known() 单次易瞬时漏判 → 白滑下一次、滑过头。轮询几拍确保「回到就立刻停、绝不多滑」。
+      const settled = async (): Promise<boolean> => {
+        for (let k = 0; k < 3; k++) {
+          if (await known()) return true;
+          await sleep(350);
+        }
+        return false;
+      };
 
       if (await known()) {
         lostStreak = 0;
@@ -370,11 +379,11 @@ export function createCalibratedUI(log: Log): TikTokUI {
         log("可能离开正常页面（观察中，暂不返回）");
         return;
       }
-      // 连续 ≥2 次 → 确实卡住 → 左滑返回脱困（回到已知页即停，最多 3 下）。
+      // 连续 ≥2 次 → 确实卡住 → 左滑返回脱困：**每滑一次就（轮询到稳定）检测一次**，回到已知页即停，最多 3 下。
       for (let i = 0; i < 3; i++) {
-        log("⚠ 连续多次未在正常页面，左滑返回脱困");
+        log(`⚠ 连续多次未在正常页面，左滑返回脱困（第 ${i + 1}/3 次）`);
         await back();
-        if (await known()) {
+        if (await settled()) {
           lostStreak = 0;
           return;
         }
