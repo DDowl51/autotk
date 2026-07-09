@@ -14,8 +14,8 @@ RUN git clone --depth 1 https://github.com/zhlynn/zsign.git /src \
 
 # ---- 阶段 2：运行镜像 ----
 FROM node:20-bookworm-slim
-# openssl：给 .mobileconfig 加签 + 解设备回传的 PKCS#7
-RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates \
+# openssl：.mobileconfig 加签 + 解设备回传 PKCS#7；unzip：母包体检列 IPA 条目（mother-ipa 用 `unzip -Z1`，缺了会把有效母包误判成「不存在」）。
+RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates unzip \
  && rm -rf /var/lib/apt/lists/*
 COPY --from=zsign-build /usr/local/bin/zsign /usr/local/bin/zsign
 

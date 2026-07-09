@@ -50,7 +50,7 @@ async function main(): Promise<void> {
     }
     if (!insp.exists) {
       ok = false;
-      console.log(`  ✗ ${key}: 母包不存在 ${app.motherIpaPath}`);
+      console.log(`  ✗ ${key}: 母包读不出（不存在 / 坏包 / 不是有效 IPA / 容器缺 unzip）：${app.motherIpaPath}`);
       continue;
     }
     if (!insp.appBundle) {
