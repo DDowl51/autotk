@@ -104,12 +104,32 @@ test("浮层：英文界面也命中（avatar / policy / Got it）", () => {
   assert.equal(hasDismissControl([box("Got it")]), true);
 });
 
-test("浮层：允许访问位置（强标题，先文字「暂时不要」后视觉 ✕，不点「打开设置」）", () => {
+test("浮层：允许访问位置（版式一，先文字「暂时不要」后视觉 ✕，不点「打开设置」）", () => {
   const hit = detectAppPopup([box("允许访问位置，解锁本地瑰宝", 0.3, 0.68)]);
   assert.equal(hit?.id, "location");
-  assert.deepEqual(hit?.dismiss, ["closeText", "closeIcon", "tapOutside", "back"]);
+  assert.deepEqual(hit?.dismiss, ["closeText", "tapOutside", "back"]);
   // 英文界面同样命中
   assert.equal(detectAppPopup([box("Allow location access", 0.3, 0.68)])?.id, "location");
+});
+
+test("浮层：查看附近的相关内容和场所（location 版式二，中英文 + 正文都命中，点「取消」不点「打开设置」）", () => {
+  // 标题（中/英）
+  assert.equal(detectAppPopup([box("查看附近的相关内容和场所", 0.3, 0.34)])?.id, "location");
+  assert.equal(detectAppPopup([box("See relevant content and places nearby", 0.3, 0.34)])?.id, "location");
+  // 两版共有正文措辞
+  assert.equal(detectAppPopup([box("打开设备设置并前往 位置 使用应用期间", 0.3, 0.4)])?.id, "location");
+  assert.equal(detectAppPopup([box("go to Location while using the app", 0.3, 0.4)])?.id, "location");
+  // closeText 定位到「取消」而非「打开设置」
+  assert.equal(hasDismissControl([box("取消")]), true);
+  assert.equal(hasDismissControl([box("打开设置")]), false);
+  const boxes = [
+    box("查看附近的相关内容和场所", 0.3, 0.34),
+    box("取消", 0.29, 0.68, 0.1, 0.03),
+    box("打开设置", 0.6, 0.68, 0.15, 0.03),
+  ];
+  const steps = planDismiss(detectAppPopup(boxes)!, boxes, size);
+  assert.equal(steps[0].kind, "tap");
+  if (steps[0].kind === "tap") assert.equal(steps[0].point.x, (0.29 + 0.05) * 1000); // 「取消」中心
 });
 
 test("「暂时不要」是安全关闭词，closeText 定位到它而非红「打开设置」", () => {

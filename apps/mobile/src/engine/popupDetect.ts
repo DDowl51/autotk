@@ -101,20 +101,35 @@ export const SIGNATURES: PopupSignature[] = [
     markers: [/通行密钥/, /iCloud\s*钥匙串/, /钥匙串/, /passkey/i, /icloud\s*keychain/i],
     dismiss: ["closeIcon", "tapOutside", "back"],
   },
-  // 视频详情/地点页：「允许访问位置，解锁本地瑰宝」，红「打开设置」(勿点，会跳出 TikTok)
-  // + 灰「暂时不要」(安全) + 卡片右上黑 ✕。✕ 在半屏卡顶（非屏幕右上角），故先文字后视觉 ✕。
+  // TikTok 位置权限推广弹窗（两种版式，都别点「打开设置」——会跳出 TikTok 进系统设置）：
+  //   版式一：底部 sheet「允许访问位置，解锁本地瑰宝」，灰「暂时不要」(安全) + 卡片右上黑 ✕；
+  //   版式二：搜索结果后弹的居中模态「查看附近的相关内容和场所」，底部「取消」(安全)/「打开设置」，**无 ✕**。
+  // 两版都优先点安全文字按钮（取消/暂时不要）；版式一的 ✕ 由 escapeAppPopup 的 detectCardClose 视觉定位处理，
+  // 故不再放固定坐标 closeIcon（版式二无 ✕，固定坐标会点空/误触）。markers 中英文 + 两版共有正文措辞。
   {
     id: "location",
     strong: true,
     markers: [
+      // 版式一
       /允许访问位置/,
       /解锁本地瑰宝/,
       /本地瑰宝/,
       /allow location access/i,
       /unlock local (gems|treasures?)/i,
       /local gems/i,
+      // 版式二
+      /查看附近的相关内容/,
+      /相关内容和场所/,
+      /附近的相关内容/,
+      /nearby (relevant )?content/i,
+      /nearby content and places/i,
+      /relevant content and places/i,
+      // 两版共有正文（iOS 位置权限专有措辞，正常页不会出现，误识别风险低）
+      /使用应用期间/,
+      /打开设备设置.*位置/,
+      /while using the app/i,
     ],
-    dismiss: ["closeText", "closeIcon", "tapOutside", "back"],
+    dismiss: ["closeText", "tapOutside", "back"],
   },
   {
     id: "follow",
