@@ -39,11 +39,11 @@ pip install torch --index-url https://download.pytorch.org/whl/cu128
 pip install "transformers==4.57.1" accelerate "opencv-python-headless==4.11.0.86" "Pillow==11.1.0" huggingface_hub
 ```
 
-验证 torch 认得这张卡（Blackwell 装错轮子会 `no kernel image`）：
+验证 torch 认得这张卡（**跑真算子**，不能只看 capability——cu124 也会打印 (12,0) 但一跑就 `no kernel image`）：
 
 ```bash
-python -c "import torch;print(torch.__version__, torch.cuda.is_available(), torch.cuda.get_device_name(0), torch.cuda.get_device_capability(0))"
-# 期望：cuda 可用、名字含 5060 Ti、capability 应为 (12, 0)
+python -c "import torch; print(torch.__version__); assert torch.cuda.is_available(); print(torch.zeros(3).cuda()*2)"
+# 版本号须含 +cu128，且能打印 tensor([...], device='cuda:0') 不报错
 ```
 
 > WSL 里访问 Windows 磁盘：`C:\` = `/mnt/c/`。仓库在 `I:\projects\...` → WSL 里是 `/mnt/i/projects/...`。
@@ -68,16 +68,21 @@ py -3 -m venv la3b
 .\la3b\Scripts\Activate.ps1        # 若被策略拦：Set-ExecutionPolicy -Scope Process RemoteSigned
 python -m pip install --upgrade pip
 
-# PyTorch：CUDA 12.8 Windows 轮子（认 Blackwell）
+# PyTorch：必须 CUDA 12.8 轮子才认 Blackwell(sm_120)。若之前装过 cu124/cpu 版，先卸干净：
+pip uninstall -y torch torchvision torchaudio
 pip install torch --index-url https://download.pytorch.org/whl/cu128
 pip install "transformers==4.57.1" accelerate "opencv-python-headless==4.11.0.86" "Pillow==11.1.0" huggingface_hub
 
-# 验证认卡
-python -c "import torch;print(torch.__version__, torch.cuda.is_available(), torch.cuda.get_device_name(0), torch.cuda.get_device_capability(0))"
+# 验证认卡（跑真算子，不能只看 capability——cu124 也会打印 (12,0) 但一跑就崩）
+python -c "import torch; print(torch.__version__); assert torch.cuda.is_available(); print(torch.zeros(3).cuda()*2)"
+# 版本号须含 +cu128，且能打印 tensor([...], device='cuda:0') 不报错
 
-# 下模型
+# 下模型（或跑时直接用仓库名 nvidia/LocateAnything-3B 让它自动下）
 huggingface-cli download nvidia/LocateAnything-3B --local-dir .\LocateAnything-3B
 ```
+
+> ⚠️ **本地文件夹不存在时**，`--model .\LocateAnything-3B` 会被当成 HF 仓库名、因反斜杠报
+> `HFValidationError`。要么先下好（上面这条），要么跑时直接 `--model nvidia/LocateAnything-3B` 自动下载。
 
 跑的时候**加 `--attn sdpa`**绕开 flash-attn（Windows 装 flash-attn 极痛苦）：
 ```powershell
