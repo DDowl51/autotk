@@ -16,11 +16,17 @@ services:
       - ./config.json:/app/config.json:ro
       - ./apps:/app/apps:ro
       - ./data:/app/data # 含 secrets/ 与 work/（设备集落盘 ota-devices.json 也在这里）
+    # 1Panel/宝塔用户：绑本机回环，由面板 OpenResty 反代到 127.0.0.1:4100（下方 caddy 默认不启动）。
+    ports:
+      - "127.0.0.1:4100:4100"
     expose:
       - "4100"
 
   caddy:
     image: caddy:2
+    # 仅「独立部署(自带 Caddy 做 TLS)」时用：docker compose --profile caddy up -d
+    # 用 1Panel 等面板时，默认 `docker compose up -d` 不会起它，避免抢 80/443。
+    profiles: ["caddy"]
     restart: unless-stopped
     ports:
       - "80:80"
