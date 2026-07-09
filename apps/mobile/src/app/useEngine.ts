@@ -123,18 +123,36 @@ export function useEngine(initialParams?: AutomationParams): EngineState {
       // ensure() 又把 TikTok 顶回前台——正是停止守卫要杜绝的行为。
       while (engineRef.current?.isBusy()) await new Promise((r) => setTimeout(r, 400));
       let item = publishQueueRef.current.nextPending();
+      let kaLogged = false; // 保活状态每轮 drain 只记一次，避免逐条刷屏
       while (item) {
         const task = item.task;
         // 每条任务都是操作员的新意图 → 清停止信号。只在 drain 入口清一次不够：用户点过停止后、
         // 排空中途新到的任务会被残留信号误杀（下载白跑、发布⓪即抛「已请求停止」报 failed）。
         stoppingRef.current = false;
         // 每条任务发布前都确保保活开启（不能只在 drain 入口起一次：stop() 会杀保活）。
-        // 没保活时一切 TikTok 前台，autotk 退后台即被 iOS 挂起、发布中途卡死。
-        // Expo Go/无原生模块时抛错 → 静默忽略，dev build 才有此能力。
+        // 【关键】发布常在**未跑养号**时由 Hub 直接触发；若保活没真生效（只拿到「使用App时」/
+        // 原生模块未编入），autotk 一转后台就被 iOS 挂起 → 下载卡在 downloading、或发布⓪ 卡住，
+        // 且此前是**静默吞掉**导致买家/卖家无从排查（真机实见：必须手动切回 autotk 才继续）。
+        // 故这里**验证并打日志**（对齐养号 start() 的可见性），保活没生效就大声告警而非闷着卡死。
         try {
-          await startKeepAlive();
-        } catch {
-          /* 保活模块未编入（Expo Go/测试包）→ 忽略 */
+          const ka = await startKeepAlive();
+          if (!kaLogged) {
+            kaLogged = true;
+            pushLog(
+              ka.always
+                ? "发布：后台保活已确认（始终定位）"
+                : "⚠ 发布：后台保活未生效（定位仅「使用App时」）——autotk 转后台会被挂起、发布会卡。请到 设置→隐私与安全性→定位服务→autotk 改「始终」，或让养号保持运行。",
+              ka.always ? "info" : "warn",
+            );
+          }
+        } catch (e) {
+          if (!kaLogged) {
+            kaLogged = true;
+            pushLog(
+              `⚠ 发布：后台保活模块未编入（Expo Go/测试包）——发布会在后台被挂起卡死，需正式 dev build：${e instanceof Error ? e.message : String(e)}`,
+              "warn",
+            );
+          }
         }
         await runPublish(task, {
           download: (t) => downloadToAlbum(t.source, t.videoName, { saveUrlToAlbum }),
@@ -165,9 +183,10 @@ export function useEngine(initialParams?: AutomationParams): EngineState {
     } finally {
       drainingRef.current = false;
       publishingRef.current = false; // 发布队列清空 → 养号恢复
-      // 纯发布场景（养号没在跑）：回收发布起的保活——否则「始终定位」发完还一直跑，
-      // 买家侧表现为发过一次视频后定位常亮、掉电快。养号在跑则保活归 stop() 管，不动。
-      if (!engineRef.current?.isRunning()) stopKeepAlive().catch(() => {});
+      // ⚠️ 不再「发完即停保活」：脱离养号单独发视频时，若发完立刻停，autotk 会被 iOS 挂起，
+      // 下一条发布任务到来时 App 已处于挂起态 → 卡在 downloading（真机实见：必须手动切回 autotk 才动）。
+      // 发布可靠优先，保活保持常开（部署机常插电、可接受定位常亮的耗电）；养号在跑时保活本就归 stop() 管。
+      // 若日后要更省电，可改为「空闲 N 分钟无任务再 stopKeepAlive」。
     }
   }, [pushLog]);
 
