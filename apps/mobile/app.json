@@ -9,12 +9,10 @@
     "newArchEnabled": true,
     "runtimeVersion": "1.0.0",
     "updates": {
-      "enabled": true,
+      "enabled": false,
       "url": "https://updates.你的域名.com/api/manifest",
       "checkAutomatically": "ON_LOAD",
-      "fallbackToCacheTimeout": 0,
-      "codeSigningCertificate": "./code-signing/certificate.pem",
-      "codeSigningMetadata": { "keyid": "main", "alg": "rsa-v1_5-sha256" }
+      "fallbackToCacheTimeout": 0
     },
     "splash": {
       "image": "./assets/splash-icon.png",
@@ -23,7 +21,7 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.anonymous.autotk",
+      "bundleIdentifier": "com.ddowl.autotk",
       "infoPlist": {
         "UIBackgroundModes": ["location"],
         "NSLocationAlwaysAndWhenInUseUsageDescription": "用于后台保活，保持自动化在后台持续运行",
