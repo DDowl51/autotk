@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { detectAppPopup, hasDismissControl } from "../src/engine/popupDetect";
+import { detectAppPopup, hasDismissControl, findPermissionDenyBox } from "../src/engine/popupDetect";
 import { planDismiss, findDismissText } from "../src/engine/popupDismiss";
 import type { OcrBox } from "../src/vision/caption";
 
@@ -148,6 +148,20 @@ test("浮层：Shop 促销（choose up to N products / Pick now），closeAt 点
   }
 });
 
+// —— IMG_0008 定位系统弹窗：WDA 读不到时靠 OCR 找「Don't Allow / 不允许」兜底点 ——
+test("findPermissionDenyBox：命中 Don't Allow（直/弯引号/无引号）与「不允许」", () => {
+  assert.ok(findPermissionDenyBox([box("Don't Allow", 0.5, 0.8)])); // U+0027 直引号
+  assert.ok(findPermissionDenyBox([box("Don’t Allow", 0.5, 0.8)])); // U+2019 弯引号（iOS 实际）
+  assert.ok(findPermissionDenyBox([box("Dont Allow", 0.5, 0.8)])); // OCR 漏撇号
+  assert.ok(findPermissionDenyBox([box("不允许", 0.5, 0.8)]));
+});
+test("findPermissionDenyBox：不误伤正文/右栏（只整串按钮才算）", () => {
+  assert.equal(findPermissionDenyBox([box("we won't allow spam here", 0.3, 0.5)]), null); // 正文含 allow
+  assert.equal(findPermissionDenyBox([box("Allow Once", 0.5, 0.7)]), null); // 允许项不算拒绝
+  assert.equal(findPermissionDenyBox([box("Don't Allow", 0.92, 0.5)]), null); // 落在右侧动作栏 → 忽略
+  assert.equal(findPermissionDenyBox([box("hello", 0.3, 0.5)]), null);
+});
+
 // —— IMG_0007 误点广告的内嵌网页：✕ 在左上；绝不能上滑（会进外部页），dismiss 只有 closeAt ——
 test("浮层：内嵌网页 sheet（Scroll up for fullscreen / Sign in to continue），只点左上 ✕、不上滑", () => {
   const hit = detectAppPopup([box("Scroll up for fullscreen view", 0.3, 0.62)]);
@@ -155,6 +169,8 @@ test("浮层：内嵌网页 sheet（Scroll up for fullscreen / Sign in to contin
   assert.deepEqual(hit?.closeAt, [0.07, 0.755]);
   assert.equal(detectAppPopup([box("Sign in to continue", 0.3, 0.5)])?.id, "inapp-browser");
   assert.equal(detectAppPopup([box("上滑查看全屏", 0.3, 0.62)])?.id, "inapp-browser");
+  // OCR 把「Scroll up for fullscreen view」拆行时，单独「fullscreen view」也要命中
+  assert.equal(detectAppPopup([box("fullscreen view", 0.3, 0.62)])?.id, "inapp-browser");
   // dismiss 计划里除了 closeAt 的 tap，没有任何 swipe（防上滑进外部页）
   const steps = planDismiss(hit!, [], size);
   assert.equal(steps.length, 1);

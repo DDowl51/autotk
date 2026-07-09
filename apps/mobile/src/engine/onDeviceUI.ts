@@ -33,7 +33,7 @@ import { railOffsetY } from "./railCheck";
 import { isLivePage } from "./livePage";
 import { captionFromBoxes, type OcrBox } from "../vision/caption";
 import { looksSameCaption, isCaptionComparable } from "./captionSimilarity";
-import { detectAppPopup } from "./popupDetect";
+import { detectAppPopup, findPermissionDenyBox } from "./popupDetect";
 import { planDismiss } from "./popupDismiss";
 import { resolveAnchor, type AnchorName } from "./anchors";
 
@@ -251,10 +251,25 @@ export function createOnDeviceUI(deps: {
     return still ? "stuck" : "escaped";
   };
 
+  // OCR 兜底点系统权限弹窗的「拒绝」按钮（Don't Allow / 不允许）。
+  // 用于 WDA /alert **读不到**的系统弹窗——最典型是带地图预览的**定位权限**（由 springboard 渲染，
+  // 会话绑在 TikTok 上读不到 alert 文本/按钮）。养号期一律拒绝权限是安全的（不发布），见到即点。
+  const tapDenyBoxFromOcr = async (boxes: OcrBox[]): Promise<boolean> => {
+    const deny = findPermissionDenyBox(boxes);
+    if (!deny) return false;
+    await tap({ x: (deny.x + deny.w / 2) * size.width, y: (deny.y + deny.h / 2) * size.height });
+    await sleep(600);
+    log("OCR 兜底：点系统权限弹窗「Don't Allow / 不允许」（WDA 读不到，如带地图的定位弹窗）");
+    onEvent?.("popup_detected", { id: "sys-perm-ocr" });
+    return true;
+  };
+
   // iOS 系统权限弹窗：用 WDA alert 接口读按钮、按意图表点（发布需要的相机/麦克风/相册 → 允许，其余拒绝）。
   // 关掉了返回 true。比 OCR 可靠（系统 alert 走 springboard）。
   // **循环清栈**：相机+麦克风等会连续弹两三个，一次调用把当前堆叠的都清掉（最多 4 个防死循环）。
-  const handleSystemAlert = async (): Promise<boolean> => {
+  // opts.ocrDenyFallback：WDA 一个弹窗都没读到时，再用 OCR 找「Don't Allow/不允许」兜底点一次
+  //   （治定位权限这类 WDA 读不到的弹窗）。仅养号脱困路径开启；发布流程不开（相机/麦克风要「允许」，走 WDA）。
+  const handleSystemAlert = async (opts?: { ocrDenyFallback?: boolean }): Promise<boolean> => {
     // 停止后不再碰系统弹窗（WDA /alert 不分 app——用户此刻可能正看着 autotk 自己的权限对话框）。
     if (isStopping?.()) return false;
     let any = false;
@@ -277,7 +292,43 @@ export function createOnDeviceUI(deps: {
       any = true;
       await sleep(500);
     }
+    // WDA 一个都没读到 → 可能是它读不到的系统弹窗（定位权限带地图）→ OCR 兜底拒绝。
+    if (!any && opts?.ocrDenyFallback) {
+      try {
+        if (await tapDenyBoxFromOcr(await ocr(await screenshot()))) any = true;
+      } catch {
+        /* OCR 不可用 → 放弃兜底 */
+      }
+    }
     return any;
+  };
+
+  // 上划前安全闸：绝不能带着遮挡浮层上划。最凶的是误点广告开的内嵌网页(07)——其「Scroll up for
+  // fullscreen view」手势会把「上划切下一条」直接变成「进外部页面」，一旦进去就更难回来。
+  // 一次截图+OCR 兼查：① WDA 系统弹窗；② WDA 读不到的权限弹窗(定位)靠 OCR 点「不允许」；③ 应用内浮层
+  // (07 靠 closeAt 点左上✕；**绝不 swipe up**)。处理了任一 → 返回 true，本轮就不上划，交下一轮重读。
+  const guardBeforeSwipe = async (): Promise<boolean> => {
+    if (await handleSystemAlert()) return true; // WDA 能读的系统弹窗
+    let boxes: OcrBox[];
+    try {
+      boxes = await ocr(await screenshot());
+    } catch {
+      return false; // OCR 不可用 → 不拦（退回原始上划行为）
+    }
+    if (await tapDenyBoxFromOcr(boxes)) return true; // 定位等 WDA 读不到的权限弹窗
+    const hit = detectAppPopup(boxes);
+    if (hit) {
+      log(`上划前安全闸：应用内浮层(${hit.id}) → 关闭，不上划`);
+      onEvent?.("popup_detected", { id: hit.id });
+      // 有 closeAt（07 左上✕等非标准位）优先点；否则走通用计划。planDismiss 里没有 swipe up。
+      for (const s of planDismiss(hit, boxes, size)) {
+        if (s.kind === "tap") await tap(s.point);
+        else if (s.kind === "swipe") await swipe(s.from, s.to, 0.3);
+      }
+      await sleep(700);
+      return true;
+    }
+    return false;
   };
 
   // 轮询清系统权限弹窗最多 maxSeconds 秒：出现就清（含堆叠），连续两次没有就提前返回。
@@ -416,6 +467,12 @@ export function createOnDeviceUI(deps: {
     async swipeToNextVideo() {
       await ensure();
       await goTo("feed");
+      // 上划前安全闸：有系统弹窗(定位)/内嵌网页(07)等遮挡浮层先关掉，绝不带浮层上划——
+      // 尤其 07 上划=进外部页。关掉了本轮就不上划，交下一轮重读。
+      if (await guardBeforeSwipe()) {
+        lastCaption = ""; // 页面态已不确定 → 清空，下次 readCurrentVideo 重新同步
+        return;
+      }
       const { width: w, height: h } = size;
       // 上划位置变体：验证疑似没划动时依次换位置/加长重试。
       const variants = [
@@ -587,6 +644,7 @@ export function createOnDeviceUI(deps: {
       await ensure();
       await goTo("feed");
       if (index > 0) {
+        if (await guardBeforeSwipe()) return; // 上划前安全闸：有系统弹窗/内嵌网页(07)先关，绝不带浮层上划
         await swipe(
           { x: size.width * 0.5, y: size.height * 0.72 },
           { x: size.width * 0.5, y: size.height * 0.26 },
@@ -619,6 +677,7 @@ export function createOnDeviceUI(deps: {
       } else {
         // 后续上滑切下一条作品（同搜索结果流）。
         await goTo("feed");
+        if (await guardBeforeSwipe()) return; // 上划前安全闸：防中途弹权限/浮层被带上划
         await swipe(
           { x: size.width * 0.5, y: size.height * 0.72 },
           { x: size.width * 0.5, y: size.height * 0.26 },
@@ -660,7 +719,8 @@ export function createOnDeviceUI(deps: {
 
     async recoverIfLost(): Promise<void> {
       // 先处理 iOS 系统权限弹窗（新号高发）——关掉后多半就回正常页了。
-      if (await handleSystemAlert()) {
+      // ocrDenyFallback：定位权限带地图、WDA 读不到 → 用 OCR 找「不允许」兜底点。
+      if (await handleSystemAlert({ ocrDenyFallback: true })) {
         lostStreak = 0;
         stuckAlert = null; // 回到已知页/已处理 → 清管理中心告警
         return;

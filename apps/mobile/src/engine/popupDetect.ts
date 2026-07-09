@@ -162,8 +162,10 @@ export const SIGNATURES: PopupSignature[] = [
     id: "inapp-browser",
     strong: true,
     markers: [
-      /scroll up for fullscreen/i,
+      /scroll up for full\s?screen/i,
+      /full\s?screen view/i, // OCR 可能把「Scroll up for fullscreen view」拆行，单独兜一句
       /上滑查看全屏/,
+      /查看全屏/,
       /sign in to continue/i,
       /sign in is required/i,
       /登录后.*继续/,
@@ -176,6 +178,19 @@ export const SIGNATURES: PopupSignature[] = [
 /** 是否存在可点的关闭控件。 */
 export function hasDismissControl(boxes: OcrBox[]): boolean {
   return boxes.some((b) => !inActionRail(b) && DISMISS_TEXT.test(b.text.trim()));
+}
+
+// iOS 系统权限弹窗的「拒绝」按钮整串（Don't Allow / 不允许）。don.?t 容忍直/弯撇号或无撇号。
+const PERMISSION_DENY = /^\s*(don.?t\s*allow|不允许)\s*$/i;
+
+/**
+ * 找系统权限弹窗的「拒绝」按钮框（Don't Allow / 不允许），OCR 兜底用。
+ * WDA /alert 读不到某些系统弹窗（如带地图的定位权限，由 springboard 渲染、会话读不到），
+ * 此时靠整屏 OCR 找到这个按钮直接点。养号期一律拒绝权限是安全的（不发布），见到即可点。
+ * 整串精确匹配 + 避开右侧动作栏，避免把正文里的词误当按钮。
+ */
+export function findPermissionDenyBox(boxes: OcrBox[]): OcrBox | null {
+  return boxes.find((b) => !inActionRail(b) && PERMISSION_DENY.test(b.text.trim())) ?? null;
 }
 
 /** 检测应用内浮层；命中返回 PopupHit，否则 null。 */

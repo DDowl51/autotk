@@ -29,7 +29,7 @@ import { readCaption, recognizeBoxes } from "./ocr";
 import { resolveAnchor, type AnchorName } from "../src/engine/anchors";
 import { railOffsetY } from "../src/engine/railCheck";
 import { isLivePage } from "../src/engine/livePage";
-import { detectAppPopup } from "../src/engine/popupDetect";
+import { detectAppPopup, findPermissionDenyBox } from "../src/engine/popupDetect";
 import { planDismiss } from "../src/engine/popupDismiss";
 
 type Log = (msg: string) => void;
@@ -135,6 +135,58 @@ export function createCalibratedUI(log: Log): TikTokUI {
     }
   };
 
+  // 上划前安全闸（与 src/engine/onDeviceUI 同一套）：绝不带遮挡浮层上划。
+  // ① WDA 系统弹窗；② WDA 读不到的权限弹窗(定位带地图)靠 OCR 点「不允许」；③ 应用内浮层(07 靠 closeAt
+  // 点左上✕，绝不 swipe up)。处理了任一 → true，本轮别上划。
+  const guardBeforeSwipe = async (): Promise<boolean> => {
+    const text = await alertText();
+    if (text !== null) {
+      const choice = chooseAlertButton(text, await alertButtons());
+      try {
+        if ("label" in choice) await alertClickButton(choice.label);
+        else await alertDismiss();
+      } catch {
+        await alertDismiss().catch(() => {});
+      }
+      log(`关闭系统弹窗（${"label" in choice ? choice.label : "dismiss"}）`);
+      await sleep(500);
+      return true;
+    }
+    let boxes;
+    try {
+      boxes = await recognizeBoxes();
+    } catch {
+      return false; // OCR 不可用 → 不拦
+    }
+    const deny = findPermissionDenyBox(boxes);
+    if (deny) {
+      await tap({ x: (deny.x + deny.w / 2) * size.width, y: (deny.y + deny.h / 2) * size.height });
+      await sleep(600);
+      log("OCR 兜底：点系统权限「Don't Allow / 不允许」（WDA 读不到，如带地图的定位弹窗）");
+      return true;
+    }
+    const hit = detectAppPopup(boxes);
+    if (hit) {
+      log(`上划前安全闸：应用内浮层(${hit.id}) → 关闭，不上划`);
+      // 有 closeAt（07 左上✕等非标准位）优先点；否则再猜右上角 ✕。绝不 swipe up。
+      if (!hit.closeAt) {
+        const cx = await detectCardClose(size.width, size.height).catch(() => null);
+        if (cx) {
+          await tap(cx);
+          await sleep(700);
+          return true;
+        }
+      }
+      for (const s of planDismiss(hit, boxes, { width: size.width, height: size.height })) {
+        if (s.kind === "tap") await tap(s.point);
+        else if (s.kind === "swipe") await swipe(s.from, s.to, 0.3);
+      }
+      await sleep(700);
+      return true;
+    }
+    return false;
+  };
+
   return {
     async openForYou() {
       await ensure();
@@ -156,6 +208,11 @@ export function createCalibratedUI(log: Log): TikTokUI {
     async swipeToNextVideo() {
       await ensure();
       await goTo("feed");
+      // 上划前安全闸：有系统弹窗(定位)/内嵌网页(07)先关掉，绝不带浮层上划（07 上划=进外部页）。
+      if (await guardBeforeSwipe()) {
+        railCache = null;
+        return;
+      }
       const { width: w, height: h } = size;
       await swipe({ x: w * 0.5, y: h * 0.66 }, { x: w * 0.5, y: h * 0.26 }, 0.25); // 起点上移一点
       railCache = null; // 换视频 → 右栏可能整体上下移，下次动作重测
@@ -273,6 +330,7 @@ export function createCalibratedUI(log: Log): TikTokUI {
       await goTo("feed");
       // 第一个结果在 search() 里已打开；之后靠上滑切到下一个。
       if (index > 0) {
+        if (await guardBeforeSwipe()) return; // 上划前安全闸：有系统弹窗/内嵌网页(07)先关，绝不带浮层上划
         await swipe(
           { x: size.width * 0.5, y: size.height * 0.72 },
           { x: size.width * 0.5, y: size.height * 0.26 },
@@ -296,45 +354,10 @@ export function createCalibratedUI(log: Log): TikTokUI {
     },
 
     async recoverIfLost() {
-      // 先处理 iOS 系统权限弹窗（WDA alert 接口，按意图表点）。
-      const text = await alertText();
-      if (text !== null) {
-        const choice = chooseAlertButton(text, await alertButtons());
-        try {
-          if ("label" in choice) await alertClickButton(choice.label);
-          else await alertDismiss();
-        } catch {
-          await alertDismiss().catch(() => {});
-        }
-        log(`关闭系统弹窗（${"label" in choice ? choice.label : "dismiss"}）`);
-        await sleep(500);
+      // 系统弹窗 / WDA 读不到的权限弹窗(定位)OCR 兜底 / 应用内浮层(07 等)——与上划前安全闸同一套。
+      if (await guardBeforeSwipe()) {
         lostStreak = 0;
         return;
-      }
-      // 应用内浮层（登录/通知/头像/政策等）：OCR 检测 → 视觉 ✕ 或安全脱困计划关掉。
-      try {
-        const boxes = await recognizeBoxes();
-        const hit = detectAppPopup(boxes);
-        if (hit) {
-          log(`应用内浮层(${hit.id})：${hit.matched}`);
-          const cx = await detectCardClose(size.width, size.height);
-          if (cx) {
-            await tap(cx);
-            await sleep(700);
-          } else {
-            for (const s of planDismiss(hit, boxes, { width: size.width, height: size.height })) {
-              // s.kind==="back" 的左滑不再执行（避免把正常页误判后误跳）——浮层靠 ✕/文字/点外部/下滑关。
-              if (s.kind === "tap") await tap(s.point);
-              else if (s.kind === "swipe") await swipe(s.from, s.to, 0.3);
-              else continue;
-              await sleep(600);
-            }
-          }
-          lostStreak = 0;
-          return;
-        }
-      } catch {
-        /* OCR 不可用 → 跳过浮层处理 */
       }
       // 已知页面：评论区（关闭✕）或视频流（动作栏）。
       const known = async (): Promise<boolean> => {
@@ -404,6 +427,7 @@ export function createCalibratedUI(log: Log): TikTokUI {
         page = "feed";
       } else {
         await goTo("feed");
+        if (await guardBeforeSwipe()) return; // 上划前安全闸：防中途弹权限/浮层被带上划
         await swipe(
           { x: size.width * 0.5, y: size.height * 0.72 },
           { x: size.width * 0.5, y: size.height * 0.26 },
