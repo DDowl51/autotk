@@ -22,8 +22,8 @@ import type { TikTokUI, VideoInfo, CommentInfo } from "./tiktok-ui";
 import {
   decode,
   detectCardClose,
-  detectCommentCloseButton,
   detectCommentHearts,
+  detectCommentPanel,
   detectFollow,
   detectModalCard,
   detectSendButton,
@@ -313,10 +313,11 @@ export function createOnDeviceUI(deps: {
     await sleep(800);
   };
 
-  // 当前是否在"已知/正常"页面：视频流（有动作栏）或评论区（有关闭✕）。
+  // 当前是否在"已知/正常"页面：视频流（有动作栏）或评论/底部面板（含空评论弹键盘态）。
   const onKnownPage = (img: ReturnType<typeof decode>): boolean => {
-    // 评论区：有关闭 ✕。
-    if (detectCommentCloseButton(img, size.width, size.height)) return true;
+    // 评论/底部面板：找到白色面板顶横边即算——**不要求找到 ✕**（空评论区自动弹键盘时 ✕ 检测不到，
+    // 但面板顶横边仍在；旧版用「有 ✕」判会把这态误判为「不在正常界面」）。
+    if (detectCommentPanel(img, size.width, size.height)) return true;
     // 视频流：右栏 **≥2 个白色图标带** 即算「像视频流」——不要求满 4 个。
     // 旧版用 detectRail（严格 4 带）判定：点赞变红/已收藏/一点噪声少一带，正常视频页就被误判为异常
     // → 误告警率高。改用 railBandCenters（本就容忍带数≠4，与运行时坐标吸附同一套）+ 放宽到 ≥2。
@@ -333,26 +334,24 @@ export function createOnDeviceUI(deps: {
   // 这补上了旧版的致命缺口：旧版「detectCommentCloseButton 返回 null 就当已回 feed」——但地点页同样没有
   // 白 ✕，两者被混为一谈，于是误进地点页却把 page 置成 'feed'，状态机自信卡死。
   const closeCommentPanelSafely = async (): Promise<void> => {
-    // 关评论面板：**直接从面板顶部往下拖关闭**（TikTok 标准手势）。纯竖直下滑——不依赖检测 ✕ 的精确位置、
-    // 绝不会误触链接/进商店/地点页，比"点 ✕"稳。最多拖 3 次（有时一次拖不到底），每次拖完检测面板还在不在。
-    for (let i = 0; i < 3; i++) {
+    // 关评论面板：**循环从面板顶部往下拖，直到回到视频流（右栏≥2 白带）为止**。
+    // 用"回到视频流"作成功标志、而非"检测不到评论 ✕"——空评论区会自动聚焦输入框弹键盘，此时 ✕ 检测不到，
+    // 用"没✕"会误以为已离开面板而提前退出、其实还卡在评论区。每次下拖：先收键盘、再关面板（拖到底）。
+    // 纯竖直下滑，不会误触链接/进商店/地点页。
+    for (let i = 0; i < 4; i++) {
       const img = await shot();
-      if (!detectCommentCloseButton(img, size.width, size.height)) {
-        // 已经没有评论面板的 ✕ → 离开了评论面板。在已知页(视频流)即成功；否则只告警不动作（绝不左滑）。
-        if (onKnownPage(img)) return;
-        stuckAlert = "关评论后疑似误入页面，需人工处理";
-        log("⚠ 关评论后疑似不在已知页；不自动脱困，已通知管理中心");
-        onEvent?.("stuck_after_close_comments", {});
-        return;
-      }
-      // 从面板头部（tab 栏一带）往下快拖到底 → 关闭 sheet（键盘也随之收起）。
+      if (railBandCenters(img, size.width, size.height).length >= 2) return; // 已回视频流
       await swipe(
-        { x: size.width * 0.5, y: size.height * 0.4 },
+        { x: size.width * 0.5, y: size.height * 0.35 },
         { x: size.width * 0.5, y: size.height * 0.96 },
         0.25,
       );
       await sleep(500);
     }
+    // 拖了几次仍没回视频流 → 可能误入别的页；只告警、不左滑。
+    stuckAlert = "关评论后疑似未回到视频流，需人工处理";
+    log("⚠ 关评论多次下滑仍未回到视频流；不自动脱困，已通知管理中心");
+    onEvent?.("stuck_after_close_comments", {});
   };
 
   const rawOpenComments = async () => {

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { detectCommentCloseButton } from "../src/vision/detect";
+import { detectCommentCloseButton, detectCommentPanel } from "../src/vision/detect";
 import type { DecodedImage } from "../src/vision/png";
 
 // 构造 RGB 测试图（bpp=3，逻辑=像素，scale=1）。detectCommentCloseButton 的采样带 oy=90 偏移，
@@ -61,4 +61,15 @@ test("评论关闭×：无地点横幅时，取紧贴面板顶的×（不回归�
 test("评论关闭×：地点页/无白面板 → null（供关后校验判定「已离开面板」）", () => {
   const img = mkImg(W, H, [20, 20, 20]); // 全暗、无白面板
   assert.equal(detectCommentCloseButton(img, W, H), null);
+});
+
+test("detectCommentPanel：有白面板顶横边 → true（不要 ✕，供空评论弹键盘态识别在面板内）", () => {
+  const img = mkImg(W, H, [20, 20, 20]); // 上半暗（视频）
+  fillRect(img, 0, 200, W, H, 255, 255, 255); // 白评论面板从 y=200（无 ✕、无内容也算）
+  assert.equal(detectCommentPanel(img, W, H), true);
+});
+
+test("detectCommentPanel：全暗视频/无白面板 → false", () => {
+  const img = mkImg(W, H, [20, 20, 20]);
+  assert.equal(detectCommentPanel(img, W, H), false);
 });

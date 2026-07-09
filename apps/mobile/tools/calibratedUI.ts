@@ -106,12 +106,13 @@ export function createCalibratedUI(log: Log): TikTokUI {
     await sleep(900); // 等评论面板上滑动画完成
   };
   const rawCloseComments = async () => {
-    // 关评论面板：**直接从面板顶部往下拖关闭**（TikTok 标准手势）。纯竖直下滑，不依赖 ✕ 位置、
-    // 也不会误触链接/进商店/地点页。最多拖 3 次，每次拖完检测面板还在不在。
-    for (let i = 0; i < 3; i++) {
-      if (!(await detectCommentCloseButton(size.width, size.height))) return; // 已无面板 = 已关闭
+    // 关评论面板：循环从面板顶部往下拖，直到**回到视频流（右栏≥2 白带）**为止。用"回到视频流"作成功标志、
+    // 而非"检测不到评论 ✕"——空评论区自动弹键盘时 ✕ 检测不到，会误以为已离开面板而提前退出、其实还卡着。
+    // 每次下拖先收键盘、再关面板；纯竖直下滑不误触链接/进商店/地点页。
+    for (let i = 0; i < 4; i++) {
+      if ((await railBandCenters(size.width, size.height)).length >= 2) return; // 已回视频流
       await swipe(
-        { x: size.width * 0.5, y: size.height * 0.4 },
+        { x: size.width * 0.5, y: size.height * 0.35 },
         { x: size.width * 0.5, y: size.height * 0.96 },
         0.25,
       );

@@ -276,6 +276,26 @@ export function detectCommentCloseButton(
 }
 
 /**
+ * 是否「在评论/底部面板」——只看**白色面板顶横边**（四角白、横贯屏幕），**不要求找到 ✕**。
+ * 用途：空评论区会自动聚焦输入框弹键盘，此时 tab 栏 ✕ 常检测不到，但白面板顶横边仍在（键盘在底部、
+ * 不遮挡面板顶）。onKnownPage 用它，避免把「评论区+键盘态」误判为「不在正常界面」。
+ * ⚠️ 与 detectCommentCloseButton 同一套「白面板顶」判据；阈值起步，真机核实。
+ */
+export function detectCommentPanel(img: DecodedImage, W: number, H: number): boolean {
+  const scale = img.width / W;
+  const oy = 90;
+  const scanH = 400;
+  const white = (lx: number, ly: number) => {
+    const p = lp(img, scale, lx, oy + ly);
+    return p.r > 235 && p.g > 235 && p.b > 235;
+  };
+  for (let ly = 0; ly < scanH; ly++) {
+    if (white(12, ly) && white(15, ly) && white(W - 15, ly) && white(W - 12, ly)) return true;
+  }
+  return false;
+}
+
+/**
  * 检测应用内浮层卡片右上角的关闭 ✕（灰或黑的 ✕；见 isAchromaticDark）。
  * 扫右侧竖条、上半~中部，找一小簇无彩深色像素的质心。
  * ⚠️ 阈值为起步值，真机核实；找不到（太少/太多）返回 null，调用方回退安全脱困计划。
