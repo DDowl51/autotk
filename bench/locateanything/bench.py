@@ -9,6 +9,7 @@ LocateAnything-3B 在 RTX 5060 Ti 上、iPhone 8(750x1334)截图上的 grounding
 读数：看末尾打印的「中位延迟 / 吞吐 / 承载量表」；到 out/ 里看画了框的图核对定位准不准。
 """
 import argparse, glob, os, re, statistics, time
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")  # 减碎片，须在 import torch 前
 import torch
 from PIL import Image, ImageDraw
 from transformers import AutoModel, AutoTokenizer, AutoProcessor
@@ -47,7 +48,11 @@ def collect_images(spec):
     return sorted(set(out))
 
 
-def ground(model, tokenizer, processor, image, phrase, max_new_tokens):
+@torch.no_grad()  # 关键：不建反向图，否则每次前向都累积显存 → OOM
+def ground(model, tokenizer, processor, image, phrase, max_new_tokens, max_side=0):
+    if max_side and max(image.size) > max_side:  # 缩长边降显存/提速（归一化框坐标不受影响）
+        s = max_side / float(max(image.size))
+        image = image.resize((max(1, round(image.width * s)), max(1, round(image.height * s))))
     messages = [{"role": "user", "content": [
         {"type": "image", "image": image},
         {"type": "text", "text": f"Locate the region that matches: {phrase}."},
@@ -90,6 +95,7 @@ def main():
     ap.add_argument("--max-new-tokens", type=int, default=64, help="单框输出很短，压小提速；官方默认 2048 是浪费")
     ap.add_argument("--prompt", default="the like button (heart icon) on the right rail")
     ap.add_argument("--attn", default=None, help='attn 实现，如 sdpa/eager；原生 Windows 无 flash-attn 时可试 sdpa')
+    ap.add_argument("--max-side", type=int, default=0, help="把图长边缩到这个像素再喂（0=原图）；显存不够(OOM)时设 1000/768")
     ap.add_argument("--out", default="out")
     args = ap.parse_args()
 
@@ -111,8 +117,9 @@ def main():
     # 预热（首次含 CUDA/kernel 编译，不计入）。
     warm = Image.open(paths[0]).convert("RGB")
     print(f"样本分辨率示例：{warm.size}（应为 750x1334 或其转置）")
-    for _ in range(3):
-        ground(model, tokenizer, processor, warm, args.prompt, args.max_new_tokens)
+    for _ in range(2):
+        ground(model, tokenizer, processor, warm, args.prompt, args.max_new_tokens, args.max_side)
+    torch.cuda.empty_cache()
     torch.cuda.reset_peak_memory_stats()
 
     all_ms = []
@@ -122,7 +129,7 @@ def main():
             phrase = prompt_for(p, args.prompt)
             ms_list, last = [], ""
             for _ in range(args.runs):
-                last, ms = timed(lambda: ground(model, tokenizer, processor, img, phrase, args.max_new_tokens))
+                last, ms = timed(lambda: ground(model, tokenizer, processor, img, phrase, args.max_new_tokens, args.max_side))
                 ms_list.append(ms)
             med = statistics.median(ms_list)
             all_ms.append(med)
