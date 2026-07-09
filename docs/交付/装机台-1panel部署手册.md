@@ -60,7 +60,7 @@ cp config.example.json config.json
   "organization": "ddowl",
   "enrollIdentifier": "com.ddowl.signing-station.enroll",
   "port": 4100,
-  // collectorUrl / mobileconfigSigner 没有就【整行/整块删掉】（见下方“可选项”）
+  // 不要加 mobileconfigSigner（签名会弄断 UDID 回传，见 §11）；collectorUrl 有遥测才加
   "apps": {
     "wda":    { "bundleId": "com.ddowl.WebDriverAgentRunner.xctrunner", "title": "WebDriverAgent", "version": "5.15.5", "motherIpaPath": "apps/wda.ipa", "requiresXctest": true },
     "autotk": { "bundleId": "com.ddowl.autotk",                          "title": "autotk",         "version": "1.0.0",  "motherIpaPath": "apps/autotk.ipa" }
@@ -87,8 +87,8 @@ cp config.example.json config.json
 **必填**（缺了服务启动即报「配置缺少 xxx」）：`baseUrl`(https)、`organization`、`enrollIdentifier`、`apps`(每个 app 的 bundleId/title/version/motherIpaPath)、`accounts`(每账号 name + asc.issuerId/keyId/p8Path + signing.p12Path/p12Password + **每个 app 都要有 bundleIds**)。
 
 **可选项（没有就删掉整块，别留空占位）**：
-- `mobileconfigSigner`：给采集描述文件加签，装时显示「已验证」。**没有 S/MIME 签名证书就整块删掉** → 描述文件不签名、装时显示「未验证」但**照样能装**。留着块却没证书文件会在签名时 **500**。
-- `collectorUrl`：遥测上报地址。没有就删掉这行。
+- `mobileconfigSigner`：**别配它**。它本想给采集描述文件加签、显示「已验证」，但实测**签名会弄断手机回传 UDID 这一步**（登记失败、安装按钮不亮），而且**并不能消除**装描述文件时那个「无效」提示——得不偿失。装机台**一律用未签名**（显示「未验证」，正常，见 §8/§11）。`config.example.json` 已默认不含此块。
+- `collectorUrl`：遥测上报地址。没有就别加。
 
 ## 5. 放凭据
 
@@ -133,7 +133,9 @@ curl -sI https://install.ddowl.tech/ota/autotk | head -1   # 200；根路径 / �
 ```
 拿一台**真 iPhone**：
 1. Safari 开 `https://install.ddowl.tech/ota/autotk`（或 `/ota/wda`）。
-2. 装采集描述文件 → 设置里「已下载描述文件」→ 安装（未签名会提示「未验证」，继续）。
+2. 装采集描述文件 → 设置里「已下载描述文件」→ 安装：
+   - 提示「未验证」→ 点**仍然安装**（未签名，正常）；
+   - 装完弹「描述文件安装失败 / 无效的描述文件」→ **这是正常的，点掉即可，不是失败**。这类采集 UDID 的描述文件本就如此：手机先把 UDID POST 给服务器（这一步已采到），再因服务器不回下一个描述文件而弹「无效」。别被它吓到。
 3. **回到 Safari 原来那个页面（别刷新、别重开链接）** → 页面每 2 秒自动检测 → 登记完成后安装按钮**自动亮起** → 点了装上 App。
    ⚠️ 一刷新/重开就会新建会话，卡在「正在登记本机…」永远不亮——回到原页面等着就行。
 4. 设置 → 通用 → VPN与设备管理 → **信任开发者证书**；隐私与安全性 → **开发者模式** 开 → 重启。
@@ -152,32 +154,20 @@ curl -sI https://install.ddowl.tech/ota/autotk | head -1   # 200；根路径 / �
 - **preflight 报 ASC 失败**：issuerId/keyId/.p8 不匹配，或 API Key 权限不足（要 App Manager）、或 bundleId 没在开发者后台注册。
 - **preflight 报「开发证书 0 张」但你用的是 ad-hoc/Distribution 证书**：体检目前**只校验 Development 证书**，用 ad-hoc 会在这项显示 ✗——**可忽略**（真正签名时没有 Development 证书会自动退回用全部证书、能签成功）。省心就直接用 `IOS_APP_DEVELOPMENT` + Development 证书（默认、体检也过）。
 - **母包体检失败**：`wda.ipa` 没重命名 / 不含 XCTest；`autotk.ipa` 结构不对（重出）。
-- **描述文件显示「未验证」**：没配 `mobileconfigSigner`——可接受（能装），要「已验证」得配 S/MIME 证书。
+- **描述文件显示「未验证」**：正常——装机台**故意不签名**（签名会弄断 UDID 回传，见 §11）。不影响登记/装 App。
+- **装描述文件弹「无效的描述文件 / 安装失败」**：**正常、不是失败**（见 §8 第 2 步）——UDID 在弹错前已采到，回落地页按钮会亮。若按钮就是不亮，看 `data/work/ota-devices.json` 有没有新 UDID、或 1Panel 站点访问日志有没有 `POST /ota/enroll-callback`。
 - **装 App 报「无法安装/证书不受信」**：itms 链接必须 HTTPS 且证书受信（Let's Encrypt 已满足）；或设备 UDID 没成功注册进 profile（看 preflight/日志）。
 - **别对公网开 4100**：compose 已绑 `127.0.0.1`；由 1Panel 反代。
 
 ---
 
-## 11. 附：让采集描述文件显示「已验证」(mobileconfigSigner)
+## 11. 附：为什么【不】给采集描述文件签名（已验证）
 
-装采集描述文件时默认显示「未验证」（能装、只是多一次确认）。想显示绿色「**已验证**」，用一张 **iOS 信任的证书** 给描述文件签名——最省钱的就是**你 `install.ddowl.tech` 那张 Let's Encrypt 证书**（iOS 信任 LE 根）。签名用的是 `openssl smime`（CMS/PKCS#7），要三个 PEM 文件：
+装采集描述文件时显示「未验证」。理论上给它签名（config 的 `mobileconfigSigner`，用一张 iOS 信任的证书）能显示绿色「已验证」。**但实测：不要这么做。**
 
-```bash
-cd /opt/autotk/services/signing-station/data/secrets
-# 从 1Panel（网站→install.ddowl.tech→HTTPS，或「证书」菜单下载）拿到 fullchain.pem + privkey.pem 放这里，然后：
-cp privkey.pem mc-key.pem                    # 私钥（必须【无密码】——脚本没传 -passin，加密私钥会卡死）
-awk '/BEGIN CERTIFICATE/{n++} { if(n==1) print > "mc-cert.pem"; else print > "mc-chain.pem" }' fullchain.pem
-# → mc-cert.pem = 叶子证书；mc-chain.pem = 中间链
-```
-config.json 加回这个块（之前没证书时删掉的），再 `docker compose restart signing-station`：
-```json
-"mobileconfigSigner": {
-  "signerCertPath": "data/secrets/mc-cert.pem",
-  "keyPath": "data/secrets/mc-key.pem",
-  "certChainPath": "data/secrets/mc-chain.pem"
-},
-```
+- **签名会弄断「手机回传 UDID」这一步**——加签名后手机不再把 UDID POST 回来，登记失败、落地页安装按钮不亮。未签名反而一切正常（UDID 采到、按钮亮、能装 App）。
+- **签名并不能消除那个「无效的描述文件」提示**——签了照样弹（那是这类采集 UDID 描述文件的固有尾巴，见 §8），所以毫无收益。
 
-> ⚠️ **这跟给 IPA 重签的 Apple `.p12` 是两码事**：那个签 App，这个签描述文件。
-> ⚠️ **LE 证书 ~90 天自动续期**，续了之后 `data/secrets/` 这三份会变旧、过期后又变「未验证」。要么每次续证后重跑上面两步 + 重启，要么写脚本挂到 1Panel 续期钩子自动同步。
-> 嫌麻烦就**不配**——「未验证」不影响注册 UDID + 重签 + 装 App 的主流程。
+结论：签名只换来一个「已验证」徽章、却弄坏核心登记流程，**得不偿失**。装机台**一律用未签名**，把 §8 第 2 步的「未验证 + 无效都正常」讲给买家即可——市面所有"扫码超级签"都是这个体验。
+
+> 你的**域名证书别浪费**——它的正经用途是 **1Panel 站点的 HTTPS**（itms 装 App 必须受信任 HTTPS，那个必须留着）；只是不拿它签描述文件而已。

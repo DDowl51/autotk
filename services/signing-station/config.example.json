@@ -4,12 +4,6 @@
   "enrollIdentifier": "com.ddowl.signing-station.enroll",
   "workDir": "./data/work",
   "port": 4100,
-  "collectorUrl": "https://telemetry.example.com",
-  "mobileconfigSigner": {
-    "signerCertPath": "data/secrets/mc-cert.pem",
-    "keyPath": "data/secrets/mc-key.pem",
-    "certChainPath": "data/secrets/mc-chain.pem"
-  },
   "apps": {
     "wda": {
       "bundleId": "com.ddowl.WebDriverAgentRunner.xctrunner",
