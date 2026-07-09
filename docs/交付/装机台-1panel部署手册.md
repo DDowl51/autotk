@@ -108,7 +108,7 @@ cd /opt/autotk/services/signing-station
 
 # 先体检：逐账号验 ASC 连通/证书 + 母包结构（含 WDA 的 XCTest）。
 # ⚠️ VPS 只有 Docker、没 Node，必须在容器里跑：
-# ⚠️ 首次会先构建镜像（Dockerfile 从源码 cmake 编译 zsign，约数分钟）——不是卡死，耐心等。
+# ⚠️ 首次会先构建镜像（Dockerfile 从源码用 make 编译 zsign，约数分钟）——不是卡死，耐心等。
 docker compose run --rm signing-station npx tsx src/preflight.ts
 
 # 体检过了再起（⚠️ 只起 signing-station，别起自带 caddy——会和 1Panel 抢 80/443）：
