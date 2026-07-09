@@ -17,7 +17,7 @@ import {
   type Point,
 } from "../wda";
 import { chooseAlertButton } from "./alertIntent";
-import { parseComments, type ParsedComment } from "./commentParse";
+import { parseComments, isAdComment, type ParsedComment } from "./commentParse";
 import type { TikTokUI, VideoInfo, CommentInfo } from "./tiktok-ui";
 import {
   decode,
@@ -217,16 +217,20 @@ export function createOnDeviceUI(deps: {
       log(`应用内浮层(${hit.id})：${hit.matched}`);
       onEvent?.("popup_detected", { id: hit.id });
       // 优先视觉定位卡片右上 ✕（比固定坐标可靠）；关掉了就跳过通用计划，避免已关闭后误点信息流。
+      // 但签名若已给精确 closeAt（✕ 在卡片下方/左上等非标准位），就别再猜右上角——右上误点可能触发
+      // shop「Pick now」/商品或误触，直接走 planDismiss 的 closeAt。
       let closedByIcon = false;
-      try {
-        const cx = detectCardClose(decode(await screenshot()), size.width, size.height);
-        if (cx) {
-          await tap(cx);
-          await sleep(700);
-          closedByIcon = !detectAppPopup(await ocr(await screenshot()));
+      if (!hit.closeAt) {
+        try {
+          const cx = detectCardClose(decode(await screenshot()), size.width, size.height);
+          if (cx) {
+            await tap(cx);
+            await sleep(700);
+            closedByIcon = !detectAppPopup(await ocr(await screenshot()));
+          }
+        } catch {
+          /* 视觉定位失败 → 走通用脱困计划 */
         }
-      } catch {
-        /* 视觉定位失败 → 走通用脱困计划 */
       }
       if (!closedByIcon) {
         for (const s of planDismiss(hit, boxes, size)) {
@@ -507,18 +511,29 @@ export function createOnDeviceUI(deps: {
       await ensure();
       await goTo("comments");
       const png = await screenshot();
-      heartCache = detectCommentHearts(decode(png), size.width, size.height); // 点赞位置（已验证）
-      commentCache = parseComments(await ocr(png)); // 评论文字+作者（#3，阈值待真机调）
+      const hearts = detectCommentHearts(decode(png), size.width, size.height); // 点赞位置（已验证）
+      const parsed = parseComments(await ocr(png)); // 评论文字+作者（#3，阈值待真机调）
+      // 近似对齐：第 i 个爱心 ↔ 第 i 条解析评论（都按从上到下）。广告条（置顶蓝字「Learn more」等，
+      // 见 isAdComment）绝不能互动——把它对应的爱心与评论「成对」丢掉，保持后续索引对齐。
+      const n = Math.max(hearts.length, parsed.length);
+      const rows = Array.from({ length: n }, (_, i) => ({
+        heart: hearts[i],
+        pc: parsed[i],
+        isAd: parsed[i] ? isAdComment(parsed[i], i) : false, // i = 从上到下原始位置，判置顶
+      }));
+      const kept = rows.filter((r) => !r.isAd);
+      const droppedAds = n - kept.length;
+      heartCache = kept.map((r) => r.heart);
+      commentCache = kept.map((r) => r.pc).filter(Boolean) as ParsedComment[];
       log(
-        `评论解析：${commentCache.length} 条` +
+        `评论解析：${kept.length} 条` +
+          (droppedAds > 0 ? `（跳过 ${droppedAds} 条广告）` : "") +
           (commentCache[0] ? `（例：${commentCache[0].author} - ${commentCache[0].text.slice(0, 24)}）` : ""),
       );
-      // 近似对齐：第 i 个爱心 ↔ 第 i 条解析评论（都按从上到下）。
-      const n = Math.max(heartCache.length, commentCache.length);
-      return Array.from({ length: n }, (_, i) => ({
+      return kept.map((r, i) => ({
         index: i,
-        text: commentCache[i]?.text ?? "",
-        author: commentCache[i]?.author,
+        text: r.pc?.text ?? "",
+        author: r.pc?.author,
       }));
     },
 

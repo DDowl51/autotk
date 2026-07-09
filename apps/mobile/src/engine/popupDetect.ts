@@ -13,12 +13,16 @@ export interface PopupSignature {
   strong?: boolean;
   /** 关闭计划（按序尝试）。 */
   dismiss: DismissKind[];
+  /** ✕ 在非标准位置（如卡片下方居中、sheet 左上）时，指定归一化关闭坐标 [rx, ry]；planDismiss 优先点它。 */
+  closeAt?: readonly [number, number];
 }
 
 export interface PopupHit {
   id: string;
   dismiss: DismissKind[];
   matched: string;
+  /** 见 PopupSignature.closeAt。 */
+  closeAt?: readonly [number, number];
 }
 
 /** 关闭控件文字（整串精确匹配，避免把正文里的词当按钮）。复用 #4 否定词思路。 */
@@ -137,6 +141,36 @@ export const SIGNATURES: PopupSignature[] = [
     dismiss: ["closeText", "closeIcon", "tapOutside"],
   },
   { id: "sheet", markers: [/send to/i, /share to/i, /分享到|发送给/], dismiss: ["swipeDown", "tapOutside"] },
+  // TikTok Shop 促销弹窗（Congrats! choose up to N products / Pick now），✕ 在卡片下方居中、非右上角。
+  {
+    id: "shop-promo",
+    strong: true,
+    markers: [
+      /choose up to this many products/i,
+      /free shipping on all your picks/i,
+      /pick now/i,
+      /恭喜.*可(选|挑|领)/,
+      /立即(挑选|领取|领)/,
+      /全部.*免(邮|运)/,
+    ],
+    closeAt: [0.5, 0.785], // ✕ 在卡片下方居中
+    dismiss: ["back"],
+  },
+  // 误点广告后弹出的内嵌网页 sheet（Scroll up for fullscreen / Sign in to continue / 某域名）。
+  // ⚠️ 绝不能上滑（会进外部页）——只点左上 ✕。
+  {
+    id: "inapp-browser",
+    strong: true,
+    markers: [
+      /scroll up for fullscreen/i,
+      /上滑查看全屏/,
+      /sign in to continue/i,
+      /sign in is required/i,
+      /登录后.*继续/,
+    ],
+    closeAt: [0.07, 0.755], // 左上 ✕
+    dismiss: [], // 只点左上 ✕，不加任何 swipe/back 兜底（防上滑进外部页）
+  },
 ];
 
 /** 是否存在可点的关闭控件。 */
@@ -152,7 +186,7 @@ export function detectAppPopup(boxes: OcrBox[], signatures: PopupSignature[] = S
       if (inActionRail(b)) continue;
       const t = b.text.trim();
       if (sig.markers.some((re) => re.test(t)) && (sig.strong || dismissPresent)) {
-        return { id: sig.id, dismiss: sig.dismiss, matched: t };
+        return { id: sig.id, dismiss: sig.dismiss, matched: t, closeAt: sig.closeAt };
       }
     }
   }

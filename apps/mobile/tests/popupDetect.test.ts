@@ -132,6 +132,40 @@ test("浮层：查看附近的相关内容和场所（location 版式二，中�
   if (steps[0].kind === "tap") assert.equal(steps[0].point.x, (0.29 + 0.05) * 1000); // 「取消」中心
 });
 
+// —— IMG_0002 Shop 促销：✕ 在卡片下方居中（非右上）；靠签名 closeAt 点 (0.5, 0.785) ——
+test("浮层：Shop 促销（choose up to N products / Pick now），closeAt 点卡片下方 ✕", () => {
+  const en = detectAppPopup([box("You can choose up to this many products", 0.3, 0.5)]);
+  assert.equal(en?.id, "shop-promo");
+  assert.deepEqual(en?.closeAt, [0.5, 0.785]);
+  assert.equal(detectAppPopup([box("Free shipping on all your picks", 0.3, 0.6)])?.id, "shop-promo");
+  assert.equal(detectAppPopup([box("恭喜！你最多可挑选这么多商品", 0.3, 0.5)])?.id, "shop-promo");
+  // planDismiss 首步就是点 closeAt 像素中心（0.5×1000, 0.785×2000）
+  const steps = planDismiss(en!, [], size);
+  assert.equal(steps[0].kind, "tap");
+  if (steps[0].kind === "tap") {
+    assert.equal(steps[0].point.x, 0.5 * 1000);
+    assert.equal(steps[0].point.y, 0.785 * 2000);
+  }
+});
+
+// —— IMG_0007 误点广告的内嵌网页：✕ 在左上；绝不能上滑（会进外部页），dismiss 只有 closeAt ——
+test("浮层：内嵌网页 sheet（Scroll up for fullscreen / Sign in to continue），只点左上 ✕、不上滑", () => {
+  const hit = detectAppPopup([box("Scroll up for fullscreen view", 0.3, 0.62)]);
+  assert.equal(hit?.id, "inapp-browser");
+  assert.deepEqual(hit?.closeAt, [0.07, 0.755]);
+  assert.equal(detectAppPopup([box("Sign in to continue", 0.3, 0.5)])?.id, "inapp-browser");
+  assert.equal(detectAppPopup([box("上滑查看全屏", 0.3, 0.62)])?.id, "inapp-browser");
+  // dismiss 计划里除了 closeAt 的 tap，没有任何 swipe（防上滑进外部页）
+  const steps = planDismiss(hit!, [], size);
+  assert.equal(steps.length, 1);
+  assert.equal(steps[0].kind, "tap");
+  if (steps[0].kind === "tap") {
+    assert.equal(steps[0].point.x, 0.07 * 1000);
+    assert.equal(steps[0].point.y, 0.755 * 2000);
+  }
+  assert.ok(!steps.some((s) => s.kind === "swipe"));
+});
+
 test("「暂时不要」是安全关闭词，closeText 定位到它而非红「打开设置」", () => {
   assert.equal(hasDismissControl([box("暂时不要")]), true);
   assert.equal(hasDismissControl([box("打开设置")]), false); // 危险按钮不算关闭控件

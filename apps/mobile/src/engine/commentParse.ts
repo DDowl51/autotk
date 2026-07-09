@@ -49,6 +49,26 @@ export function parseComments(boxes: OcrBox[]): ParsedComment[] {
   return comments;
 }
 
+// 广告/推广评论识别（TikTok 会在评论区置顶一条广告，带蓝色 CTA「Learn more」，绝不能点/回复它）。
+/** 明确的推广标签词（作者或正文里出现即判广告，位置不限）。 */
+const AD_LABEL = /(sponsored|promoted|paid partnership|赞助|推广|广告合作|品牌合作)/i;
+/** 广告落地页 CTA（蓝字按钮）。这类词日常评论也可能出现，故只在置顶 1~2 条上才当广告信号，避免误伤。 */
+const AD_CTA =
+  /(learn more|shop now|order now|sign up now|get offer|了解更多|立即购买|马上抢购?|立即抢购|查看详情|前往购买)/i;
+
+/**
+ * 判断一条评论是否是推广/广告条（纯逻辑）。
+ * - 明确标签词（sponsored/赞助/推广…）→ 任意位置都算广告。
+ * - CTA 词（learn more/了解更多…）→ 仅置顶 1~2 条算（TikTok 广告评论恒置顶），降低把正文里
+ *   顺口说「learn more」的普通评论误判成广告的概率。用户强调「不要误识别」。
+ */
+export function isAdComment(c: ParsedComment, index: number): boolean {
+  const hay = `${c.author} ${c.text}`;
+  if (AD_LABEL.test(hay)) return true;
+  if (index <= 1 && AD_CTA.test(hay)) return true;
+  return false;
+}
+
 /** 评论文字命中任一匹配词 → 返回命中的词；否则 null。空词表 → null（不筛选）。 */
 export function matchComment(text: string, keywords: string[]): string | null {
   if (keywords.length === 0) return null;

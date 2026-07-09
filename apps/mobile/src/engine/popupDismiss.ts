@@ -26,6 +26,10 @@ export function findDismissText(boxes: OcrBox[], size: Size): Pt | null {
 
 export function planDismiss(hit: PopupHit, boxes: OcrBox[], size: Size): DismissStep[] {
   const steps: DismissStep[] = [];
+  // 签名指定了非标准 ✕ 坐标（卡片下方居中 / sheet 左上）→ 优先点它。
+  if (hit.closeAt) {
+    steps.push({ kind: "tap", point: { x: size.width * hit.closeAt[0], y: size.height * hit.closeAt[1] } });
+  }
   for (const kind of hit.dismiss) {
     if (kind === "closeText") {
       const p = findDismissText(boxes, size);

@@ -52,6 +52,29 @@ test("Facebook 登录(中文) → 点「取消」拒绝", () => {
   assert.ok("label" in c && c.label === "取消");
 });
 
+// —— 定位权限（IMG_0008）：三按钮布局，必须点最拒绝的「Don't Allow / 不允许」，绝不点两个 Allow ——
+test("定位权限(英文，弯引号 ’) → 点 Don't Allow，不点任一 Allow", () => {
+  const c = chooseAlertButton(
+    'Allow "TikTok" to use your location?',
+    ["Allow Once", "Allow While Using App", "Don’t Allow"], // U+2019 弯引号（iOS 实际用）
+  );
+  assert.ok("label" in c && /allow/i.test(c.label) === true && c.label === "Don’t Allow");
+});
+
+test("定位权限(英文，直引号 ') → 点 Don't Allow", () => {
+  const c = chooseAlertButton("Allow TikTok to use your location while using the app", [
+    "Allow Once",
+    "Allow While Using App",
+    "Don't Allow",
+  ]);
+  assert.ok("label" in c && c.label === "Don't Allow");
+});
+
+test("定位权限(中文) → 点「不允许」，不点「使用App时允许/允许一次」", () => {
+  const c = chooseAlertButton('允许"TikTok"使用你的位置吗？', ["使用App时允许", "允许一次", "不允许"]);
+  assert.ok("label" in c && c.label === "不允许");
+});
+
 test("无匹配按钮 → dismiss 兜底", () => {
   const c = chooseAlertButton("Some random dialog", ["Foo", "Bar"]);
   assert.ok("dismiss" in c);
