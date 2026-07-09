@@ -1,5 +1,8 @@
 # license 激活服务部署手册（卖家用）
 
+> **用 1Panel 面板的服务器？直接看《license-1panel部署手册.md》**（那份讲怎么用 1Panel 的
+> OpenResty 做 SSL + 同源反代）。这份是通用/裸 VPS + Caddy 版。
+>
 > 目标：把 `services/license`（激活授权后端）+ `apps/web`（管理后台）部署到一台**国内可访问**的
 > Linux VPS 上，建好 `autotk` 产品、发出激活码，并把三个值回填手机端后打正式包。
 > 全程约 30–60 分钟（不含域名备案）。

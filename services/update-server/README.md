@@ -61,6 +61,8 @@ mv code-signing/_gen/certificate.pem code-signing/certificate.pem
 
 ## 部署（VPS）—— 推荐用 docker compose
 
+> 用 **1Panel/宝塔**等已有反代面板的：看《docs/交付/license-1panel部署手册.md》——由面板的 OpenResty 做 TLS+反代，**不用**本节的 Caddy（`caddy` 服务已用 profile 守护，默认不启动）。
+
 compose（本目录 `docker-compose.yml`）已配好挂载、env 与 Caddy，是主推方式；env 走容器内 `/data` 路径，别改。
 
 ```bash
@@ -69,7 +71,7 @@ mkdir -p data/updates data/secrets                     # 更新包放 data/updat
 cp <你的>/private-key.pem data/secrets/private-key.pem  # 代码签名私钥（勿提交）
 export BASE_URL=https://updates.你的域名.com            # 必须与 app.json 的 updates.url 同域
 # 改 Caddyfile 里的 updates.你的域名.com 为真实域名（DNS 指向本机、放行 80/443）
-docker compose up -d --build
+docker compose --profile caddy up -d --build           # 独立部署带 --profile caddy 才会起 Caddy
 curl -s http://127.0.0.1:4200/healthz                  # {"ok":true} 即起来了
 ```
 
