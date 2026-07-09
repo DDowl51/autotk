@@ -34,9 +34,10 @@ nvidia-smi          # 能看到 RTX 5060 Ti 就说明 GPU 直通 OK
 sudo apt update && sudo apt install -y python3-venv python3-pip
 python3 -m venv la3b && source la3b/bin/activate
 pip install --upgrade pip
-# PyTorch：必须 CUDA 12.8 轮子才认 Blackwell(sm_120)
-pip install torch --index-url https://download.pytorch.org/whl/cu128
-pip install "transformers==4.57.1" accelerate "opencv-python-headless==4.11.0.86" "Pillow==11.1.0" huggingface_hub
+# PyTorch + torchvision：必须 CUDA 12.8 轮子才认 Blackwell(sm_120)，且 torchvision 要配套同源
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+# 模型远程代码还要 decord、lmdb（视频/存储库，图像用不到但 import 检查会拦）
+pip install "transformers==4.57.1" accelerate "opencv-python-headless==4.11.0.86" "Pillow==11.1.0" huggingface_hub decord lmdb
 ```
 
 验证 torch 认得这张卡（**跑真算子**，不能只看 capability——cu124 也会打印 (12,0) 但一跑就 `no kernel image`）：
@@ -68,10 +69,11 @@ py -3 -m venv la3b
 .\la3b\Scripts\Activate.ps1        # 若被策略拦：Set-ExecutionPolicy -Scope Process RemoteSigned
 python -m pip install --upgrade pip
 
-# PyTorch：必须 CUDA 12.8 轮子才认 Blackwell(sm_120)。若之前装过 cu124/cpu 版，先卸干净：
+# PyTorch + torchvision：必须 CUDA 12.8 轮子才认 Blackwell(sm_120)。若之前装过 cu124/cpu 版，先卸干净：
 pip uninstall -y torch torchvision torchaudio
-pip install torch --index-url https://download.pytorch.org/whl/cu128
-pip install "transformers==4.57.1" accelerate "opencv-python-headless==4.11.0.86" "Pillow==11.1.0" huggingface_hub
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+# 模型远程代码还要 decord、lmdb（视频/存储库，图像用不到但 import 检查会拦）
+pip install "transformers==4.57.1" accelerate "opencv-python-headless==4.11.0.86" "Pillow==11.1.0" huggingface_hub decord lmdb
 
 # 验证认卡（跑真算子，不能只看 capability——cu124 也会打印 (12,0) 但一跑就崩）
 python -c "import torch; print(torch.__version__); assert torch.cuda.is_available(); print(torch.zeros(3).cuda()*2)"
@@ -170,6 +172,8 @@ batch1 是保守下限。真实服务这样提吞吐（预期再翻数倍）：
 
 - `no kernel image is available` / 跑不动：torch 轮子不对，重装 `--index-url .../cu128`（步骤 A2/B）。
 - WSL 里 `nvidia-smi` 找不到卡：Windows 侧装/升级 NVIDIA 驱动，**WSL 内别装驱动**；`wsl --update` 后重开。
+- `requires ... decord, lmdb, torchvision`：模型远程代码的依赖，装上即可（见步骤 A2/B 的 pip 行）。torchvision 务必走 cu128 源配套。
+- Windows 上 `pip install decord` 装不上：改装 fork `pip install eva-decord`（同名可导入，Windows 轮子更全）。
 - 原生 Windows 缺 `flash_attn` / 加载模型报 Linux 相关错：加 `--attn sdpa` 试；仍不行就**转路径 A（WSL）**，别在 Windows 硬编译 flash-attn。
 - `py_apply_chat_template` / `process_vision_info` 报不存在：模型远程代码版本变了，照 https://huggingface.co/nvidia/LocateAnything-3B 最新示例改 `ground()` 里那几行。
 - 中文路径在 WSL 下 `cd` 麻烦：用 `SRC=/mnt/i/...` 变量（步骤 3）或把 `shots` 建在纯英文目录。
