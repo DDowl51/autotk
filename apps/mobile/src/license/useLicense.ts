@@ -39,10 +39,14 @@ export function useLicense() {
       try {
         const client = await createLicenseClient();
         clientRef.current = client;
-        const active = await client.isActivated();
+        // 只要本机**激活过**（Keychain 里有 license 记录）就放行——**不因 token 本地过期而掉激活**。
+        // 过期交给后台心跳续期；真正踢人只在心跳明确返回「已解绑/未激活」时（shouldDeactivate → clear → inactive）。
+        // 于是 OTA 热更 / 重启 / 长期离线 / 任意操作都不会要求重新激活（只需首次激活一次），
+        // 而「踢下线」仍在设备联网时经心跳生效。契合既定的「离线宽限、断网不误踢」设计。
+        const active = (await client.getStored()) !== null;
         if (!alive) return;
         setState(active ? "active" : "inactive");
-        if (active) void heartbeat(); // 进入即续一次（顺便收封禁）
+        if (active) void heartbeat(); // 进入即续一次（顺便续期 / 收封禁）
       } catch {
         if (alive) setState("inactive");
       }
