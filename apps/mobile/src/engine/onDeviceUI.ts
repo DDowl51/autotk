@@ -228,9 +228,10 @@ export function createOnDeviceUI(deps: {
       }
       if (!closedByIcon) {
         for (const s of planDismiss(hit, boxes, size)) {
+          // s.kind==="back" 的左滑不再执行（避免把正常页误判后误跳）——浮层靠点 ✕/文字按钮/点外部/下滑关。
           if (s.kind === "tap") await tap(s.point);
           else if (s.kind === "swipe") await swipe(s.from, s.to, 0.3);
-          else await doSwipeBack();
+          else continue;
           await sleep(600);
         }
       }
@@ -321,17 +322,6 @@ export function createOnDeviceUI(deps: {
     }
   };
 
-  // 左滑脱困后「等页面稳定再判定是否回到已知页」：doSwipeBack 已 sleep 800ms，但刚滑回正常页时页面常还在
-  // 转场动画/动作栏渲染中，detectRail 要 4 个白带才认，**单次检测易瞬时漏判 → 白滑下一次、滑过头误触**。
-  // 故滑后再轮询几拍（每拍重新截图检测），一旦 onKnownPage 就 true，确保「回到就立刻停、绝不多滑」。
-  const settledOnKnownPage = async (): Promise<boolean> => {
-    for (let k = 0; k < 3; k++) {
-      if (onKnownPage(await shot())) return true;
-      await sleep(350);
-    }
-    return false;
-  };
-
   // 关评论面板并**确认真回到已知页**：每轮找到关闭 ✕ 就点；找不到 ✕ 时——在已知页(视频流/评论)才算
   // 关成功返回，否则说明关的过程中被误点进了 pushed 页（最典型：评论顶端地点横幅 → 地点页），立即左滑
   // 返回脱困。最多 3 轮，仍未回则从面板中部下滑 dismiss 兜底 + 最后再校验一次。
@@ -343,19 +333,20 @@ export function createOnDeviceUI(deps: {
       const x = detectCommentCloseButton(img, size.width, size.height);
       if (!x) {
         if (onKnownPage(img)) return; // 真回到视频流/已知页
-        await doSwipeBack(); // 误进地点页等 pushed 页 → 退
-        continue;
+        // 不在已知页（可能误进地点页）：**不再自动左滑**（易把正常页误判→误跳），只记日志 + 通知管理中心。
+        log("⚠ 关评论后疑似不在已知页（或误进地点页）；不自动左滑，已通知管理中心");
+        onEvent?.("stuck_after_close_comments", {});
+        return;
       }
       await tap(x);
       await sleep(450);
     }
+    // 仍未关掉：下滑 dismiss 兜底（下滑只关面板、不会误跳页面），不再左滑。
     await swipe(
       { x: size.width * 0.5, y: size.height * 0.5 },
       { x: size.width * 0.5, y: size.height * 0.95 },
       0.3,
     );
-    await sleep(400);
-    if (!onKnownPage(await shot())) await doSwipeBack();
   };
 
   const rawOpenComments = async () => {
@@ -675,15 +666,12 @@ export function createOnDeviceUI(deps: {
         log("可能离开正常页面（观察中，暂不返回）");
         return;
       }
-      // 连续 ≥2 次都不在正常页面 → 确实卡住 → 左滑返回脱困：**每滑一次就（轮询到稳定）检测一次**，
-      // 一回到已知页立刻停，最多 3 下（避免回到正常页后还白滑、滑过头误触别的页面）。
-      for (let i = 0; i < 3; i++) {
-        log(`⚠ 连续多次未在正常页面，左滑返回脱困（第 ${i + 1}/3 次）`);
-        await doSwipeBack();
-        if (await settledOnKnownPage()) {
-          lostStreak = 0;
-          return;
-        }
+      // 连续 ≥2 次仍不在正常页面 → **不再自动左滑脱困**：onKnownPage 有时把正常页误判为异常，盲目左滑
+      // 反而会跳到别的页面。改为**只记日志 + 通知管理中心**，交人工/上层处理；不做任何触控、不改 page。
+      // 只在「刚判定卡住」（lostStreak==2）时报一次，避免每批刷屏（lostStreak 会持续增长）。
+      if (lostStreak === 2) {
+        log("⚠ 疑似卡在未知页面（连续多次未在正常页面）；不自动左滑（避免误判正常页而误跳），已通知管理中心待处理");
+        onEvent?.("stuck_unknown_page", {});
       }
     },
 
