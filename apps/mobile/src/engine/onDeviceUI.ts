@@ -26,7 +26,6 @@ import {
   detectCommentHearts,
   detectFollow,
   detectModalCard,
-  detectRail,
   detectSendButton,
   railBandCenters,
 } from "../vision/detect";
@@ -316,10 +315,13 @@ export function createOnDeviceUI(deps: {
 
   // 当前是否在"已知/正常"页面：视频流（有动作栏）或评论区（有关闭✕）。
   const onKnownPage = (img: ReturnType<typeof decode>): boolean => {
+    // 评论区：有关闭 ✕。
     if (detectCommentCloseButton(img, size.width, size.height)) return true;
+    // 视频流：右栏 **≥2 个白色图标带** 即算「像视频流」——不要求满 4 个。
+    // 旧版用 detectRail（严格 4 带）判定：点赞变红/已收藏/一点噪声少一带，正常视频页就被误判为异常
+    // → 误告警率高。改用 railBandCenters（本就容忍带数≠4，与运行时坐标吸附同一套）+ 放宽到 ≥2。
     try {
-      detectRail(img, size.width, size.height); // 仅作布尔判断（有没有动作栏）
-      return true;
+      return railBandCenters(img, size.width, size.height).length >= 2;
     } catch {
       return false;
     }

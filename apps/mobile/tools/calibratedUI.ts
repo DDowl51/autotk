@@ -18,7 +18,6 @@ import type { TikTokUI, VideoInfo, CommentInfo } from "../src/engine/tiktok-ui";
 import { chooseAlertButton } from "../src/engine/alertIntent";
 import { deviceKey, loadProfile, type DeviceProfile } from "./deviceProfile";
 import {
-  detectRail,
   detectFollow,
   detectCommentCloseButton,
   detectCommentHearts,
@@ -336,9 +335,10 @@ export function createCalibratedUI(log: Log): TikTokUI {
       // 已知页面：评论区（关闭✕）或视频流（动作栏）。
       const known = async (): Promise<boolean> => {
         if (await detectCommentCloseButton(size.width, size.height)) return true;
+        // 视频流：右栏 ≥2 个白色图标带即算「像视频流」——不要求满 4 个（点赞变红/已收藏会少带，
+        // 用严格 4 带的 detectRail 会把正常视频页误判为异常）。与坐标吸附同一套 railBandCenters。
         try {
-          await detectRail(size.width, size.height); // 仅作布尔判断
-          return true;
+          return (await railBandCenters(size.width, size.height)).length >= 2;
         } catch {
           return false;
         }
