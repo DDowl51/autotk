@@ -40,7 +40,9 @@ export type EnrollOutcome =
       /** 本次是否注册了新设备（false=该 UDID 早已在账号里）。 */
       registeredNewDevice: boolean;
     }
-  | { state: "pool-full" };
+  | { state: "pool-full" }
+  /** 设备已注册但 Apple 仍在 PROCESSING（新账号常见）——还进不了描述文件，让用户稍后重扫。 */
+  | { state: "processing"; account: string };
 
 export class SigningOrchestrator {
   constructor(
@@ -70,8 +72,15 @@ export class SigningOrchestrator {
     const registeredNewDevice = !pick.alreadyRegistered;
 
     if (registeredNewDevice) {
-      // 注册到 Apple → 落盘账号设备集 → 作废该账号所有签名缓存（设备集变了）。
+      // 注册到 Apple。⚠️ 新账号注册的设备会先进 PROCESSING（Apple 处理中，可能数小时~数天），
+      // 期间它【不会】被收进描述文件 → 发包出去装了必然「integrity could not be verified」。
       await asc.registerDevice(account, udid, deviceName);
+      if (!(await asc.deviceEnabled(account, udid))) {
+        // 返回 processing 让落地页提示「稍后重扫」，且【不落盘】——保持"新设备"，下次重扫会
+        // 重新触发注册/作废/重生，等它 ENABLED 那一次就能带上它并出包。
+        return { state: "processing", account };
+      }
+      // 已 ENABLED → 落盘设备集 + 作废该账号所有签名缓存（设备集变了，需按新集合重签）。
       const acct = accounts.find((a) => a.name === account) as PoolAccount;
       await state.saveAccount(withDeviceRegistered(acct, udid));
       await state.invalidateAccountIpas(account);

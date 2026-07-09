@@ -16,10 +16,16 @@ import { normalizeUdid, type PoolAccount } from "../src/core/account-pool";
 class FakeAsc implements AscPort {
   registerCalls: Array<{ account: string; udid: string }> = [];
   regenCalls: Array<{ account: string; app: string }> = [];
-  // 每账号设备数 → 让 profile.version 反映"设备集变化"
-  constructor(private readonly deviceCount: (account: string) => number) {}
+  // 每账号设备数 → 让 profile.version 反映"设备集变化"；enabled 控制设备是否已 ENABLED
+  constructor(
+    private readonly deviceCount: (account: string) => number,
+    private readonly enabled: (udid: string) => boolean = () => true,
+  ) {}
   async registerDevice(accountName: string, udid: string): Promise<void> {
     this.registerCalls.push({ account: accountName, udid: normalizeUdid(udid) });
+  }
+  async deviceEnabled(_account: string, udid: string): Promise<boolean> {
+    return this.enabled(normalizeUdid(udid));
   }
   async regenerateProfile(accountName: string, app: AppConfig): Promise<ProfileRef> {
     this.regenCalls.push({ account: accountName, app: app.key });
@@ -78,9 +84,9 @@ const CONFIG: OrchestratorConfig = { baseUrl: "https://install.example.com", app
 
 const acct = (name: string, capacity: number, devices: string[] = []): PoolAccount => ({ name, capacity, devices });
 
-function setup(accounts: PoolAccount[]) {
+function setup(accounts: PoolAccount[], enabled?: (udid: string) => boolean) {
   const state = new FakeState(accounts);
-  const asc = new FakeAsc((name) => state.accounts.find((a) => a.name === name)?.devices.length ?? 0);
+  const asc = new FakeAsc((name) => state.accounts.find((a) => a.name === name)?.devices.length ?? 0, enabled);
   const resign = new FakeResign();
   const orch = new SigningOrchestrator(CONFIG, { asc, resign, state });
   return { orch, state, asc, resign };
@@ -150,6 +156,31 @@ describe("SigningOrchestrator.enroll", () => {
     expect(r.state).toBe("pool-full");
     expect(asc.registerCalls.length).toBe(0);
     expect(resign.signCalls.length).toBe(0);
+  });
+
+  it("设备仍 PROCESSING（未 ENABLED）→ 返回 processing，不落盘、不重签（不出坏包）", async () => {
+    const { orch, state, asc, resign } = setup([acct("a", 100)], () => false);
+    const r = await orch.enroll("wda", UDID);
+    expect(r.state).toBe("processing");
+    if (r.state !== "processing") return;
+    expect(r.account).toBe("a");
+    expect(asc.registerCalls.length).toBe(1); // 注册了（幂等）
+    expect(resign.signCalls.length).toBe(0); // 但没重签
+    // 没落盘 → 保持"新设备"，下次重扫会重触发
+    expect((await state.listAccounts())[0].devices).not.toContain(UDID.toLowerCase());
+  });
+
+  it("PROCESSING 转 ENABLED 后重扫 → 正常注册+重签+ready", async () => {
+    let on = false;
+    const { orch, resign } = setup([acct("a", 100)], () => on);
+    expect((await orch.enroll("wda", UDID)).state).toBe("processing");
+    on = true; // Apple 处理完
+    const r2 = await orch.enroll("wda", UDID); // 重扫
+    expect(r2.state).toBe("ready");
+    if (r2.state !== "ready") return;
+    expect(r2.registeredNewDevice).toBe(true); // 上次没落盘 → 仍算新设备
+    expect(r2.resigned).toBe(true);
+    expect(resign.signCalls.length).toBe(1);
   });
 
   it("已满账号但设备已注册 → 仍可命中并出包", async () => {

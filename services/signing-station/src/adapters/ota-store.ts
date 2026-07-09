@@ -11,7 +11,7 @@ import type { EnrollOutcome } from "../core/signing-orchestrator";
  * 凭据（p12/p8）不在这里，归 accounts.json + 适配器。
  */
 
-export type SessionState = "pending" | "ready" | "pool-full" | "error";
+export type SessionState = "pending" | "ready" | "pool-full" | "error" | "processing";
 
 export interface OtaSession {
   token: string;
@@ -100,6 +100,10 @@ export class OtaStore implements StatePort {
   markPoolFull(token: string): void {
     const s = this.sessions.get(token);
     if (s) s.state = "pool-full";
+  }
+  markProcessing(token: string): void {
+    const s = this.sessions.get(token);
+    if (s) s.state = "processing";
   }
   markError(token: string, message: string): void {
     const s = this.sessions.get(token);

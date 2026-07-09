@@ -115,6 +115,18 @@ export class AscClient implements AscPort {
     }
   }
 
+  async deviceEnabled(accountName: string, udid: string): Promise<boolean> {
+    const c = await this.client(accountName);
+    const devices = (await c.fetchJson("devices?limit=200")) as AscResource[];
+    const target = udid.trim().toLowerCase();
+    const d = devices.find((x) => String(x.attributes?.["udid"] ?? "").toLowerCase() === target);
+    const status = String(d?.attributes?.["status"] ?? "未找到");
+    if (status !== "ENABLED") {
+      console.log(`[asc] 设备 ${udid} 状态=${status}（未 ENABLED，Apple 处理中，暂不出包）`);
+    }
+    return status === "ENABLED";
+  }
+
   async regenerateProfile(accountName: string, app: AppConfig): Promise<ProfileRef> {
     const cfg = this.resolve(accountName);
     const profileType = cfg.profileType ?? "IOS_APP_DEVELOPMENT";

@@ -98,6 +98,10 @@ export function buildOtaApp(deps: OtaHttpDeps): FastifyInstance {
           newDevice: outcome.registeredNewDevice,
         });
         if (outcome.resigned) track("ota_sign", { app: appKey, account: outcome.account });
+      } else if (outcome.state === "processing") {
+        console.log(`[enroll] → Apple 处理中（PROCESSING）account=${outcome.account} app=${appKey}`);
+        store.markProcessing(s);
+        track("ota_processing", { app: appKey });
       } else {
         console.log(`[enroll] → 账号池已满 app=${appKey}`);
         store.markPoolFull(s);
