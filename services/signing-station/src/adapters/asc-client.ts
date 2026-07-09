@@ -84,21 +84,18 @@ export interface AscClientOpts {
 }
 
 export class AscClient implements AscPort {
-  private readonly clients = new Map<string, Promise<AscClientFns>>();
-
   constructor(
     private readonly resolve: AscAccountResolver,
     private readonly opts: AscClientOpts,
   ) {}
 
+  // ⚠️ ASC 的 JWT 最长只活 20 分钟、此库不自动续期，所以【绝不能缓存 client】——
+  //    缓存 = 复用同一枚 token，20 分钟后所有 ASC 请求 401（表现：preflight/首台成功，
+  //    隔一会儿再登记就 401「bearer token expired」）。每次现造新 client、现签新 JWT；
+  //    一次登记内的多步 ASC 调用共用这枚新鲜 token（都在几秒内完成，够用）。
   private client(accountName: string): Promise<AscClientFns> {
-    let c = this.clients.get(accountName);
-    if (!c) {
-      const cfg = this.resolve(accountName);
-      c = api({ issuerId: cfg.issuerId, apiKey: cfg.keyId, privateKey: cfg.privateKey });
-      this.clients.set(accountName, c);
-    }
-    return c;
+    const cfg = this.resolve(accountName);
+    return api({ issuerId: cfg.issuerId, apiKey: cfg.keyId, privateKey: cfg.privateKey });
   }
 
   async registerDevice(accountName: string, udid: string, deviceName = "device"): Promise<void> {
