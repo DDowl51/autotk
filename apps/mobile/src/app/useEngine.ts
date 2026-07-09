@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DEFAULT_PARAMS, type AutomationParams } from "../params";
 import { createEngine, type Engine, type RunStats } from "../engine";
+import { versionBanner } from "./versionInfo";
 import { emptyStats } from "../engine/types";
 import { createMockUI } from "../engine/mockUI";
 import { createFixedReplyGenerator } from "../gen";
@@ -219,6 +220,7 @@ export function useEngine(initialParams?: AutomationParams): EngineState {
 
     const launch = async () => {
       try {
+        pushLog(versionBanner()); // 启动即打印当前运行版本的发布日期，便于确认这台设备 OTA 到了哪一版
         // 后台保活必须在 **makeUI 之前** 起：makeUI 里的首跑标定会 activateApp(TikTok) 把 autotk
         // 顶到后台；若那之前没起保活，autotk 一退后台 JS 就被 iOS 挂起（~30s），引擎起不来/中断、
         // 日志停同步——正是真机所见「点启动跳 TikTok 后要手动切回等引擎起」。请求「始终」定位的弹窗
