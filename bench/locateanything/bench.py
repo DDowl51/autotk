@@ -23,6 +23,8 @@ CASES = {
     "IMG_0003": "the like heart icon of the first comment",
     "IMG_0001": "the close button X",
     "location": "the cancel or dismiss button",
+    # 直播卡：识别「直播中/LIVE」徽标 → 判定直播 → 直接划走（不是找点赞键）
+    "stream-video": 'the "直播中" (LIVE) badge label',
 }
 BOX_RE = re.compile(r"<box><(\d+)><(\d+)><(\d+)><(\d+)></box>")
 
