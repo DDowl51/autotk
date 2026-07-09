@@ -51,7 +51,10 @@ python -c "import torch; print(torch.__version__); assert torch.cuda.is_availabl
 
 ### A3. 下模型（约 7GB，BF16）
 
+> 国内直连 huggingface.co 常报 `SSLEOFError` / 连不上 → 用镜像 `hf-mirror.com`。
+
 ```bash
+export HF_ENDPOINT=https://hf-mirror.com      # 国内镜像；直连没问题可跳过
 huggingface-cli download nvidia/LocateAnything-3B --local-dir ./LocateAnything-3B
 ```
 
@@ -79,8 +82,10 @@ pip install "transformers==4.57.1" accelerate "opencv-python-headless==4.11.0.86
 python -c "import torch; print(torch.__version__); assert torch.cuda.is_available(); print(torch.zeros(3).cuda()*2)"
 # 版本号须含 +cu128，且能打印 tensor([...], device='cuda:0') 不报错
 
-# 下模型（或跑时直接用仓库名 nvidia/LocateAnything-3B 让它自动下）
+# 下模型：国内直连 huggingface.co 常报 SSLEOFError → 先设镜像端点（仅当前窗口有效）
+$env:HF_ENDPOINT = "https://hf-mirror.com"
 huggingface-cli download nvidia/LocateAnything-3B --local-dir .\LocateAnything-3B
+# 之后 --model .\LocateAnything-3B 指本地即可（免得跑时再联网）
 ```
 
 > ⚠️ **本地文件夹不存在时**，`--model .\LocateAnything-3B` 会被当成 HF 仓库名、因反斜杠报
@@ -172,6 +177,7 @@ batch1 是保守下限。真实服务这样提吞吐（预期再翻数倍）：
 
 - `no kernel image is available` / 跑不动：torch 轮子不对，重装 `--index-url .../cu128`（步骤 A2/B）。
 - WSL 里 `nvidia-smi` 找不到卡：Windows 侧装/升级 NVIDIA 驱动，**WSL 内别装驱动**；`wsl --update` 后重开。
+- 下模型报 `SSLEOFError` / 连不上 huggingface.co：国内网络问题，设镜像 `HF_ENDPOINT=https://hf-mirror.com`（PowerShell：`$env:HF_ENDPOINT="https://hf-mirror.com"`）后重试；镜像也断就重跑 `huggingface-cli download`（会续传）。
 - `requires ... decord, lmdb, torchvision`：模型远程代码的依赖，装上即可（见步骤 A2/B 的 pip 行）。torchvision 务必走 cu128 源配套。
 - Windows 上 `pip install decord` 装不上：改装 fork `pip install eva-decord`（同名可导入，Windows 轮子更全）。
 - 原生 Windows 缺 `flash_attn` / 加载模型报 Linux 相关错：加 `--attn sdpa` 试；仍不行就**转路径 A（WSL）**，别在 Windows 硬编译 flash-attn。
