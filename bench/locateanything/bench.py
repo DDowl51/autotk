@@ -81,6 +81,37 @@ def ground(model, tokenizer, processor, image, phrase, max_new_tokens, max_side=
     return ans if isinstance(ans, str) else str(ans)
 
 
+def _prep_image(image, max_side):
+    if max_side and max(image.size) > max_side:
+        s = max_side / float(max(image.size))
+        return image.resize((max(1, round(image.width * s)), max(1, round(image.height * s))))
+    return image
+
+
+@torch.no_grad()  # 最佳努力批处理：多图一批喂 processor+generate，测批处理吞吐乘数（当前最不确定的量）。
+def ground_batch(model, tokenizer, processor, images, phrases, max_new_tokens, max_side=0):
+    msgs = [[{"role": "user", "content": [
+        {"type": "image", "image": _prep_image(im, max_side)},
+        {"type": "text", "text": f"Locate the region that matches: {ph}."},
+    ]}] for im, ph in zip(images, phrases)]
+    texts = [processor.py_apply_chat_template(m, tokenize=False, add_generation_prompt=True) for m in msgs]
+    imgs = []
+    for m in msgs:
+        ii, _ = processor.process_vision_info(m)
+        imgs += ii
+    inputs = processor(text=texts, images=imgs, videos=None, return_tensors="pt", padding=True).to("cuda")
+    return model.generate(
+        pixel_values=inputs["pixel_values"].to(torch.bfloat16),
+        input_ids=inputs["input_ids"],
+        attention_mask=inputs["attention_mask"],
+        image_grid_hws=inputs.get("image_grid_hws", None),
+        tokenizer=tokenizer,
+        max_new_tokens=max_new_tokens,
+        use_cache=True, generation_mode="hybrid",
+        temperature=0.7, do_sample=True, top_p=0.9, repetition_penalty=1.1, verbose=False,
+    )
+
+
 def timed(fn):
     torch.cuda.synchronize()
     t0 = time.perf_counter()
@@ -98,6 +129,7 @@ def main():
     ap.add_argument("--prompt", default="the like button (heart icon) on the right rail")
     ap.add_argument("--attn", default=None, help='attn 实现，如 sdpa/eager；原生 Windows 无 flash-attn 时可试 sdpa')
     ap.add_argument("--max-side", type=int, default=0, help="把图长边缩到这个像素再喂（0=原图）；显存不够(OOM)时设 1000/768")
+    ap.add_argument("--batch", type=int, default=1, help="批处理张数：>1 则测批处理吞吐（最不确定的量）而非逐张精度")
     ap.add_argument("--out", default="out")
     args = ap.parse_args()
 
@@ -115,6 +147,27 @@ def main():
     if args.attn:
         mk["attn_implementation"] = args.attn
     model = AutoModel.from_pretrained(args.model, **mk).to("cuda").eval()
+
+    # —— 批处理吞吐模式（--batch > 1）：取样本前 N 张（不足循环补），批量推理计时 ——
+    if args.batch > 1:
+        sel = (paths * args.batch)[: args.batch]
+        imgs = [Image.open(p).convert("RGB") for p in sel]
+        phrases = [prompt_for(p, args.prompt) for p in sel]
+        try:
+            with torch.inference_mode():
+                ground_batch(model, tokenizer, processor, imgs, phrases, args.max_new_tokens, args.max_side)  # 预热
+                torch.cuda.empty_cache(); torch.cuda.reset_peak_memory_stats()
+                tl = []
+                for _ in range(5):
+                    _, ms = timed(lambda: ground_batch(model, tokenizer, processor, imgs, phrases, args.max_new_tokens, args.max_side))
+                    tl.append(ms)
+        except Exception as e:
+            raise SystemExit(f"批处理不被该模型 generate 支持（{e}）\n→ 改用 vLLM/TensorRT-LLM 测批处理，或 --batch 1 单流。")
+        med = statistics.median(tl)
+        peak = torch.cuda.max_memory_allocated() / 1e9
+        print(f"\n==== 批处理 batch={args.batch} max_side={args.max_side or '原图'} ====")
+        print(f"整批中位延迟：{med:.1f} ms  →  吞吐 ≈ {args.batch * 1000.0 / med:.2f} 张/秒 | 峰值显存 {peak:.2f} GB")
+        return
 
     # 预热（首次含 CUDA/kernel 编译，不计入）。
     warm = Image.open(paths[0]).convert("RGB")
