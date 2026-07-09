@@ -34,6 +34,19 @@ def prompt_for(path, default):
     return default
 
 
+def collect_images(spec):
+    """spec 可以是目录，或逗号分隔的多个 glob。大小写不敏感（Linux/WSL 上 *.PNG 会漏 .png）。"""
+    exts = ("png", "PNG", "jpg", "JPG", "jpeg", "JPEG")
+    out = []
+    if os.path.isdir(spec):
+        for e in exts:
+            out += glob.glob(os.path.join(spec, f"*.{e}"))
+    else:
+        for pat in spec.split(","):
+            out += glob.glob(pat)
+    return sorted(set(out))
+
+
 def ground(model, tokenizer, processor, image, phrase, max_new_tokens):
     messages = [{"role": "user", "content": [
         {"type": "image", "image": image},
@@ -64,14 +77,15 @@ def timed(fn):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", default="./LocateAnything-3B")
-    ap.add_argument("--images", required=True, help='glob，如 "shots/*.PNG"')
+    ap.add_argument("--images", required=True, help='目录（如 shots）或逗号分隔 glob（如 "shots/*.PNG,shots/*.png"）')
     ap.add_argument("--runs", type=int, default=10, help="每张图计时次数（取中位）")
     ap.add_argument("--max-new-tokens", type=int, default=64, help="单框输出很短，压小提速；官方默认 2048 是浪费")
     ap.add_argument("--prompt", default="the like button (heart icon) on the right rail")
+    ap.add_argument("--attn", default=None, help='attn 实现，如 sdpa/eager；原生 Windows 无 flash-attn 时可试 sdpa')
     ap.add_argument("--out", default="out")
     args = ap.parse_args()
 
-    paths = sorted(glob.glob(args.images))
+    paths = collect_images(args.images)
     if not paths:
         raise SystemExit(f"没找到图片：{args.images}")
     os.makedirs(args.out, exist_ok=True)
@@ -81,9 +95,10 @@ def main():
     print(f"加载模型 {args.model} …")
     tokenizer = AutoTokenizer.from_pretrained(args.model, trust_remote_code=True)
     processor = AutoProcessor.from_pretrained(args.model, trust_remote_code=True)
-    model = AutoModel.from_pretrained(
-        args.model, torch_dtype=torch.bfloat16, trust_remote_code=True,
-    ).to("cuda").eval()
+    mk = dict(torch_dtype=torch.bfloat16, trust_remote_code=True)
+    if args.attn:
+        mk["attn_implementation"] = args.attn
+    model = AutoModel.from_pretrained(args.model, **mk).to("cuda").eval()
 
     # 预热（首次含 CUDA/kernel 编译，不计入）。
     warm = Image.open(paths[0]).convert("RGB")
