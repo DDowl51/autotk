@@ -59,12 +59,19 @@ def ground(model, tokenizer, processor, image, phrase, max_new_tokens):
         pixel_values=inputs["pixel_values"].to(torch.bfloat16),
         input_ids=inputs["input_ids"],
         attention_mask=inputs["attention_mask"],
+        image_grid_hws=inputs.get("image_grid_hws", None),  # MoonViT 网格尺寸，缺了视觉模型 forward 会崩
         tokenizer=tokenizer,
         max_new_tokens=max_new_tokens,
+        use_cache=True,          # 模型自定义 generate 强制要求
         generation_mode="hybrid",
-        use_cache=True,  # 模型自定义 generate 强制要求（否则 assert 报错）
+        temperature=0.7,
+        do_sample=True,
+        top_p=0.9,
+        repetition_penalty=1.1,
+        verbose=False,           # 别逐步刷屏（官方默认 True）
     )
-    return resp if isinstance(resp, str) else str(resp)
+    ans = resp[0] if isinstance(resp, tuple) else resp  # 模型可能返回 (answer, history, stats)
+    return ans if isinstance(ans, str) else str(ans)
 
 
 def timed(fn):
