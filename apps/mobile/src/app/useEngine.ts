@@ -390,7 +390,7 @@ export function useEngine(initialParams?: AutomationParams): EngineState {
               stats: st
                 ? { likes: st.likes, follows: st.follows, comments: st.commentReplies, videos: st.videosWatched }
                 : undefined,
-              alert: null,
+              alert: uiRef.current?.getAlert?.() ?? null,
               battery: batteryRef.current,
             }),
           );

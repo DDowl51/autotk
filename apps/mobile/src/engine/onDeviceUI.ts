@@ -101,6 +101,9 @@ export function createOnDeviceUI(deps: {
   let lostStreak = 0;
   // 上一条视频的文案（由 readCurrentVideo 记录）；swipeToNextVideo 用它判断「上划后是否仍是同一条」。
   let lastCaption = "";
+  // 「需人工处理」告警（脱困卡住等）→ 由 getAlert() 上报到管理中心 DeviceStatus.alert（设备列表醒目红点）；
+  // 一旦 recoverIfLost 判回到已知页/成功处理（lostStreak=0）就自动清空。
+  let stuckAlert: string | null = null;
 
   const ensure = async () => {
     if (!getSessionId()) {
@@ -334,6 +337,7 @@ export function createOnDeviceUI(deps: {
       if (!x) {
         if (onKnownPage(img)) return; // 真回到视频流/已知页
         // 不在已知页（可能误进地点页）：**不再自动左滑**（易把正常页误判→误跳），只记日志 + 通知管理中心。
+        stuckAlert = "关评论后疑似误入页面，需人工处理";
         log("⚠ 关评论后疑似不在已知页（或误进地点页）；不自动左滑，已通知管理中心");
         onEvent?.("stuck_after_close_comments", {});
         return;
@@ -376,6 +380,7 @@ export function createOnDeviceUI(deps: {
 
   return {
     getPage: () => page,
+    getAlert: () => stuckAlert,
 
     async openForYou() {
       await ensure();
@@ -638,17 +643,20 @@ export function createOnDeviceUI(deps: {
       // 先处理 iOS 系统权限弹窗（新号高发）——关掉后多半就回正常页了。
       if (await handleSystemAlert()) {
         lostStreak = 0;
+        stuckAlert = null; // 回到已知页/已处理 → 清管理中心告警
         return;
       }
       // 再处理应用内浮层（TikTok 自有弹窗/底部单）——能自动关就关掉继续。
       if ((await escapeAppPopup()) !== "none") {
         lostStreak = 0;
+        stuckAlert = null; // 回到已知页/已处理 → 清管理中心告警
         return;
       }
       const png = await screenshot();
       const img = decode(png);
       if (onKnownPage(img)) {
-        lostStreak = 0; // 视频流 / 评论区 → 正常
+        lostStreak = 0;
+        stuckAlert = null; // 回到已知页/已处理 → 清管理中心告警 // 视频流 / 评论区 → 正常
         return;
       }
       // 非视频流/评论区：先看是不是已知弹窗（登录/passkey）→ 关掉，算已处理。
@@ -658,6 +666,7 @@ export function createOnDeviceUI(deps: {
         await sleep(700);
         log("关闭登录/passkey 弹窗");
         lostStreak = 0;
+        stuckAlert = null; // 回到已知页/已处理 → 清管理中心告警
         return;
       }
       lostStreak++;
@@ -670,6 +679,7 @@ export function createOnDeviceUI(deps: {
       // 反而会跳到别的页面。改为**只记日志 + 通知管理中心**，交人工/上层处理；不做任何触控、不改 page。
       // 只在「刚判定卡住」（lostStreak==2）时报一次，避免每批刷屏（lostStreak 会持续增长）。
       if (lostStreak === 2) {
+        stuckAlert = "疑似卡在未知页面，需人工处理";
         log("⚠ 疑似卡在未知页面（连续多次未在正常页面）；不自动左滑（避免误判正常页而误跳），已通知管理中心待处理");
         onEvent?.("stuck_unknown_page", {});
       }
