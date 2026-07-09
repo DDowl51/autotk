@@ -82,11 +82,18 @@ pip install "transformers==4.57.1" accelerate "opencv-python-headless==4.11.0.86
 python -c "import torch; print(torch.__version__); assert torch.cuda.is_available(); print(torch.zeros(3).cuda()*2)"
 # 版本号须含 +cu128，且能打印 tensor([...], device='cuda:0') 不报错
 
-# 下模型：国内直连 huggingface.co 常报 SSLEOFError → 先设镜像端点（仅当前窗口有效）
+# 下模型：国内直连 huggingface.co 常报 SSLEOFError → 先设镜像端点（仅当前窗口有效！）
 $env:HF_ENDPOINT = "https://hf-mirror.com"
+echo $env:HF_ENDPOINT      # 必须打印 https://hf-mirror.com，否则下一步仍打到 huggingface.co
 huggingface-cli download nvidia/LocateAnything-3B --local-dir .\LocateAnything-3B
 # 之后 --model .\LocateAnything-3B 指本地即可（免得跑时再联网）
 ```
+
+> 若 CLI 仍抽风，用 git 从镜像克隆（绕开 Python SSL）：
+> ```powershell
+> git lfs install
+> git clone https://hf-mirror.com/nvidia/LocateAnything-3B LocateAnything-3B
+> ```
 
 > ⚠️ **本地文件夹不存在时**，`--model .\LocateAnything-3B` 会被当成 HF 仓库名、因反斜杠报
 > `HFValidationError`。要么先下好（上面这条），要么跑时直接 `--model nvidia/LocateAnything-3B` 自动下载。
