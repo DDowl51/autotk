@@ -175,6 +175,19 @@ export function BatchConfigModal({
   }
 
   function onSend() {
+    // 防呆：填了文本却没打开对应组的「下发这组设置」开关 —— 数组字段（关键词/正向/反向/匹配词/话术）
+    // 整组绑在该开关下，不开就会被 buildPatch 静默跳过。明确提示并拦住，别让用户以为改了却没下发。
+    const missed: string[] = [];
+    const kwFilled = [draft.kwText, draft.posText, draft.negText, draft.matchText, draft.replyText].some((s) => s.trim());
+    if (kwFilled && !groups.kw) missed.push("关键词");
+    const folFilled = [draft.followingMatchText, draft.followingReplyText].some((s) => s.trim());
+    if (folFilled && !groups.following) missed.push("关注监控");
+    if (missed.length) {
+      message.warning(
+        `「${missed.join("、")}」页填了内容，但没打开该页顶部的「下发这组设置到所选手机」开关——这些词/话术不会下发。请先打开开关再下发。`,
+      );
+      return;
+    }
     const patch = buildPatch();
     if (Object.keys(patch).length === 0) {
       message.warning("请至少打开一个分组的「下发这组设置」开关");
