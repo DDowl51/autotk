@@ -87,8 +87,10 @@ export function buildOtaApp(deps: OtaHttpDeps): FastifyInstance {
     try {
       const plistText = await extract(req.body as Buffer);
       const dev = parseDeviceAttributes(plistText);
+      console.log(`[enroll] app=${appKey} udid=${dev.udid} name=${dev.deviceName ?? "?"}`);
       const outcome = await orchestrator.enroll(appKey, dev.udid, dev.deviceName);
       if (outcome.state === "ready") {
+        console.log(`[enroll] → ready account=${outcome.account} 新设备=${outcome.registeredNewDevice} 重签=${outcome.resigned}`);
         store.markReady(s, outcome);
         track("ota_enroll", {
           app: appKey,
@@ -97,11 +99,13 @@ export function buildOtaApp(deps: OtaHttpDeps): FastifyInstance {
         });
         if (outcome.resigned) track("ota_sign", { app: appKey, account: outcome.account });
       } else {
+        console.log(`[enroll] → 账号池已满 app=${appKey}`);
         store.markPoolFull(s);
         track("ota_pool_full", { app: appKey });
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
+      console.error(`[enroll] ✗ 出错 app=${appKey}：${msg}`);
       store.markError(s, msg);
       track("ota_error", { app: appKey });
     }

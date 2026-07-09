@@ -102,10 +102,16 @@ export class AscClient implements AscPort {
     const c = await this.client(accountName);
     try {
       await c.create(buildRegisterDeviceArgs(deviceName, udid));
+      console.log(`[asc] 注册设备 ${udid} → 成功`);
     } catch (e) {
       // 已注册（409/重复）视为成功，幂等。其余错误抛出。
       const msg = e instanceof Error ? e.message : String(e);
-      if (!/already exists|409|duplicate|ENTITY_ERROR.*udid/i.test(msg)) throw e;
+      if (/already exists|409|duplicate|ENTITY_ERROR.*udid/i.test(msg)) {
+        console.log(`[asc] 注册设备 ${udid} → 已存在（幂等，跳过）`);
+      } else {
+        console.error(`[asc] 注册设备 ${udid} → 失败：${msg}`);
+        throw e;
+      }
     }
   }
 
@@ -120,6 +126,12 @@ export class AscClient implements AscPort {
     // 该账号当前全部设备 → 描述文件应包含它们。
     const devices = (await c.fetchJson("devices?limit=200")) as AscResource[];
     const deviceIds = devices.map((d) => d.id);
+    const devStatus: Record<string, number> = {};
+    for (const d of devices) {
+      const s = String(d.attributes?.["status"] ?? "?");
+      devStatus[s] = (devStatus[s] ?? 0) + 1;
+    }
+    console.log(`[asc] ${app.key} 重生 profile：取到 ${devices.length} 台设备 ${JSON.stringify(devStatus)}`);
 
     const bundleIds = (await c.fetchJson("bundleIds?limit=200")) as AscResource[];
     const bundleRes = findBundleIdResource(bundleIds, identifier);
@@ -135,9 +147,16 @@ export class AscClient implements AscPort {
     const existing = profiles.find((p) => p.attributes?.["name"] === name);
     if (existing) await c.remove({ type: "profiles", id: existing.id });
 
-    const created = await c.create(
-      buildCreateProfileArgs({ name, profileType, bundleIdResourceId: bundleRes.id, certificateIds, deviceIds }),
-    );
+    let created;
+    try {
+      created = await c.create(
+        buildCreateProfileArgs({ name, profileType, bundleIdResourceId: bundleRes.id, certificateIds, deviceIds }),
+      );
+    } catch (e) {
+      console.error(`[asc] ${app.key} 建 profile 失败（${deviceIds.length} 台设备 / ${certificateIds.length} 证书）：${e instanceof Error ? e.message : String(e)}`);
+      throw e;
+    }
+    console.log(`[asc] ${app.key} profile 已建：请求含 ${deviceIds.length} 台设备、${certificateIds.length} 证书`);
     const content = created.attributes?.["profileContent"];
     if (typeof content !== "string") throw new Error("ASC 创建 profile 未返回 profileContent");
 
