@@ -5,6 +5,7 @@ build/
 .expo/
 tools/dist/
 *.tsbuildinfo
+__pycache__/
 
 # ---- native (RN/Expo) ----
 # 锚定到仓库根，避免误伤 apps/mobile/modules/*/ios|android/ 的原生模块源码（必须入库）。
@@ -37,6 +38,8 @@ data/
 *.docx
 *.PNG
 *.pdf
+# 根目录零散图片(如 装机二维码.png)——媒体资料,不入库;子目录测试基准图不受影响
+/*.png
 
 # ---- runtime data / dev leftovers (contain real device IDs; never commit / never ship) ----
 hub-data/
