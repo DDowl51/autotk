@@ -20,7 +20,7 @@
 | `hazardClass` | hazard | `system`(iOS 系统窗)\| `overlay`(应用内浮层)\| `category`(不关而绕:直播/广告评论)。**决定优先级与 handler 语义** |
 | `handler` | hazard | `deny` / `allow` / `tapBox`:**执行上都是「点 VLM 定位到的框中心」**(系统弹窗不走 WDA /alert——该通道对带地图的窗读不到,已弃,见 L0 规格书 §7;tap 点系统弹窗按钮已真机实证)。`deny/allow` 是**语义标签**:phrase 指向拒绝/允许按钮,供审计(养号工作流断言**绝不含 allow**;allow 仅 publish 页激活)。另有 `swipeAway`(盲滑走,直播卡)\| `skip`(不互动,广告评论)\| `back`(iOS 返回手势) |
 | `ocr` | 可选 | 字符串正则(加载时 `new RegExp(pattern,'i')`)。**用途**:①系统窗 `deny/allow` 走 WDA alert 时按词表匹配按钮 ②VLM「疑似命中」时用 OCR 二次确认降幻觉(见总纲 §6 风险) |
-| `region` | 可选 | 归一化 `[x,y,w,h]` 先验区域,缩小 VLM 搜索、降误判 |
+| `region` | 可选 | 归一化 `[x,y,w,h]` 先验区域,缩小 VLM 搜索、降误判。**注意**:core 的 `Box` 是角点 `[x1,y1,x2,y2]`,插件加载时由 `targets.ts` 换算(坏数据 fail-fast) |
 | `box` | 可选 | 归一化点 `[x,y]` 或框 `[x,y,w,h]`——**已实测的固定位置**,可作 VLM 失败时的兜底坐标 |
 | `verified` | 可选 | `true` = 本会话真机截图实测过(坐标已核) |
 | `stable` | 可选 | `true` = 位置极稳(底部导航等),**未来可提为「盲点」优化**(同盲滑,省一次 VLM),默认仍走 VLM |
