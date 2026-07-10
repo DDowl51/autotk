@@ -8,16 +8,22 @@ export async function interactWithVideo(ctx: RunContext, mp: ModuleParams): Prom
   const wait = () => ctx.sleepSeconds(ctx.jitter(p.clickWaitTime));
 
   if (ctx.chance(mp.videoLikeProb)) {
-    if (await ctx.tapTarget("feed.like")) {
+    // 只点「白色未点赞」的心;已点赞(红心)则 feed.like-off 缺席→不点,避免再点=取消赞。
+    if (await ctx.tapTarget("feed.like-off")) {
       ctx.stats.likes++;
       ctx.log("已点赞");
+    } else {
+      ctx.log("已点赞过,跳过");
     }
     await wait();
   }
   if (ctx.chance(mp.videoSaveProb)) {
-    if (await ctx.tapTarget("feed.save")) {
+    // 同理:只收藏「白色未收藏」的书签;已收藏(黄色)则缺席→跳过。
+    if (await ctx.tapTarget("feed.save-off")) {
       ctx.stats.saves++;
       ctx.log("已收藏");
+    } else {
+      ctx.log("已收藏过,跳过");
     }
     await wait();
   }

@@ -3,12 +3,17 @@ import { toRegistry } from "@auto/core";
 import { activation, pageHazards, targets } from "../src/targets";
 
 describe("targets 加载", () => {
-  it("加载全部 58 目标,可建成注册表(无重复)", () => {
-    expect(targets.length).toBe(58);
+  it("加载全部目标,可建成注册表(无重复)", () => {
+    expect(targets.length).toBe(62);
     const r = toRegistry(targets);
     expect(r.get("nav.search-icon")?.kind).toBe("expected");
     expect(r.get("ad.shop-promo")?.hazardClass).toBe("overlay");
     expect(r.get("ad.shop-promo")?.handler).toBe("tapBox");
+    // 新增:白色未互动目标 + 干净结果 + 广告视频
+    expect(r.get("feed.like-off")?.kind).toBe("expected");
+    expect(r.get("feed.save-off")?.kind).toBe("expected");
+    expect(r.get("search.first-clean-result")?.kind).toBe("expected");
+    expect(r.get("feed.ad-marker")?.handler).toBe("swipeAway");
   });
 
   it("region 是 4 元组或省略", () => {

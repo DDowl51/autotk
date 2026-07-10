@@ -1,9 +1,9 @@
 // RunContext:插件写工作流(L3)用的 API。把引擎/感知/拟人/状态收成一个门面,
 // 工作流不直接碰 EngineDeps。全部依赖注入 → 工作流也能 mock 感知离线测。
-import { runStep, tapTargetNow, type EngineDeps, type StepResult } from "./engine";
+import { locateTargets, runStep, tapTargetNow, type EngineDeps, type StepResult } from "./engine";
 import { chance, jitter, pick, type Rng } from "./human";
 import type { Box } from "./geometry";
-import type { StateStore } from "./interfaces";
+import type { Hit, StateStore } from "./interfaces";
 import type { Step } from "./step";
 
 /** 一次运行的累计统计(上报 Hub「每日任务记录」)。 */
@@ -23,8 +23,10 @@ export function emptyStats(): RunStats {
 export interface RunContext {
   /** 跑一步(自动并入插件全局危险);返回 ok/stopped/recover/alert。 */
   runStep(step: Step): Promise<StepResult>;
-  /** 快捷:定位+点一个目标,返回是否点到(没定位到=false,如已关注则无关注键)。 */
+  /** 快捷:定位+点一个目标,返回是否点到(没定位到=false,如已点赞则无「白心」)。 */
   tapTarget(id: string): Promise<boolean>;
+  /** 探测一组目标当前是否在场 → id→Hit(缺席不在 Map)。用于选择/兼验(如挑非直播非广告结果)。 */
+  locate(ids: string[]): Promise<Map<string, Hit>>;
   /** OCR 读文本(评论/文案),返回各行文字。 */
   readText(region?: Box): Promise<string[]>;
   /** 拟人化随机(rng 可注入)。 */
@@ -64,6 +66,7 @@ export function createRunContext(d: RunContextDeps): RunContext {
   return {
     runStep: (step) => runStep(mergeHazards(step, d.globalHazards), d),
     tapTarget: async (id) => (await tapTargetNow(d, id)) !== null,
+    locate: (ids) => locateTargets(d, ids),
     readText: async (region) => {
       const shot = await d.driver.screenshot();
       const lines = await d.perceptor.readText(shot, region);

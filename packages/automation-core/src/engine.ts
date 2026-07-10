@@ -43,7 +43,8 @@ function queriesFor(deps: EngineDeps, ids: string[]): LocateQuery[] {
   });
 }
 
-async function locateAll(deps: EngineDeps, ids: string[]): Promise<Map<string, Hit>> {
+/** 组合定位一组目标 → id→Hit(缺席不在 Map 里)。供 decide 与工作层(ctx.locate)复用。 */
+export async function locateTargets(deps: EngineDeps, ids: string[]): Promise<Map<string, Hit>> {
   if (ids.length === 0) return new Map();
   const shot = await deps.driver.screenshot();
   const hits = await deps.perceptor.locate(shot, queriesFor(deps, ids));
@@ -120,7 +121,7 @@ async function awaitTargets(deps: EngineDeps, ids: string[], deadline: number): 
   const pollMs = deps.pollMs ?? POLL_MS;
   while (deps.now() < deadline) {
     if (deps.shouldStop()) return false;
-    const hitMap = await locateAll(deps, ids);
+    const hitMap = await locateTargets(deps, ids);
     if (ids.some((id) => hitMap.has(id))) return true;
     await deps.sleep(pollMs);
   }
@@ -146,7 +147,7 @@ export async function decide(step: Step, deps: EngineDeps): Promise<DecideOutcom
 
   while (deps.now() < deadline) {
     if (deps.shouldStop()) return { status: "stopped" };
-    const hitMap = await locateAll(deps, queryIds);
+    const hitMap = await locateTargets(deps, queryIds);
 
     // ① 危险优先
     const hz = firstHazard(deps, step.hazards, hitMap);
@@ -241,7 +242,7 @@ export async function runStep(step: Step, deps: EngineDeps): Promise<StepResult>
 
 // 供插件动作层复用的低层封装(L1 的一部分)。
 export async function tapTargetNow(deps: EngineDeps, id: string): Promise<Point | null> {
-  const hitMap = await locateAll(deps, [id]);
+  const hitMap = await locateTargets(deps, [id]);
   const hit = hitMap.get(id);
   if (!hit) return null;
   const p = centerPx(hit.box, deps.size);

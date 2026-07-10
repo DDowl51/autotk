@@ -21,6 +21,19 @@ function tapStep(intent: string, target: string, expected: string[], verify: str
   };
 }
 
+/** 盲滑到下一个结果视频的步(前置危险检测由 hazards 完成)。 */
+function nextStep(hazards: string[]): Step {
+  return {
+    intent: "下一个结果",
+    act: { kind: "swipeNext" },
+    expected: ["feed.rail"],
+    hazards,
+    verify: ["feed.rail"],
+    timeout: 8000,
+    onFail: [{ kind: "recover" }, { kind: "alertOperator", message: "切下一个结果失败" }],
+  };
+}
+
 export async function searchWorkflow(ctx: RunContext, maxResults = 5): Promise<void> {
   const p = ctx.params as TikTokParams;
   const mp = p.kwSearch;
@@ -46,27 +59,26 @@ export async function searchWorkflow(ctx: RunContext, maxResults = 5): Promise<v
   if ((await ctx.runStep(typeStep)).status !== "ok") return;
   // 3) 提交 → 出现结果列表
   if ((await ctx.runStep(tapStep("提交搜索", "search.submit", ["search.submit"], ["search.results"], SEARCH_HZ))).status !== "ok") return;
-  // 4) 点第二个结果(跳过第一个广告位)→ 进入结果视频流
-  if ((await ctx.runStep(tapStep("开第二个结果", "search.result-2", ["search.results"], ["feed.rail"], SEARCH_HZ))).status !== "ok") return;
+  // 4) 选结果:优先「首个非广告非直播」,VLM 找不到则退回点第二个(跳广告位)
+  const cand = await ctx.locate(["search.first-clean-result", "search.result-2"]);
+  const resultTarget = cand.has("search.first-clean-result") ? "search.first-clean-result" : "search.result-2";
+  ctx.log(`[搜索页] 选结果:${resultTarget}`);
+  if ((await ctx.runStep(tapStep("开结果视频", resultTarget, ["search.results"], ["feed.rail"], SEARCH_HZ))).status !== "ok") return;
 
   // 5) 遍历结果视频互动(搜索结果默认对标,不做 pos/neg 筛选)
   for (let i = 0; i < maxResults; i++) {
     if (ctx.shouldStop() || !ctx.withinWindow()) break;
-    ctx.stats.videosWatched++;
-    await interactWithVideo(ctx, mp);
-    await ctx.sleepSeconds(ctx.jitter(2));
+    // 进流兼验:即使结果页选错,这里再判一道直播/广告 → 命中则划走不互动(双保险)
+    const bad = await ctx.locate(["feed.live-tag", "feed.ad-marker"]);
+    if (bad.size > 0) {
+      ctx.log(`结果视频是${bad.has("feed.live-tag") ? "直播" : "广告"},划走不互动`);
+    } else {
+      ctx.stats.videosWatched++;
+      await interactWithVideo(ctx, mp);
+      await ctx.sleepSeconds(ctx.jitter(2));
+    }
     if (i < maxResults - 1) {
-      // 盲滑到下一个结果(swipeNext 前置危险检测由 Step.hazards 完成)
-      const next: Step = {
-        intent: "下一个结果",
-        act: { kind: "swipeNext" },
-        expected: ["feed.rail"],
-        hazards: FEED_HZ,
-        verify: ["feed.rail"],
-        timeout: 8000,
-        onFail: [{ kind: "recover" }, { kind: "alertOperator", message: "切下一个结果失败" }],
-      };
-      if ((await ctx.runStep(next)).status !== "ok") break;
+      if ((await ctx.runStep(nextStep(FEED_HZ))).status !== "ok") break;
     }
   }
   ctx.log("[搜索页] 结束");
