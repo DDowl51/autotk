@@ -199,8 +199,11 @@
 
 ## 8. Linux 实测——进展与修正后的下一步
 
+> 🔧 **第二轮执行 runbook（可直接复制粘贴）**：[`bench/locateanything/RUNBOOK-flashattn-fp8.md`](../bench/locateanything/RUNBOOK-flashattn-fp8.md)——flash-attn 预编译轮子 + torchao FP8（已排除视觉塔/带 sm_120 专用 kernel）+ 一卡多实例 + 批处理复测。以下 8.0–8.4 为初版记录，**执行以 runbook 为准**。
+>
 > **已完成(2026-07-10,WSL sdpa)**:延迟/精度/批处理三项已测,见 §7.0。关键结论:**批处理不支持**(乘数假设作废)、512 丢小✕(锁 768)、WSL==Windows。
-> **剩余待测(优先级已变)**:①**FP8**(Blackwell,~1.5–2×)②**一卡多实例吞吐**(取代批处理,~2.5–3×)③640 精度折中。flash-attn 降为可选(见 8.0)。
+> ⚠️ **「批处理不支持」需复核**：那是 bench.py **手搓** batch 失败得出的；模型仓库自带 `batch_infer.py`、官方 A100 实测 batch=4 能跑——手搓失败很可能只是 MoonViT 变长 patch 拼接方式不对，≠模型不支持。见 runbook Step 4。若复测跑通，本条及 §7.0 承载量须上修。
+> **剩余待测(优先级已变)**:①**FP8**(Blackwell,~1.5–2×)②**一卡多实例吞吐**(取代批处理,~2.5–3×)③**批处理复测**（官方 batch_infer.py）④640 精度折中。**flash-attn 有 sm_120 预编译轮子、不用编译，但增益预期有限**(SDPA 已融合;见 runbook Step 1)。
 
 ### 8.0 flash-attn:Ubuntu 25.10 装不上,降为可选(部署注意)
 

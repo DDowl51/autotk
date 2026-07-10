@@ -127,10 +127,14 @@ def main():
     ap.add_argument("--runs", type=int, default=10, help="每张图计时次数（取中位）")
     ap.add_argument("--max-new-tokens", type=int, default=64, help="单框输出很短，压小提速；官方默认 2048 是浪费")
     ap.add_argument("--prompt", default="the like button (heart icon) on the right rail")
-    ap.add_argument("--attn", default=None, help='attn 实现，如 sdpa/eager；原生 Windows 无 flash-attn 时可试 sdpa')
+    # 默认 sdpa：模型 config 默认 attn 是 "magi"，magi 包没装时会去够它；显式 sdpa 走保证路。
+    # 装了 flash-attn 轮子后传 --attn flash_attention_2 对比。
+    ap.add_argument("--attn", default="sdpa", help='attn 实现：sdpa(默认,保证跑) / flash_attention_2(装了轮子后测) / eager')
     ap.add_argument("--max-side", type=int, default=0, help="把图长边缩到这个像素再喂（0=原图）；显存不够(OOM)时设 1000/768")
     ap.add_argument("--batch", type=int, default=1, help="批处理张数：>1 则测批处理吞吐（最不确定的量）而非逐张精度")
-    ap.add_argument("--fp8", action="store_true", help="用 torchao 把线性层量化到 FP8（Blackwell 原生；权重减半、显存降、可能提速）")
+    ap.add_argument("--fp8", action="store_true", help="用 torchao 把 LLM 解码层量化到 FP8（Blackwell 原生；已排除视觉塔/box 头，须复核精度）")
+    ap.add_argument("--fp8-mode", choices=("dynamic", "weight"), default="dynamic",
+                    help="dynamic=动态激活+权重(PerRow,sm_120 上真提速)；weight=只权重(精度最稳但 batch1 几乎不提速)")
     ap.add_argument("--out", default="out")
     args = ap.parse_args()
 
@@ -150,21 +154,32 @@ def main():
     model = AutoModel.from_pretrained(args.model, **mk).to("cuda").eval()
 
     if args.fp8:
-        # torchao 把 nn.Linear 量化到 FP8。优先权重量化(Float8WeightOnly，batch1 友好、精度稳)，
-        # 无则退动态激活量化。量化后精度可能变——务必看 out/boxed_* 复核。
+        # torchao 把 LLM 解码层的 nn.Linear 量化到 FP8（Blackwell 原生）。两条硬纪律（调研得出）：
+        #  1) 必须 filter_fn 排除视觉塔(MoonViT)/projector/box 头/lm_head/embed——量化视觉塔是
+        #     grounding 坐标(IoU)崩塌的最常见原因，坐标精度全靠这些层。
+        #  2) dynamic 模式在 sm_120 上必须 kernel_preference=TORCH（走 torch._scaled_mm，≈2.5×BF16）；
+        #     默认 AUTO 会静默退到「反量化再 BF16 matmul」的慢路 → FP8 反而不快（同速或更慢）。
+        # 量化后务必看 out/boxed_* 复核坐标没塌（本脚本自动画框）。weight 模式精度最稳但 batch1 几乎不提速。
         try:
-            import torchao.quantization as taq
             from torchao.quantization import quantize_
-            cfg = None
-            for name in ("Float8WeightOnlyConfig", "Float8DynamicActivationFloat8WeightConfig"):
-                if hasattr(taq, name):
-                    cfg = getattr(taq, name)()
-                    break
-            if cfg is None:
-                print("⚠ torchao 里没找到 FP8 config，跳过 FP8（退回 BF16）")
+            SKIP = ("vision", "visual", "moonvit", "vit", "projector", "merger", "mlp1",
+                    "lm_head", "embed", "box", "mtp", "pbd", "head")
+            def only_llm_linears(module, fqn):
+                return isinstance(module, torch.nn.Linear) and not any(s in fqn.lower() for s in SKIP)
+            if args.fp8_mode == "weight":
+                from torchao.quantization import Float8WeightOnlyConfig
+                cfg = Float8WeightOnlyConfig()
             else:
-                quantize_(model, cfg)
-                print(f"已应用 torchao FP8：{type(cfg).__name__}（权重减半）")
+                from torchao.quantization import Float8DynamicActivationFloat8WeightConfig, PerRow
+                kwargs = dict(granularity=PerRow())
+                try:  # KernelPreference 导入路径随 torchao 版本变；取不到就不传（可能走慢路，会提示）
+                    from torchao.quantization.quantize_.common.kernel_preference import KernelPreference
+                    kwargs["kernel_preference"] = KernelPreference.TORCH
+                except Exception:
+                    print("⚠ 取不到 KernelPreference.TORCH；sm_120 上 FP8 dynamic 可能走慢路（同速/更慢），升级 torchao 再试")
+                cfg = Float8DynamicActivationFloat8WeightConfig(**kwargs)
+            quantize_(model, cfg, filter_fn=only_llm_linears)
+            print(f"已应用 torchao FP8：{type(cfg).__name__}（仅 LLM 解码层，已排除视觉塔/box 头）")
         except Exception as e:
             print(f"⚠ FP8 量化失败，退回 BF16：{e}")
 
