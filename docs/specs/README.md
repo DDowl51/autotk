@@ -3,7 +3,7 @@
 全新框架(core+plugin)的**输入文档**。把旧系统三类资产提炼成规格,供 G1+ 照此从零写代码,**不看旧代码**。
 权威总纲:`../自动化框架-架构设计总纲.md`(旧 `autotk-2.0-架构设计总纲` 已被其取代,作历史)。
 
-> 范围更新(2026-07-10):5 功能 = 搜索互动 / 主页互动+私信 / 关注监控 / 发布 / 评论下滑;**砍推荐页养号**;core+plugin 分包。待补:target-registry 已加 DM+下滑目标;L3 业务规格待加 DM 参数(dmEnable/dmKeywords/dmTemplates/dmDailyCap)。
+> 范围更新(2026-07-10):5 功能 = 搜索互动 / 主页互动+私信 / 关注监控 / 发布 / 评论下滑;**砍推荐页养号**;core+plugin 分包。DM 已补齐:target-registry 加 DM+下滑目标(58 项);L3 业务规格加 DM 参数(dmEnable/dmKeywords/dmTemplates/dmDailyCap)+ dmCommenter/scrollComments 流程 + dmSent 统计 + StateStore 去重限量。**G0 规格全齐。**
 
 ## 已完成
 
