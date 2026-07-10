@@ -1,0 +1,243 @@
+// 决策引擎(core,与 app 无关)。每步:观测 → 组合定位 → 危险优先 → 期望执行 → 验证/轮询 → 超时升级。
+// 公理 A1–A4 的直接落地。全部依赖经 EngineDeps 注入,便于 mock 截图序列离线单测。
+import { centerPx, normPx, type Point, type Size } from "./geometry";
+import type { Driver, Hit, LocateQuery, Perceptor } from "./interfaces";
+import type { BasicOp, Escalation, Step } from "./step";
+import type { HazardClass, Target, TargetRegistry } from "./target";
+
+export const POLL_MS = 400;
+export const MAX_HAZARD_HANDLES = 6; // 同一步危险反复出现的熔断
+
+const HAZARD_ORDER: Record<HazardClass, number> = { system: 0, overlay: 1, category: 2 };
+
+export interface EngineDeps {
+  driver: Driver;
+  perceptor: Perceptor;
+  targets: TargetRegistry;
+  size: Size;
+  /** 可注入时钟/休眠,单测用假实现,不真等。 */
+  now: () => number;
+  sleep: (ms: number) => Promise<void>;
+  shouldStop: () => boolean;
+  pollMs?: number;
+  log?: (m: string) => void;
+  onEvent?: (e: string, d?: unknown) => void;
+}
+
+export type DecideOutcome =
+  | { status: "ok" }
+  | { status: "hazard"; id: string }
+  | { status: "stopped" }
+  | { status: "timeout" };
+
+function target(deps: EngineDeps, id: string): Target {
+  const t = deps.targets.get(id);
+  if (!t) throw new Error(`未知 Target: ${id}`);
+  return t;
+}
+
+function queriesFor(deps: EngineDeps, ids: string[]): LocateQuery[] {
+  return ids.map((id) => {
+    const t = target(deps, id);
+    return t.region ? { id, phrase: t.phrase, region: t.region } : { id, phrase: t.phrase };
+  });
+}
+
+async function locateAll(deps: EngineDeps, ids: string[]): Promise<Map<string, Hit>> {
+  if (ids.length === 0) return new Map();
+  const shot = await deps.driver.screenshot();
+  const hits = await deps.perceptor.locate(shot, queriesFor(deps, ids));
+  return new Map(hits.map((h) => [h.id, h]));
+}
+
+/** 危险按 class 优先级(system>overlay>category)取第一个命中的。 */
+function firstHazard(deps: EngineDeps, hazardIds: string[], hitMap: Map<string, Hit>): string | undefined {
+  return hazardIds
+    .filter((id) => hitMap.has(id))
+    .sort((a, b) => HAZARD_ORDER[target(deps, a).hazardClass ?? "overlay"] - HAZARD_ORDER[target(deps, b).hazardClass ?? "overlay"])[0];
+}
+
+// —— 手势 ——
+function blindSwipeNext(deps: EngineDeps): Promise<void> {
+  return deps.driver.swipe(normPx(0.5, 0.66, deps.size), normPx(0.5, 0.26, deps.size), 250);
+}
+function backGesture(deps: EngineDeps): Promise<void> {
+  return deps.driver.swipe(normPx(0.02, 0.5, deps.size), normPx(0.78, 0.5, deps.size), 200);
+}
+
+async function handleHazard(deps: EngineDeps, id: string, hit: Hit): Promise<void> {
+  const h = target(deps, id).handler ?? "tapBox";
+  deps.log?.(`危险(${id}) → ${h}`);
+  deps.onEvent?.("hazard_handled", { id, handler: h });
+  switch (h) {
+    case "deny":
+    case "allow":
+    case "tapBox":
+      await deps.driver.tap(centerPx(hit.box, deps.size));
+      break;
+    case "swipeAway":
+      await blindSwipeNext(deps);
+      break;
+    case "back":
+      await backGesture(deps);
+      break;
+    case "skip":
+      break; // 交插件动作层处理
+  }
+}
+
+async function execAct(deps: EngineDeps, act: BasicOp, hitMap: Map<string, Hit>): Promise<void> {
+  switch (act.kind) {
+    case "none":
+      return;
+    case "tapTarget": {
+      const hit = hitMap.get(act.target);
+      if (!hit) throw new Error(`act 要点 ${act.target},但本帧未定位到`);
+      await deps.driver.tap(centerPx(hit.box, deps.size));
+      return;
+    }
+    case "tapPoint":
+      await deps.driver.tap(act.point);
+      return;
+    case "typeInto": {
+      const hit = hitMap.get(act.target);
+      if (hit) await deps.driver.tap(centerPx(hit.box, deps.size)); // 有输入框先聚焦
+      await deps.driver.typeText(act.text);
+      return;
+    }
+    case "swipeNext":
+      await blindSwipeNext(deps);
+      return;
+    case "swipe":
+      await deps.driver.swipe(act.from, act.to, act.durMs ?? 250);
+      return;
+  }
+}
+
+/** 轮询直到任一 verify 目标出现或到 deadline。空 verify = 纯动作步,直接成功。 */
+async function awaitTargets(deps: EngineDeps, ids: string[], deadline: number): Promise<boolean> {
+  if (ids.length === 0) return true;
+  const pollMs = deps.pollMs ?? POLL_MS;
+  while (deps.now() < deadline) {
+    if (deps.shouldStop()) return false;
+    const hitMap = await locateAll(deps, ids);
+    if (ids.some((id) => hitMap.has(id))) return true;
+    await deps.sleep(pollMs);
+  }
+  return false;
+}
+
+/**
+ * 一次决策尝试(闭环轮询)。返回 ok/hazard/stopped/timeout。
+ * 危险优先于期望;期望不在先当「加载中」轮询;超时才返回 timeout(升级交 runStep)。
+ */
+export async function decide(step: Step, deps: EngineDeps): Promise<DecideOutcome> {
+  if (deps.shouldStop()) return { status: "stopped" };
+  const pollMs = deps.pollMs ?? POLL_MS;
+  const deadline = deps.now() + step.timeout;
+  const queryIds = [...step.hazards, ...step.expected];
+
+  while (deps.now() < deadline) {
+    if (deps.shouldStop()) return { status: "stopped" };
+    const hitMap = await locateAll(deps, queryIds);
+
+    // ① 危险优先
+    const hz = firstHazard(deps, step.hazards, hitMap);
+    if (hz) {
+      await handleHazard(deps, hz, hitMap.get(hz)!);
+      return { status: "hazard", id: hz };
+    }
+    // ② 期望在 → 执行 act,再验证
+    const exp = step.expected.find((id) => hitMap.has(id));
+    if (exp) {
+      if (step.act && step.act.kind !== "none") await execAct(deps, step.act, hitMap);
+      const ok = await awaitTargets(deps, step.verify, deadline);
+      return ok ? { status: "ok" } : { status: "timeout" };
+    }
+    // ③ 期望不在 ≠ 失败:先当加载中,轮询
+    await deps.sleep(pollMs);
+  }
+  // ④ 超时
+  return { status: "timeout" };
+}
+
+export type StepResult =
+  | { status: "ok" }
+  | { status: "stopped" }
+  | { status: "recover" } // 需上层回基地
+  | { status: "alert"; message: string };
+
+/**
+ * 跑一步 + 升级策略。危险处理算「进展」→ 重跑本步(有熔断);超时按 onFail 链升级,
+ * 终点永远是停手告警(不盲动,D6)。
+ */
+export async function runStep(step: Step, deps: EngineDeps): Promise<StepResult> {
+  const chain: Escalation[] = step.onFail.length
+    ? step.onFail
+    : [{ kind: "alertOperator", message: `步骤失败: ${step.intent}` }];
+  let hazardHandles = 0;
+  let escIdx = 0;
+  let retryLeft = 0;
+  let variants: BasicOp[] | null = null;
+  let variantIdx = 0;
+  let cur: Step = step;
+
+  while (true) {
+    if (deps.shouldStop()) return { status: "stopped" };
+    const o = await decide(cur, deps);
+
+    if (o.status === "ok") return { status: "ok" };
+    if (o.status === "stopped") return { status: "stopped" };
+    if (o.status === "hazard") {
+      if (++hazardHandles > MAX_HAZARD_HANDLES) {
+        return { status: "alert", message: `同一步危险反复出现无法清除: ${step.intent}` };
+      }
+      // 处理了危险=进展,重跑本步、重置升级预算(整体仍受 hazardHandles 熔断)
+      cur = step;
+      escIdx = 0;
+      retryLeft = 0;
+      variants = null;
+      continue;
+    }
+
+    // o.status === "timeout" → 升级
+    if (retryLeft > 0) {
+      retryLeft--;
+      cur = step;
+      continue;
+    }
+    if (variants && variantIdx < variants.length) {
+      cur = { ...step, act: variants[variantIdx++] };
+      continue;
+    }
+    if (escIdx >= chain.length) {
+      return { status: "alert", message: `升级链耗尽: ${step.intent}` };
+    }
+    const esc = chain[escIdx++];
+    switch (esc.kind) {
+      case "retry":
+        retryLeft = Math.max(0, esc.times);
+        cur = step;
+        break;
+      case "variants":
+        variants = esc.ops;
+        variantIdx = 0;
+        cur = variants.length ? { ...step, act: variants[variantIdx++] } : step;
+        break;
+      case "recover":
+        return { status: "recover" };
+      case "alertOperator":
+        return { status: "alert", message: esc.message };
+    }
+  }
+}
+
+// 供插件动作层复用的低层封装(L1 的一部分)。
+export async function tapTargetNow(deps: EngineDeps, id: string): Promise<Point | null> {
+  const hitMap = await locateAll(deps, [id]);
+  const hit = hitMap.get(id);
+  if (!hit) return null;
+  const p = centerPx(hit.box, deps.size);
+  await deps.driver.tap(p);
+  return p;
+}
