@@ -115,7 +115,15 @@ export class FakeApp {
       }
       return out;
     },
-    readText: async (): Promise<TextLine[]> => this.lines,
+    readText: async (_img: ImageBytes, region?: Box): Promise<TextLine[]> => {
+      if (!region) return this.lines;
+      const [x1, y1, x2, y2] = region;
+      return this.lines.filter((l) => {
+        const cxx = (l.box[0] + l.box[2]) / 2;
+        const cyy = (l.box[1] + l.box[3]) / 2;
+        return cxx >= x1 && cxx <= x2 && cyy >= y1 && cyy <= y2;
+      });
+    },
   };
 }
 

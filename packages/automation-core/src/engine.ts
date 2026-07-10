@@ -115,14 +115,24 @@ async function execAct(deps: EngineDeps, act: BasicOp, hitMap: Map<string, Hit>)
   }
 }
 
-/** 轮询直到任一 verify 目标出现或到 deadline。空 verify = 纯动作步,直接成功。 */
-async function awaitTargets(deps: EngineDeps, ids: string[], deadline: number): Promise<boolean> {
-  if (ids.length === 0) return true;
+/**
+ * 轮询直到任一 verify 目标出现或到 deadline。空 verify = 纯动作步,直接成功。
+ * **等待期间也处理危险**(如权限窗/弹窗在页面转换时弹出),否则会被挡死。
+ */
+async function awaitTargets(deps: EngineDeps, verifyIds: string[], hazardIds: string[], deadline: number): Promise<boolean> {
+  if (verifyIds.length === 0) return true;
   const pollMs = deps.pollMs ?? POLL_MS;
+  const queryIds = [...new Set([...verifyIds, ...hazardIds])];
   while (deps.now() < deadline) {
     if (deps.shouldStop()) return false;
-    const hitMap = await locateTargets(deps, ids);
-    if (ids.some((id) => hitMap.has(id))) return true;
+    const hitMap = await locateTargets(deps, queryIds);
+    const hz = firstHazard(deps, hazardIds, hitMap);
+    if (hz) {
+      await handleHazard(deps, hz, hitMap.get(hz)!); // 关掉弹窗后继续等 verify
+      await deps.sleep(pollMs); // 让时钟前进 + 给 UI 更新时间(防危险短暂 persist 时忙循环)
+      continue;
+    }
+    if (verifyIds.some((id) => hitMap.has(id))) return true;
     await deps.sleep(pollMs);
   }
   return false;
@@ -159,7 +169,7 @@ export async function decide(step: Step, deps: EngineDeps): Promise<DecideOutcom
     const exp = step.expected.find((id) => hitMap.has(id));
     if (exp && (!actId || hitMap.has(actId))) {
       if (step.act && step.act.kind !== "none") await execAct(deps, step.act, hitMap);
-      const ok = await awaitTargets(deps, step.verify, deadline);
+      const ok = await awaitTargets(deps, step.verify, step.hazards, deadline);
       return ok ? { status: "ok" } : { status: "timeout" };
     }
     // ③ 期望不在 / 要点的目标未现 ≠ 失败:先当加载中,轮询

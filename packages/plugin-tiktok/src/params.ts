@@ -26,6 +26,13 @@ export interface DmParams {
   dmDailyCap: number; // 每账号每日上限(可配)
 }
 
+/** 关注监控/打粉:开启=纯打粉,只跑关注流,与养号互斥。词/话术留空则沿用全局。 */
+export interface FollowingParams extends ModuleParams {
+  moduleEnable: boolean;
+  commentMatchKeywords: string[];
+  fixedReplies: string[];
+}
+
 export interface TikTokParams {
   searchKeywords: string[];
   posPrompts: string[];
@@ -38,6 +45,7 @@ export interface TikTokParams {
   forYou: ModuleParams;
   kwSearch: ModuleParams;
   persHome: PersHomeParams;
+  following: FollowingParams;
   dm: DmParams;
 }
 
@@ -84,7 +92,7 @@ export const defaultParams: TikTokParams = {
   posPrompts: ["*"],
   negPrompts: [],
   commentMatchKeywords: [],
-  fixedReplies: [],
+  fixedReplies: ["{love this|so true|needed this} {emoji}", "this is everything {emoji}", "facts {emoji}"],
   kwSearchExecRatio: 0,
   clickWaitTime: 1,
   postReplies: false,
@@ -94,6 +102,12 @@ export const defaultParams: TikTokParams = {
     ...mod({ interactEnable: false, interactProb: 0.1, videoLikeProb: 0, videoSaveProb: 0, videoFollowProb: 0, commentReplyProb: 0.5 }),
     moduleEnable: false, // 账号无作品必须 false;每天最多一次
     maxVideoCount: 3,
+  },
+  following: {
+    ...mod({ interactProb: 1, videoLikeProb: 0, videoSaveProb: 0, videoFollowProb: 0, commentLikeProb: 0.3, commentReplyProb: 0.8, commentLikeMaxCount: 3, commentReplyMaxCount: 3 }),
+    moduleEnable: false, // 打粉总开关;开=纯打粉与养号互斥
+    commentMatchKeywords: [], // 空=沿用全局
+    fixedReplies: [], // 空=沿用全局
   },
   dm: {
     dmEnable: false,
@@ -113,7 +127,7 @@ export function validateParams(p: unknown): void {
   if (q.kwSearchExecRatio > 0 && (!q.searchKeywords || q.searchKeywords.length === 0)) {
     throw new Error("启用了搜索页(kwSearchExecRatio>0),但未设置任何搜索关键词");
   }
-  for (const name of ["forYou", "kwSearch", "persHome"] as const) {
+  for (const name of ["forYou", "kwSearch", "persHome", "following"] as const) {
     const m = q[name];
     if (!m) throw new Error(`缺少模块参数: ${name}`);
     void MOD_KEYS;

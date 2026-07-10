@@ -95,6 +95,17 @@ describe("decide", () => {
     expect(w.swipes[0].from.y).toBeGreaterThan(w.swipes[0].to.y); // 向上滑
   });
 
+  it("验证等待期间弹出的危险被处理,随后 verify 成功", async () => {
+    // 期望在、act 执行后进入 verify 等待;等待中弹出 ad.popup(被 tapBox 关),之后 search.input 出现。
+    const w = new FakeWorld().show("feed.rail");
+    w.at(150, () => w.show("ad.popup", [0.9, 0.1, 0.95, 0.15]));
+    w.at(300, () => w.hide("ad.popup").show("search.input")); // 关掉后目标出现
+    const s = step({ intent: "点开搜索", act: { kind: "tapPoint", point: { x: 1, y: 1 } }, expected: ["feed.rail"], hazards: ["ad.popup"], verify: ["search.input"], timeout: 3000 });
+    const o = await decide(s, mkDeps(w));
+    expect(o.status).toBe("ok");
+    expect(w.taps.length).toBeGreaterThanOrEqual(2); // act 的点 + 关 ad.popup 的点
+  });
+
   it("act 后 verify 目标不出现 → timeout", async () => {
     const w = new FakeWorld().show("search.input");
     const s = step({ intent: "点搜索", act: { kind: "tapTarget", target: "search.input" }, expected: ["search.input"], verify: ["feed.rail"], timeout: 800 });
