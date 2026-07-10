@@ -6,3 +6,5 @@ export * from "./target";
 export * from "./step";
 export * from "./human";
 export * from "./engine";
+export * from "./context";
+export * from "./plugin";

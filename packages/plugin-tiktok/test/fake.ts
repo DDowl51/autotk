@@ -1,0 +1,109 @@
+// 插件测试基座:FakeApp —— 能识别「点了哪个目标」并触发转场,模拟 app 页面流转。
+// 每个目标一个唯一框,tap 落在哪个框中心即认定点了哪个目标(与引擎 centerPx 同算法,精确匹配)。
+import type { Box, Driver, Hit, ImageBytes, LocateQuery, Perceptor, Point, StateStore, TextLine } from "@auto/core";
+
+const SIZE = { width: 750, height: 1334 };
+function centerOf(box: Box): Point {
+  return { x: ((box[0] + box[2]) / 2) * SIZE.width, y: ((box[1] + box[3]) / 2) * SIZE.height };
+}
+
+export class FakeApp {
+  clock = 0;
+  stop = false;
+  size = SIZE;
+  present = new Map<string, Box>();
+  taps: string[] = []; // 点中的目标 id(未知点记 "?")
+  swipes = 0;
+  typed: string[] = [];
+  /** 点某目标后的转场。 */
+  transitions: Record<string, (a: FakeApp) => void> = {};
+  /** 盲滑后的转场。 */
+  onSwipe?: (a: FakeApp) => void;
+
+  private boxes = new Map<string, Box>();
+  private nextY = 0.1;
+  private boxFor(id: string): Box {
+    let b = this.boxes.get(id);
+    if (!b) {
+      const y = this.nextY;
+      this.nextY += 0.03;
+      b = [0.4, y, 0.5, y + 0.01];
+      this.boxes.set(id, b);
+    }
+    return b;
+  }
+
+  show(id: string): this {
+    this.present.set(id, this.boxFor(id));
+    return this;
+  }
+  hide(id: string): this {
+    this.present.delete(id);
+    return this;
+  }
+  on(id: string, fn: (a: FakeApp) => void): this {
+    this.transitions[id] = fn;
+    return this;
+  }
+
+  now = (): number => this.clock;
+  sleep = async (ms: number): Promise<void> => {
+    this.clock += ms;
+  };
+  shouldStop = (): boolean => this.stop;
+
+  driver: Driver = {
+    screenshot: async (): Promise<ImageBytes> => new Uint8Array(0),
+    tap: async (p: Point): Promise<void> => {
+      for (const [id, box] of this.present) {
+        const c = centerOf(box);
+        if (Math.abs(c.x - p.x) < 1e-6 && Math.abs(c.y - p.y) < 1e-6) {
+          this.taps.push(id);
+          this.transitions[id]?.(this);
+          return;
+        }
+      }
+      this.taps.push("?");
+    },
+    swipe: async (): Promise<void> => {
+      this.swipes++;
+      this.onSwipe?.(this);
+    },
+    typeText: async (s: string): Promise<void> => {
+      this.typed.push(s);
+    },
+    activateApp: async (): Promise<void> => {},
+    ensureHealthy: async (): Promise<void> => {},
+    windowSize: async () => this.size,
+  };
+
+  perceptor: Perceptor = {
+    locate: async (_img: ImageBytes, queries: LocateQuery[]): Promise<Hit[]> => {
+      const out: Hit[] = [];
+      for (const q of queries) {
+        const box = this.present.get(q.id);
+        if (box) out.push({ id: q.id, box, score: 0.99 });
+      }
+      return out;
+    },
+    readText: async (): Promise<TextLine[]> => [],
+  };
+}
+
+/** 内存 StateStore(去重/限量测试用)。 */
+export function memStore(): StateStore {
+  const sets = new Map<string, Set<string>>();
+  const counts = new Map<string, number>();
+  return {
+    has: async (ns, key) => sets.get(ns)?.has(key) ?? false,
+    add: async (ns, key) => {
+      (sets.get(ns) ?? sets.set(ns, new Set()).get(ns)!).add(key);
+    },
+    incrDaily: async (ns, key) => {
+      const k = `${ns}:${key}`;
+      const v = (counts.get(k) ?? 0) + 1;
+      counts.set(k, v);
+      return v;
+    },
+  };
+}

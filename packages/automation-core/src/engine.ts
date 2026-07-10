@@ -131,11 +131,18 @@ async function awaitTargets(deps: EngineDeps, ids: string[], deadline: number): 
  * 一次决策尝试(闭环轮询)。返回 ok/hazard/stopped/timeout。
  * 危险优先于期望;期望不在先当「加载中」轮询;超时才返回 timeout(升级交 runStep)。
  */
+/** act 若要点/输入某目标,其 id 也必须被定位到才能执行(否则是盲点)。 */
+function actTargetId(act?: Step["act"]): string | undefined {
+  if (act && (act.kind === "tapTarget" || act.kind === "typeInto")) return act.target;
+  return undefined;
+}
+
 export async function decide(step: Step, deps: EngineDeps): Promise<DecideOutcome> {
   if (deps.shouldStop()) return { status: "stopped" };
   const pollMs = deps.pollMs ?? POLL_MS;
   const deadline = deps.now() + step.timeout;
-  const queryIds = [...step.hazards, ...step.expected];
+  const actId = actTargetId(step.act);
+  const queryIds = [...new Set([...step.hazards, ...step.expected, ...(actId ? [actId] : [])])];
 
   while (deps.now() < deadline) {
     if (deps.shouldStop()) return { status: "stopped" };
@@ -147,14 +154,14 @@ export async function decide(step: Step, deps: EngineDeps): Promise<DecideOutcom
       await handleHazard(deps, hz, hitMap.get(hz)!);
       return { status: "hazard", id: hz };
     }
-    // ② 期望在 → 执行 act,再验证
+    // ② 期望在 →(要点的目标也在)执行 act,再验证。要点的目标还没出现 = 加载中,继续轮询。
     const exp = step.expected.find((id) => hitMap.has(id));
-    if (exp) {
+    if (exp && (!actId || hitMap.has(actId))) {
       if (step.act && step.act.kind !== "none") await execAct(deps, step.act, hitMap);
       const ok = await awaitTargets(deps, step.verify, deadline);
       return ok ? { status: "ok" } : { status: "timeout" };
     }
-    // ③ 期望不在 ≠ 失败:先当加载中,轮询
+    // ③ 期望不在 / 要点的目标未现 ≠ 失败:先当加载中,轮询
     await deps.sleep(pollMs);
   }
   // ④ 超时

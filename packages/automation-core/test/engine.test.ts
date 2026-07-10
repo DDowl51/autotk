@@ -229,10 +229,21 @@ describe("act 分支", () => {
     expect(w.taps).toEqual([{ x: 100, y: 200 }]);
   });
 
-  it("tapTarget 要点的目标本帧没定位到 → 抛错(严格,防盲点)", async () => {
+  it("tapTarget 要点的目标未出现 → 当加载中轮询,始终不现则 timeout(不盲点)", async () => {
     const w = new FakeWorld().show("feed.rail"); // 有 rail(期望)但没 feed.like
-    const s = step({ intent: "点赞", act: { kind: "tapTarget", target: "feed.like" }, expected: ["feed.rail"], verify: [] });
-    await expect(decide(s, mkDeps(w))).rejects.toThrow(/未定位到/);
+    const s = step({ intent: "点赞", act: { kind: "tapTarget", target: "feed.like" }, expected: ["feed.rail"], verify: [], timeout: 800 });
+    const o = await decide(s, mkDeps(w));
+    expect(o.status).toBe("timeout");
+    expect(w.taps).toHaveLength(0); // 没盲点
+  });
+
+  it("tapTarget 目标稍后出现 → 轮询到后执行 → ok", async () => {
+    const w = new FakeWorld().show("feed.rail");
+    w.at(200, () => w.show("feed.like", [0.8, 0.4, 0.9, 0.5]));
+    const s = step({ intent: "点赞", act: { kind: "tapTarget", target: "feed.like" }, expected: ["feed.rail"], verify: [], timeout: 2000 });
+    const o = await decide(s, mkDeps(w));
+    expect(o.status).toBe("ok");
+    expect(w.taps).toHaveLength(1);
   });
 });
 
