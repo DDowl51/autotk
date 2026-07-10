@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decide, runStep, type EngineDeps } from "../src/engine";
+import { decide, runStep, tapTargetNow, type EngineDeps } from "../src/engine";
 import { toRegistry, type Target } from "../src/target";
 import type { Step } from "../src/step";
 import { FakeWorld } from "./fake";
@@ -9,9 +9,11 @@ const TARGETS: Target[] = [
   { id: "feed.rail", phrase: "action rail", kind: "expected" },
   { id: "feed.like", phrase: "like button", kind: "expected" },
   { id: "search.input", phrase: "search box", kind: "expected" },
-  { id: "sys.perm", phrase: "Don't Allow", kind: "hazard", hazardClass: "system", handler: "tapBox" },
+  { id: "sys.perm", phrase: "Don't Allow", kind: "hazard", hazardClass: "system", handler: "deny" },
   { id: "ad.popup", phrase: "close X", kind: "hazard", hazardClass: "overlay", handler: "tapBox" },
   { id: "feed.live", phrase: "LIVE badge", kind: "hazard", hazardClass: "category", handler: "swipeAway" },
+  { id: "sheet.share", phrase: "share sheet", kind: "hazard", hazardClass: "overlay", handler: "back" },
+  { id: "ad.comment", phrase: "ad comment", kind: "hazard", hazardClass: "category", handler: "skip" },
 ];
 
 function mkDeps(w: FakeWorld): EngineDeps {
@@ -180,5 +182,79 @@ describe("runStep 升级链", () => {
     const r = await runStep(s, mkDeps(w));
     expect(r.status).toBe("alert");
     expect(r).toMatchObject({ message: expect.stringContaining("危险反复出现") });
+  });
+});
+
+describe("handler 分支", () => {
+  it("deny:点定位到的框(等同 tapBox)", async () => {
+    const w = new FakeWorld().show("sys.perm", [0.4, 0.8, 0.6, 0.85]).show("feed.rail");
+    const o = await decide(step({ intent: "x", expected: ["feed.rail"], hazards: ["sys.perm"] }), mkDeps(w));
+    expect(o).toMatchObject({ status: "hazard", id: "sys.perm" });
+    expect(w.taps).toEqual([{ x: 0.5 * 750, y: 0.825 * 1334 }]);
+    expect(w.swipes).toHaveLength(0);
+  });
+
+  it("back:左→右返回手势(不点击)", async () => {
+    const w = new FakeWorld().show("sheet.share").show("feed.rail");
+    const o = await decide(step({ intent: "x", expected: ["feed.rail"], hazards: ["sheet.share"] }), mkDeps(w));
+    expect(o).toMatchObject({ status: "hazard", id: "sheet.share" });
+    expect(w.taps).toHaveLength(0);
+    expect(w.swipes).toHaveLength(1);
+    expect(w.swipes[0].from.x).toBeLessThan(w.swipes[0].to.x); // 左边缘 → 右
+  });
+
+  it("skip:识别到但不做任何触控(交插件层)", async () => {
+    const w = new FakeWorld().show("ad.comment").show("feed.rail");
+    const o = await decide(step({ intent: "x", expected: ["feed.rail"], hazards: ["ad.comment"] }), mkDeps(w));
+    expect(o).toMatchObject({ status: "hazard", id: "ad.comment" });
+    expect(w.taps).toHaveLength(0);
+    expect(w.swipes).toHaveLength(0);
+  });
+});
+
+describe("act 分支", () => {
+  it("typeInto:先点输入框再打字", async () => {
+    const w = new FakeWorld().show("search.input", [0.1, 0.02, 0.7, 0.08]);
+    const s = step({ intent: "输入", act: { kind: "typeInto", target: "search.input", text: "beach" }, expected: ["search.input"], verify: [] });
+    const o = await decide(s, mkDeps(w));
+    expect(o.status).toBe("ok");
+    expect(w.taps).toHaveLength(1); // 聚焦输入框
+    expect(w.typed).toEqual(["beach"]);
+  });
+
+  it("tapPoint:点固定像素点", async () => {
+    const w = new FakeWorld().show("feed.rail");
+    const s = step({ intent: "点固定点", act: { kind: "tapPoint", point: { x: 100, y: 200 } }, expected: ["feed.rail"], verify: [] });
+    await decide(s, mkDeps(w));
+    expect(w.taps).toEqual([{ x: 100, y: 200 }]);
+  });
+
+  it("tapTarget 要点的目标本帧没定位到 → 抛错(严格,防盲点)", async () => {
+    const w = new FakeWorld().show("feed.rail"); // 有 rail(期望)但没 feed.like
+    const s = step({ intent: "点赞", act: { kind: "tapTarget", target: "feed.like" }, expected: ["feed.rail"], verify: [] });
+    await expect(decide(s, mkDeps(w))).rejects.toThrow(/未定位到/);
+  });
+});
+
+describe("tapTargetNow(L1 复用封装)", () => {
+  it("定位到 → 点其中心并返回像素点", async () => {
+    const w = new FakeWorld().show("feed.like", [0.8, 0.4, 0.9, 0.5]);
+    const p = await tapTargetNow(mkDeps(w), "feed.like");
+    expect(p).not.toBeNull();
+    expect(w.taps).toHaveLength(1);
+    expect(p!.x).toBeCloseTo(0.85 * 750, 6);
+  });
+  it("没定位到 → 返回 null,不点击", async () => {
+    const w = new FakeWorld();
+    const p = await tapTargetNow(mkDeps(w), "feed.like");
+    expect(p).toBeNull();
+    expect(w.taps).toHaveLength(0);
+  });
+});
+
+describe("错误路径", () => {
+  it("Step 引用未知 Target id → 抛错", async () => {
+    const w = new FakeWorld();
+    await expect(decide(step({ intent: "x", expected: ["nope.unknown"] }), mkDeps(w))).rejects.toThrow(/未知 Target/);
   });
 });
