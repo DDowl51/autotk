@@ -130,6 +130,7 @@ def main():
     ap.add_argument("--attn", default=None, help='attn 实现，如 sdpa/eager；原生 Windows 无 flash-attn 时可试 sdpa')
     ap.add_argument("--max-side", type=int, default=0, help="把图长边缩到这个像素再喂（0=原图）；显存不够(OOM)时设 1000/768")
     ap.add_argument("--batch", type=int, default=1, help="批处理张数：>1 则测批处理吞吐（最不确定的量）而非逐张精度")
+    ap.add_argument("--fp8", action="store_true", help="用 torchao 把线性层量化到 FP8（Blackwell 原生；权重减半、显存降、可能提速）")
     ap.add_argument("--out", default="out")
     args = ap.parse_args()
 
@@ -147,6 +148,30 @@ def main():
     if args.attn:
         mk["attn_implementation"] = args.attn
     model = AutoModel.from_pretrained(args.model, **mk).to("cuda").eval()
+
+    if args.fp8:
+        # torchao 把 nn.Linear 量化到 FP8。优先权重量化(Float8WeightOnly，batch1 友好、精度稳)，
+        # 无则退动态激活量化。量化后精度可能变——务必看 out/boxed_* 复核。
+        try:
+            import torchao.quantization as taq
+            from torchao.quantization import quantize_
+            cfg = None
+            for name in ("Float8WeightOnlyConfig", "Float8DynamicActivationFloat8WeightConfig"):
+                if hasattr(taq, name):
+                    cfg = getattr(taq, name)()
+                    break
+            if cfg is None:
+                print("⚠ torchao 里没找到 FP8 config，跳过 FP8（退回 BF16）")
+            else:
+                quantize_(model, cfg)
+                print(f"已应用 torchao FP8：{type(cfg).__name__}（权重减半）")
+        except Exception as e:
+            print(f"⚠ FP8 量化失败，退回 BF16：{e}")
+
+    def vram():
+        return torch.cuda.memory_allocated() / 1e9
+
+    print(f"模型驻留显存：{vram():.2f} GB")
 
     # —— 批处理吞吐模式（--batch > 1）：取样本前 N 张（不足循环补），批量推理计时 ——
     if args.batch > 1:
