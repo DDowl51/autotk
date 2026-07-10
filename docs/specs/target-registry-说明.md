@@ -18,7 +18,7 @@
 | `kind` | ✓ | `hazard` \| `expected` |
 | `phrase` | ✓ | **送 LocateAnything 的英文定位短语**(grounding query)。表达要具体、可定位 |
 | `hazardClass` | hazard | `system`(iOS 系统窗)\| `overlay`(应用内浮层)\| `category`(不关而绕:直播/广告评论)。**决定优先级与 handler 语义** |
-| `handler` | hazard | `deny`(系统窗拒绝:WDA /alert 优先,读不到→OCR 点拒绝框)\| `allow`(仅 publish 权限)\| `tapBox`(点定位到的框中心,即它的关闭钮/安全按钮)\| `swipeAway`(盲滑走,直播卡)\| `skip`(不互动,广告评论)\| `back`(iOS 返回手势) |
+| `handler` | hazard | `deny` / `allow` / `tapBox`:**执行上都是「点 VLM 定位到的框中心」**(系统弹窗不走 WDA /alert——该通道对带地图的窗读不到,已弃,见 L0 规格书 §7;tap 点系统弹窗按钮已真机实证)。`deny/allow` 是**语义标签**:phrase 指向拒绝/允许按钮,供审计(养号工作流断言**绝不含 allow**;allow 仅 publish 页激活)。另有 `swipeAway`(盲滑走,直播卡)\| `skip`(不互动,广告评论)\| `back`(iOS 返回手势) |
 | `ocr` | 可选 | 字符串正则(加载时 `new RegExp(pattern,'i')`)。**用途**:①系统窗 `deny/allow` 走 WDA alert 时按词表匹配按钮 ②VLM「疑似命中」时用 OCR 二次确认降幻觉(见总纲 §6 风险) |
 | `region` | 可选 | 归一化 `[x,y,w,h]` 先验区域,缩小 VLM 搜索、降误判 |
 | `box` | 可选 | 归一化点 `[x,y]` 或框 `[x,y,w,h]`——**已实测的固定位置**,可作 VLM 失败时的兜底坐标 |
@@ -53,4 +53,4 @@
 
 - 每个 `verified:false` 的 Target 真机核 `phrase` 定位准度(尤其小目标 ×,配合 §性能报告 512 精度地板)。
 - `feed.live-tag` 修正后的 stream-video 用例复测。
-- `deny/allow` 的 WDA alert 词表与 OCR 兜底联调(定位权限带地图,WDA 读不到时的 OCR 路径)。
+- **publish 权限窗 allow 按钮的 VLM 定位实测**(中文「好」「允许访问所有照片」的 phrase 定位未验;deny 的「Don't Allow」已在 IMG_0008 验过)。命中后用 `ocr` 词表二次确认再点,防点错成「不允许」。

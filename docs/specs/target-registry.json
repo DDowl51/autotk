@@ -29,7 +29,7 @@
     { "id": "sys.location-perm", "kind": "hazard", "hazardClass": "system", "handler": "deny",
       "phrase": "the Don't Allow button", "ocr": "don'?t\\s*allow|不允许",
       "verified": true, "box": [0.14, 0.78, 0.72, 0.07],
-      "source": "IMG_0008 实测;iOS 定位权限(带地图);WDA /alert 或读不到→OCR 点不允许",
+      "source": "IMG_0008 实测;iOS 定位权限(带地图);VLM 定位 Don't Allow→tap(该窗 /alert 读不到,alert 通道已弃)",
       "notes": "绝不点 Allow Once/Allow While Using App;弯引号 U+2019 已并入正则" },
 
     { "id": "sys.tracking", "kind": "hazard", "hazardClass": "system", "handler": "deny",

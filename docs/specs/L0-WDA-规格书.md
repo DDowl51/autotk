@@ -48,15 +48,14 @@ class WdaClient {
 
   // —— 输入 ——
   typeText(s: string): Promise<void>;   // POST /wda/keys
-
-  // —— 系统弹窗(springboard alert) ——
-  alertText(): Promise<string | null>;  // 无弹窗返回 null(WDA 报错→吞成 null)
-  alertButtons(): Promise<string[]>;    // 无弹窗返回 []
-  alertClick(name: string): Promise<void>;   // POST /alert/accept {name}
-  alertDismiss(): Promise<void>;        // POST /alert/dismiss
   pressHome(): Promise<void>;
 }
 ```
+
+> **系统弹窗不走 /alert 通道(2026-07-10 定)**:iOS 系统弹窗(权限窗等)统一按普通危险目标处理——
+> 截图里拍得到(springboard 层在 WDA 截图内,IMG_0008 实证)、普通 `tap` 点得到(本会话 OCR 兜底点
+> 「Don't Allow」实证)。`/alert/*` 端点对带地图的定位窗**本来就读不到**,留着是不可靠的第二通道,
+> 违背「屏幕即真相 + 单一路径」,故 L0 不提供。
 
 ## 3. 端点映射
 
@@ -70,10 +69,6 @@ class WdaClient {
 | tap | `POST /session/{sid}/actions` | W3C pointer,见 §5 |
 | swipe | `POST /session/{sid}/actions` | W3C pointer + move duration |
 | typeText | `POST /session/{sid}/wda/keys` body `{value:[...chars]}` | |
-| alertText | `GET /session/{sid}/alert/text` | 无弹窗→非2xx→null |
-| alertButtons | `GET /session/{sid}/wda/alert/buttons` | |
-| alertClick | `POST /session/{sid}/alert/accept` body `{name}` | 点指定按钮 |
-| alertDismiss | `POST /session/{sid}/alert/dismiss` | |
 | pressHome | `POST /session/{sid}/wda/homescreen` | |
 
 统一响应信封 `{ value, sessionId }`;非 2xx 或 value 含错误 → 抛 `WdaError(message,status,path)`。
@@ -116,6 +111,9 @@ class WdaClient {
 - 不给业务层用 `findElements/element*/source`(深度 1 无意义,诱导错误定位)。
 - 不用 `touchPerform`(此设备 Unhandled)。
 - 不做固定 sleep(上层用 `await(target)`)。
+- **不提供 `/alert/*` 系列**(alertText/alertButtons/alertClick/alertDismiss):系统弹窗统一走
+  截图 → VLM 定位(`sys.*` Target 的 phrase)→ `tap`。理由见 §2 注;带地图的定位权限窗 /alert 读不到,
+  tap 路径已真机实证。
 
 ## 8. G1 验收标准
 

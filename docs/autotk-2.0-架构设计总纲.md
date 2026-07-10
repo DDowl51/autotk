@@ -110,7 +110,7 @@ L1 基本操作 BasicOp   locate(target) / tapTarget(t) / await(t,timeout) / che
                      / handleHazards(activeSet) / swipeNext(盲滑) / typeInto(t,s) / readText(region)
                      = 感知(调 L1 感知客户端)+ 动作(调 L0)的黏合。
 L0 原子   Primitive  tap(x,y) / swipe(p1,p2,dur) / typeText(s) / screenshot() / activateApp(id)
-                     / alert.accept|dismiss / pressHome()
+                     / pressHome()   (系统弹窗不走 /alert——统一截图+VLM定位+tap,见 L0 规格书)
                      = WDA 端点 1:1。手机唯一可见层。无语义、无失败判断(A2)。
 ```
 
@@ -133,11 +133,10 @@ class WdaClient {
   tap(p: Point): Promise<void>;         // W3C /actions
   swipe(from: Point, to: Point, durMs: number): Promise<void>;
   typeText(s: string): Promise<void>;   // /wda/keys
-  alertText(): Promise<string | null>;
-  alertButtons(): Promise<string[]>;
-  alertClick(name: string): Promise<void>;
-  alertDismiss(): Promise<void>;
   pressHome(): Promise<void>;
+  // 注:不提供 /alert/* 系列——系统弹窗(权限窗)统一按 sys.* 危险目标处理:
+  // 截图拍得到(springboard 在 WDA 截图内,IMG_0008 实证)、普通 tap 点得到(真机实证);
+  // /alert 对带地图的定位窗读不到,是不可靠的第二通道,违背单一路径原则,弃。
 }
 ```
 
@@ -338,7 +337,9 @@ interface Target {
   phrase: string;                // 送 VLM 的英文定位短语(组合查询用)
   kind: 'hazard' | 'expected';
   hazardClass?: 'system' | 'overlay' | 'category';   // 决定 handler 语义与优先级
-  handler?: 'deny' | 'tapBox' | 'swipeAway' | 'skip' | 'back';  // 仅 hazard
+  handler?: 'deny' | 'allow' | 'tapBox' | 'swipeAway' | 'skip' | 'back';
+  // 仅 hazard。deny/allow/tapBox 执行上都是「点 VLM 定位到的框」;deny/allow 是语义标签
+  // (审计:养号工作流断言绝不含 allow;allow 仅 publish 页)。系统弹窗不走 WDA /alert。
   ocr?: { text: RegExp };        // 可选:OCR 快筛前置(如权限窗先看有无「不允许」)
   region?: [number, number, number, number];         // 归一化先验区域,缩小搜索降误判
 }
