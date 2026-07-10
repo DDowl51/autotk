@@ -13,6 +13,7 @@ function memStore() {
     add: async (ns: string, k: string) => {
       (sets.get(ns) ?? sets.set(ns, new Set()).get(ns)!).add(k);
     },
+    peekDaily: async (ns: string, k: string) => counts.get(`${ns}:${k}`) ?? 0,
     incrDaily: async (ns: string, k: string) => {
       const key = `${ns}:${k}`;
       const v = (counts.get(key) ?? 0) + 1;

@@ -27,6 +27,20 @@ describe("validateParams", () => {
     p.forYou.videoLikeProb = 2;
     expect(() => validateParams(p)).toThrow(/videoLikeProb/);
   });
+  it("开私信但没配关键词/话术 → 抛错", () => {
+    expect(() => validateParams(clone({ dm: { dmEnable: true, dmKeywords: [], dmTemplates: ["hi"], dmDailyCap: 20 } }))).toThrow(/私信/);
+    expect(() => validateParams(clone({ dm: { dmEnable: true, dmKeywords: ["buy"], dmTemplates: [], dmDailyCap: 20 } }))).toThrow(/私信/);
+    expect(() => validateParams(clone({ dm: { dmEnable: true, dmKeywords: ["buy"], dmTemplates: ["hi {user}"], dmDailyCap: 20 } }))).not.toThrow();
+  });
+  it("dmDailyCap 越界 → 抛错(防误配群发)", () => {
+    expect(() => validateParams(clone({ dm: { dmEnable: false, dmKeywords: [], dmTemplates: [], dmDailyCap: 999 } }))).toThrow(/dmDailyCap/);
+  });
+  it("persHome 开启但 maxVideoCount<1 → 抛错", () => {
+    const p = clone();
+    p.persHome.moduleEnable = true;
+    p.persHome.maxVideoCount = 0;
+    expect(() => validateParams(p)).toThrow(/maxVideoCount/);
+  });
 });
 
 describe("defaultParams 防风控值", () => {

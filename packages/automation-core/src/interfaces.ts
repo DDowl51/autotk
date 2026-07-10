@@ -44,6 +44,8 @@ export interface Perceptor {
 export interface StateStore {
   has(ns: string, key: string): Promise<boolean>;
   add(ns: string, key: string): Promise<void>;
-  /** 按「ns + 当天」累加并返回当前值(用于每日配额)。 */
+  /** 读「ns + 当天」当前计数,不自增(发前查配额用)。 */
+  peekDaily(ns: string, key: string): Promise<number>;
+  /** 按「ns + 当天」累加并返回新值(实际动作后调用)。 */
   incrDaily(ns: string, key: string): Promise<number>;
 }

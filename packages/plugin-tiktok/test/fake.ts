@@ -128,6 +128,7 @@ export function memStore(): StateStore {
     add: async (ns, key) => {
       (sets.get(ns) ?? sets.set(ns, new Set()).get(ns)!).add(key);
     },
+    peekDaily: async (ns, key) => counts.get(`${ns}:${key}`) ?? 0,
     incrDaily: async (ns, key) => {
       const k = `${ns}:${key}`;
       const v = (counts.get(k) ?? 0) + 1;
