@@ -142,6 +142,14 @@
     { "id": "feed.follow", "kind": "expected", "phrase": "the red follow plus button below the avatar on the right rail",
       "region": [0.82, 0.35, 0.18, 0.15], "notes": "已关注则无+,VLM 返回空即跳过" },
 
+    { "id": "nav.following-tab", "kind": "expected", "phrase": "the Following (关注) tab at the top center",
+      "region": [0.26, 0.02, 0.24, 0.07], "stable": true,
+      "source": "旧 openFollowingFeed 的 followTab(rx 0.38)",
+      "notes": "「关注监控」功能:点它从推荐流跳到关注流。关注流右栏与推荐流一致,靠哪个 Tab 高亮区分" },
+    { "id": "nav.foryou-tab", "kind": "expected", "phrase": "the For You (推荐) tab at the top center",
+      "region": [0.46, 0.02, 0.24, 0.07], "stable": true,
+      "notes": "在关注流互动完切回推荐流用;也用于纠正误入关注流" },
+
     { "id": "nav.search-icon", "kind": "expected", "phrase": "the search magnifier icon in the top bar",
       "region": [0.85, 0.0, 0.15, 0.12], "stable": true },
     { "id": "search.input", "kind": "expected", "phrase": "the search text input box at the top",
