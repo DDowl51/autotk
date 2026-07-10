@@ -2,6 +2,9 @@
 // 每个目标一个唯一框,tap 落在哪个框中心即认定点了哪个目标(与引擎 centerPx 同算法,精确匹配)。
 import type { Box, Driver, Hit, ImageBytes, LocateQuery, Perceptor, Point, StateStore, TextLine } from "@auto/core";
 
+/** 一条评论文本行(单行=作者行,text=作者)。 */
+export const cline = (author: string, y: number): TextLine => ({ text: author, box: [0.05, y, 0.35, y + 0.02] });
+
 const SIZE = { width: 750, height: 1334 };
 function centerOf(box: Box): Point {
   return { x: ((box[0] + box[2]) / 2) * SIZE.width, y: ((box[1] + box[3]) / 2) * SIZE.height };
@@ -15,6 +18,10 @@ export class FakeApp {
   taps: string[] = []; // 点中的目标 id(未知点记 "?")
   swipes = 0;
   typed: string[] = [];
+  /** 当前屏 OCR 文本行(评论解析用)。 */
+  lines: TextLine[] = [];
+  /** 动态 find:短语含 key 子串则返回 box,并把点击记成 dyn:<key>。 */
+  dynFinds: { key: string; box: Box }[] = [];
   /** 点某目标后的转场。 */
   transitions: Record<string, (a: FakeApp) => void> = {};
   /** 盲滑后的转场。 */
@@ -45,6 +52,15 @@ export class FakeApp {
     this.transitions[id] = fn;
     return this;
   }
+  /** 注册动态 find:任意含 key 子串的短语命中此 box(点击记 dyn:<key>)。 */
+  dyn(key: string, box: Box = [0.2, 0.5, 0.3, 0.52]): this {
+    this.dynFinds.push({ key, box });
+    return this;
+  }
+  undyn(key: string): this {
+    this.dynFinds = this.dynFinds.filter((d) => d.key !== key);
+    return this;
+  }
 
   now = (): number => this.clock;
   sleep = async (ms: number): Promise<void> => {
@@ -60,6 +76,14 @@ export class FakeApp {
         if (Math.abs(c.x - p.x) < 1e-6 && Math.abs(c.y - p.y) < 1e-6) {
           this.taps.push(id);
           this.transitions[id]?.(this);
+          return;
+        }
+      }
+      for (const d of this.dynFinds) {
+        const c = centerOf(d.box);
+        if (Math.abs(c.x - p.x) < 1e-6 && Math.abs(c.y - p.y) < 1e-6) {
+          this.taps.push(`dyn:${d.key}`);
+          this.transitions[`dyn:${d.key}`]?.(this);
           return;
         }
       }
@@ -82,11 +106,16 @@ export class FakeApp {
       const out: Hit[] = [];
       for (const q of queries) {
         const box = this.present.get(q.id);
-        if (box) out.push({ id: q.id, box, score: 0.99 });
+        if (box) {
+          out.push({ id: q.id, box, score: 0.99 });
+        } else if (q.id === "_find") {
+          const d = this.dynFinds.find((x) => q.phrase.includes(x.key));
+          if (d) out.push({ id: "_find", box: d.box, score: 0.95 });
+        }
       }
       return out;
     },
-    readText: async (): Promise<TextLine[]> => [],
+    readText: async (): Promise<TextLine[]> => this.lines,
   };
 }
 
