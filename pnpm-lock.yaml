@@ -313,6 +313,31 @@ importers:
         specifier: ^2.1.2
         version: 2.1.9(@types/node@20.19.43)
 
+  services/master:
+    dependencies:
+      '@auto/core':
+        specifier: workspace:*
+        version: link:../../packages/automation-core
+      '@auto/driver-ios-wda':
+        specifier: workspace:*
+        version: link:../../packages/driver-ios-wda
+      '@auto/perceptor-vlm':
+        specifier: workspace:*
+        version: link:../../packages/perceptor-vlm
+      '@auto/plugin-tiktok':
+        specifier: workspace:*
+        version: link:../../packages/plugin-tiktok
+    devDependencies:
+      '@types/node':
+        specifier: ^20.16.10
+        version: 20.19.43
+      tsx:
+        specifier: ^4.19.1
+        version: 4.22.4
+      typescript:
+        specifier: ^5.6.2
+        version: 5.9.3
+
   services/publisher:
     devDependencies:
       '@types/node':

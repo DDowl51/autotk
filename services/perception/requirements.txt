@@ -1,0 +1,4 @@
+# 装进 bench 那个 venv(torch/transformers/decord/lmdb/torchvision 已在)。只补这三个:
+fastapi
+uvicorn
+pydantic>=2

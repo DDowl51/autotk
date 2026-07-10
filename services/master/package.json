@@ -1,0 +1,22 @@
+{
+  "name": "@mc/master",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "多机编排运行时(装配 core+driver+perceptor+plugin)。含单机冒烟工具。",
+  "scripts": {
+    "smoke": "tsx src/smoke.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@auto/core": "workspace:*",
+    "@auto/driver-ios-wda": "workspace:*",
+    "@auto/perceptor-vlm": "workspace:*",
+    "@auto/plugin-tiktok": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.16.10",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.2"
+  }
+}
