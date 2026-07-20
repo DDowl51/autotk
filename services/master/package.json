@@ -14,7 +14,10 @@
     "@auto/core": "workspace:*",
     "@auto/driver-ios-wda": "workspace:*",
     "@auto/perceptor-vlm": "workspace:*",
-    "@auto/plugin-tiktok": "workspace:*"
+    "@auto/plugin-tiktok": "workspace:*",
+    "@mc/shared": "workspace:*",
+    "socket.io": "^4.8.1",
+    "socket.io-client": "^4.8.1"
   },
   "devDependencies": {
     "@types/node": "^20.16.10",

@@ -327,6 +327,15 @@ importers:
       '@auto/plugin-tiktok':
         specifier: workspace:*
         version: link:../../packages/plugin-tiktok
+      '@mc/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+      socket.io:
+        specifier: ^4.8.1
+        version: 4.8.3
+      socket.io-client:
+        specifier: ^4.8.1
+        version: 4.8.3
     devDependencies:
       '@types/node':
         specifier: ^20.16.10

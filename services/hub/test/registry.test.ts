@@ -51,6 +51,13 @@ describe("DeviceRegistry", () => {
     expect(statsProgressed(s(3), undefined)).toBe(false); // 无新数据
   });
 
+  it("statsProgressed：dmSent 增长算进展,dmFailed 不算(P3,2.0 扩展)", () => {
+    const base = { likes: 0, follows: 0, comments: 0, videos: 0 };
+    expect(statsProgressed({ ...base, dmSent: 1 }, { ...base, dmSent: 2 })).toBe(true); // 发出私信=进展
+    expect(statsProgressed({ ...base, dmFailed: 0 }, { ...base, dmFailed: 3 })).toBe(false); // 失败不算进展
+    expect(statsProgressed(base, base)).toBe(false); // 旧设备无 DM 字段,不变
+  });
+
   it("lastProgressAt：进展时更新，停滞时保持", async () => {
     const { reg, setTime } = mk();
     await reg.register({ deviceId: "d1", deviceName: "A" }, "s1");

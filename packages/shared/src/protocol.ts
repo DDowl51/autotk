@@ -16,6 +16,8 @@ export interface DeviceStatus {
     follows: number;
     comments: number;
     videos: number;
+    dmSent?: number; // 私信发出数（2.0 新增；旧设备省略）
+    dmFailed?: number; // 私信失败数（P3；旧设备省略）
   };
   alert?: string | null; // 告警文字（脱困失败/卡死等），null=无
   battery?: DeviceBattery; // 当前电量，读不到则省略

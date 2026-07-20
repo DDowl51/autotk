@@ -12,7 +12,8 @@ export function statsProgressed(prev: Stats | undefined, next: Stats | undefined
     next.likes !== prev.likes ||
     next.follows !== prev.follows ||
     next.comments !== prev.comments ||
-    next.videos !== prev.videos
+    next.videos !== prev.videos ||
+    (next.dmSent ?? 0) !== (prev.dmSent ?? 0) // 发出私信=进展;dmFailed 故意不算(失败非进展)
   );
 }
 
