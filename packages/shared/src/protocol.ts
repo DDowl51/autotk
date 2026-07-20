@@ -116,6 +116,8 @@ export interface ConfigPatch {
   kwSearchExecRatio?: number;
   clickWaitTime?: number;
   postReplies?: boolean;
+  /** 显式选定工作流(管理中心下拉框):search/followMonitor/profileAndDM/off。 */
+  activeWorkflow?: "search" | "followMonitor" | "profileAndDM" | "off";
   allDay?: boolean;
   forYou?: ModuleParamsPatch;
   kwSearch?: ModuleParamsPatch;

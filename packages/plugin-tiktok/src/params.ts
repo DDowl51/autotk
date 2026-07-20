@@ -33,6 +33,10 @@ export interface FollowingParams extends ModuleParams {
   fixedReplies: string[];
 }
 
+/** 显式选定要跑的工作流(管理中心下拉框)。off=不跑(idle)。缺省=回落 moduleEnable 优先级。 */
+export type WorkflowName = "search" | "followMonitor" | "profileAndDM" | "off";
+export const WORKFLOW_NAMES: readonly WorkflowName[] = ["search", "followMonitor", "profileAndDM", "off"];
+
 export interface TikTokParams {
   searchKeywords: string[];
   posPrompts: string[];
@@ -42,6 +46,8 @@ export interface TikTokParams {
   kwSearchExecRatio: number;
   clickWaitTime: number;
   postReplies: boolean;
+  /** 显式选定工作流;不设则按 moduleEnable 优先级(向后兼容)。 */
+  activeWorkflow?: WorkflowName;
   forYou: ModuleParams;
   kwSearch: ModuleParams;
   persHome: PersHomeParams;
@@ -122,6 +128,9 @@ const isProb = (v: number): boolean => typeof v === "number" && v >= 0 && v <= 1
 /** 校验(防呆,不合法抛错)。 */
 export function validateParams(p: unknown): void {
   const q = p as TikTokParams;
+  if (q.activeWorkflow !== undefined && !WORKFLOW_NAMES.includes(q.activeWorkflow)) {
+    throw new Error(`activeWorkflow 非法(应为 ${WORKFLOW_NAMES.join("/")}): ${q.activeWorkflow}`);
+  }
   if (!isProb(q.kwSearchExecRatio)) throw new Error("kwSearchExecRatio 必须在 [0,1]");
   if (!(q.clickWaitTime > 0)) throw new Error("clickWaitTime 必须 > 0");
   if (q.kwSearchExecRatio > 0 && (!q.searchKeywords || q.searchKeywords.length === 0)) {

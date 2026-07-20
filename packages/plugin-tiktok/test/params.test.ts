@@ -13,6 +13,12 @@ describe("validateParams", () => {
   it("clickWaitTime<=0 → 抛错", () => {
     expect(() => validateParams(clone({ clickWaitTime: 0 }))).toThrow(/clickWaitTime/);
   });
+  it("activeWorkflow:合法值/undefined 通过,非法值抛错", () => {
+    expect(() => validateParams(clone({ activeWorkflow: "search" }))).not.toThrow();
+    expect(() => validateParams(clone({ activeWorkflow: "off" }))).not.toThrow();
+    expect(() => validateParams(clone({ activeWorkflow: undefined }))).not.toThrow();
+    expect(() => validateParams(clone({ activeWorkflow: "bogus" as never }))).toThrow(/activeWorkflow/);
+  });
   it("开了搜索但无关键词 → 抛错", () => {
     expect(() => validateParams(clone({ kwSearchExecRatio: 0.5, searchKeywords: [] }))).toThrow(/关键词/);
     expect(() => validateParams(clone({ kwSearchExecRatio: 0.5, searchKeywords: ["beach"] }))).not.toThrow();
