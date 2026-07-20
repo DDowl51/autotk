@@ -68,13 +68,51 @@ describe("locate", () => {
 
   it("maxTokens 随目标数增长,可用 locateMaxTokens 锁定", async () => {
     const b = new FakeBackend();
-    b.responses.push("", "");
+    b.responses.push("1: none", "1: none"); // 服从的缺席(空响应会触发 P1 退化,干扰调用计数)
     const p = createVlmPerceptor({ backend: b });
     await p.locate(IMG, Array.from({ length: 10 }, (_, i) => ({ id: `t${i}`, phrase: `p${i}` })));
     expect(b.calls[0].opts?.maxTokens).toBe(16 + 24 * 10);
     const p2 = createVlmPerceptor({ backend: b, locateMaxTokens: 512 });
     await p2.locate(IMG, [{ id: "t", phrase: "p" }]);
     expect(b.calls[1].opts?.maxTokens).toBe(512);
+  });
+
+  it("P1 退化:组合完全不被服从(叙述文本)→ 只查第一个目标(=最高优先)", async () => {
+    const b = new FakeBackend();
+    b.responses.push(
+      "I can see a permission dialog and a heart icon in this screenshot.", // 无任何 <n>: 行
+      "<box><100><100><200><200></box>",
+    );
+    const p = createVlmPerceptor({ backend: b });
+    const hits = await p.locate(IMG, [
+      { id: "sys.perm", phrase: "the Don't Allow button" }, // 引擎拼查询 hazards 在前
+      { id: "feed.like", phrase: "the like heart" },
+    ]);
+    expect(b.calls).toHaveLength(2);
+    expect(b.calls[1].instruction).toContain("the Don't Allow button"); // 单目标指令,只问第一个
+    expect(b.calls[1].instruction).not.toContain("the like heart");
+    expect(hits).toEqual([{ id: "sys.perm", box: [0.1, 0.1, 0.2, 0.2], score: 1 }]);
+  });
+
+  it("P1 不误触发:全 none 是「服从的缺席」→ 不退化,只调一次", async () => {
+    const b = new FakeBackend();
+    b.responses.push("1: none\n2: none");
+    const p = createVlmPerceptor({ backend: b });
+    const hits = await p.locate(IMG, [
+      { id: "a", phrase: "x" },
+      { id: "b", phrase: "y" },
+    ]);
+    expect(hits).toEqual([]);
+    expect(b.calls).toHaveLength(1);
+  });
+
+  it("P1 退化的命中同样过 region 后过滤", async () => {
+    const b = new FakeBackend();
+    b.responses.push("no idea", "<box><400><800><600><900></box>"); // 退化返回下半屏框
+    const p = createVlmPerceptor({ backend: b });
+    const hits = await p.locate(IMG, [{ id: "t", phrase: "x", region: [0, 0, 1, 0.5] }]); // 先验在上半屏
+    expect(b.calls).toHaveLength(2);
+    expect(hits).toEqual([]); // 区域外 → 丢弃,宁缺勿乱
   });
 });
 

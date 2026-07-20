@@ -3,7 +3,15 @@
 // 由客户端**后过滤**兜底——命中框中心落在 region 外即视为误判丢弃(specs「先验区域降误判」)。
 import type { Box, Hit, ImageBytes, LocateQuery, Perceptor, TextLine } from "@auto/core";
 import type { PerceptorBackend } from "./backend";
-import { buildLocateInstruction, buildOcrInstruction, parseLocateResponse, parseOcrResponse } from "./protocol";
+import {
+  buildFindInstruction,
+  buildLocateInstruction,
+  buildOcrInstruction,
+  locateResponseComplies,
+  parseFirstBox,
+  parseLocateResponse,
+  parseOcrResponse,
+} from "./protocol";
 
 export interface VlmPerceptorOpts {
   backend: PerceptorBackend;
@@ -41,10 +49,20 @@ export function createVlmPerceptor(o: VlmPerceptorOpts): Perceptor {
       const maxTokens = o.locateMaxTokens ?? Math.max(64, 16 + 24 * queries.length);
       const raw = await o.backend.infer(img, buildLocateInstruction(queries), { maxTokens });
       const byId = new Map(queries.map((q) => [q.id, q]));
-      return parseLocateResponse(raw, queries).filter((h) => {
+      const inRegion = (h: Hit): boolean => {
         const region = byId.get(h.id)?.region;
         return !region || centerInRegion(h.box, region);
+      };
+      if (locateResponseComplies(raw)) return parseLocateResponse(raw, queries).filter(inRegion);
+      // ⚠️ P1 退化(2026-07-20 拍板,docs/决策记录-2026-07-20.md):组合指令完全不被服从
+      // (响应里没有任何 "<n>: <box>/none" 行)时,只查第一个目标——引擎拼查询 hazards 在前
+      // (engine.ts queryIds),故「第一个」=最高优先;本帧放弃其余目标,宁缺勿乱。
+      const first = queries[0];
+      const raw2 = await o.backend.infer(img, buildFindInstruction(first.phrase), {
+        maxTokens: o.locateMaxTokens ?? 64,
       });
+      const box = parseFirstBox(raw2);
+      return box ? [{ id: first.id, box, score: 1 }].filter(inRegion) : [];
     },
     async readText(img: ImageBytes, region?: Box): Promise<TextLine[]> {
       if (region) assertRegion(region);

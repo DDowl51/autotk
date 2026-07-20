@@ -44,6 +44,14 @@ export function parseLocateResponse(text: string, queries: LocateQuery[]): Hit[]
   return out;
 }
 
+/**
+ * 组合响应是否「服从协议」:凡出现过任意一行 "<n>: <box>…" 或 "<n>: none" 即算服从
+ * (全 none = 服从的缺席,不是不服从)。用于判定是否触发 P1 退化(见 perceptor.ts)。
+ */
+export function locateResponseComplies(text: string): boolean {
+  return /\d+[ \t]*:[ \t]*<box>/.test(text) || /\d+[ \t]*:[ \t]*none/i.test(text);
+}
+
 /** 单目标定位指令。备用工具:生产的 ctx.find 走组合协议(buildLocateInstruction);此为调试/特殊场景。 */
 export function buildFindInstruction(phrase: string): string {
   return `Locate the region that matches: ${phrase}. Output "<box><x1><y1><x2><y2></box>" with coordinates 0-1000, or "none".`;
