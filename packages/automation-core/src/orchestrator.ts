@@ -62,6 +62,11 @@ export interface PhoneHandle {
   readonly id: string;
   /** 请求停止:置停 + 废当前批 + 唤醒一切休眠。等 done 确认退出。 */
   stop(): void;
+  /** 远程暂停(启停控制):挂起批循环 + 废当前批(最近检查点停在原地)。不退出循环。 */
+  pause(): void;
+  /** 远程恢复:唤醒批循环;下一批先 recover 回基地再跑。 */
+  resume(): void;
+  isPaused(): boolean;
   readonly done: Promise<void>;
   /** 当前批在跑(发布等独占方等它变假再插)。 */
   isBusy(): boolean;
@@ -88,6 +93,7 @@ export function startPhone(cfg: PhoneConfig, deps: FleetDeps): PhoneHandle {
   const rng = deps.rng ?? Math.random;
   const registry = toRegistry(deps.plugin.targets);
   let stopped = false;
+  let userPaused = false; // 远程启停:挂起批循环(区别于 runExclusive 的 paused)
   let batchGen = 0; // 单调批代号:废批的 shouldStop 永真(布尔复位会复活,L3 §3.5)
   let paused = 0; // runExclusive 计数
   let busy = false;
@@ -179,6 +185,11 @@ export function startPhone(cfg: PhoneConfig, deps: FleetDeps): PhoneHandle {
     if (cfg.phaseOffsetMs) await isleep(cfg.phaseOffsetMs);
     let waitLogged = false;
     while (!stopped) {
+      // ⓪ 远程暂停(启停控制):挂起批循环,停在原地;恢复后下批先 recover 回基地。
+      if (userPaused) {
+        await isleep(IDLE_POLL_S * 1000);
+        continue;
+      }
       // ① 时段窗
       if (!withinWindow()) {
         if (!waitLogged) {
@@ -241,6 +252,16 @@ export function startPhone(cfg: PhoneConfig, deps: FleetDeps): PhoneHandle {
       batchGen++; // 废在跑批
       wakeAll();
     },
+    pause() {
+      userPaused = true;
+      batchGen++; // 废当前批 → 最近检查点停下(停在原地,恢复时 recover 回基地)
+      wakeAll();
+    },
+    resume() {
+      userPaused = false;
+      wakeAll(); // 唤醒 idle 中的批循环
+    },
+    isPaused: () => userPaused,
     done,
     isBusy: () => busy,
     getModule: () => module,

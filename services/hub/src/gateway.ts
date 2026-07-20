@@ -5,6 +5,7 @@ import {
   type DeviceLogBatch,
   type WatchLogsMsg,
   type ConfigPushMsg,
+  type ControlPushMsg,
   type ConfigResultMsg,
   type PublishEnqueueMsg,
   type PublishResultMsg,
@@ -127,6 +128,12 @@ export function attachGateway(
 
       socket.on(EVT.configPush, (m: ConfigPushMsg) => {
         if (m?.jobId && Array.isArray(m.deviceIds)) dispatcher.start(m.jobId, m.deviceIds, m.patch);
+      });
+
+      // 远程启停:转发给各设备房间(在线才收;离线台不排队——启停是实时控制,重连后由 master 决定初态)。
+      socket.on(EVT.controlPush, (m: ControlPushMsg) => {
+        if (!Array.isArray(m?.deviceIds) || (m.action !== "pause" && m.action !== "resume")) return;
+        for (const id of m.deviceIds) io.to(deviceRoom(id)).emit(EVT.deviceControl, { action: m.action });
       });
 
       socket.on(EVT.publishEnqueue, (m: PublishEnqueueMsg) => {

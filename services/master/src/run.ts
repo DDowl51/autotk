@@ -142,6 +142,13 @@ async function main(): Promise<void> {
         }
       },
       onPublishTask: (deviceId, task) => void orch.handlePublishTask(deviceId, task),
+      onDeviceControl: (deviceId, action) => {
+        const h = fleet.get(deviceId);
+        if (!h) return;
+        if (action === "pause") h.pause();
+        else h.resume();
+        console.log(`[${deviceId}] 远程${action === "pause" ? "暂停" : "恢复"}`);
+      },
       log: (m) => console.log(m),
     });
     const nameOf = new Map(config.devices.map((d) => [d.id, d.name]));
@@ -149,7 +156,7 @@ async function main(): Promise<void> {
     statusTimer = setInterval(() => {
       for (const c of configs) {
         const h = fleet.get(c.id);
-        if (h) hub!.reportStatus(c.id, toDeviceStatus(h, { running: !stopping, ts: Date.now() }));
+        if (h) hub!.reportStatus(c.id, toDeviceStatus(h, { running: !stopping && !h.isPaused(), ts: Date.now() }));
       }
     }, 5000);
     console.log(`已接管理中心 Hub ${hubUrl};收视频通道 :${receiverPort}`);

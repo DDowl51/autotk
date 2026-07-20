@@ -31,4 +31,7 @@ export {
   type DeviceRenameMsg,
   type DeviceRemoveMsg,
   type ClientRole,
+  type ControlAction,
+  type ControlPushMsg,
+  type DeviceControlMsg,
 } from "./protocol";

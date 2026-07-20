@@ -4,6 +4,8 @@ import {
   EVT,
   type ConfigApplyMsg,
   type ConfigPatch,
+  type ControlAction,
+  type DeviceControlMsg,
   type DeviceLogMsg,
   type DeviceRegisterMsg,
   type DeviceStatus,
@@ -20,6 +22,8 @@ export interface HubClientDeps {
   onConfigApply(deviceId: string, patch: ConfigPatch): Promise<{ ok: boolean; error?: string }>;
   /** 收到某台的发布任务 → 交发布编排(W3)。 */
   onPublishTask(deviceId: string, task: PublishTaskMsg): void;
+  /** 收到某台的远程启停 → PhoneHandle.pause()/resume()。 */
+  onDeviceControl(deviceId: string, action: ControlAction): void;
   log?(msg: string): void;
 }
 
@@ -54,6 +58,9 @@ export function createHubClient(d: HubClientDeps): HubClient {
         );
       });
       socket.on(EVT.publishTask, (m: PublishTaskMsg) => d.onPublishTask(info.deviceId, m));
+      socket.on(EVT.deviceControl, (m: DeviceControlMsg) => {
+        if (m?.action === "pause" || m?.action === "resume") d.onDeviceControl(info.deviceId, m.action);
+      });
       sockets.set(info.deviceId, socket);
       d.log?.(`[hub] 注册设备 ${info.deviceId}`);
     },

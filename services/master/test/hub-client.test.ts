@@ -33,6 +33,7 @@ function setup(overrides: Partial<Parameters<typeof createHubClient>[0]> = {}) {
   const sockets: FakeSocket[] = [];
   const onConfigApply = vi.fn(async () => ({ ok: true as const }));
   const onPublishTask = vi.fn();
+  const onDeviceControl = vi.fn();
   const hub = createHubClient({
     hubUrl: "http://hub",
     socketFactory: (url, auth) => {
@@ -42,9 +43,10 @@ function setup(overrides: Partial<Parameters<typeof createHubClient>[0]> = {}) {
     },
     onConfigApply,
     onPublishTask,
+    onDeviceControl,
     ...overrides,
   });
-  return { hub, sockets, onConfigApply, onPublishTask };
+  return { hub, sockets, onConfigApply, onPublishTask, onDeviceControl };
 }
 
 describe("createHubClient", () => {
@@ -91,6 +93,15 @@ describe("createHubClient", () => {
     const task = { taskId: "t1", videoName: "v.mp4", caption: "hi", source: { kind: "lan" as const, url: "http://x/v" } };
     sockets[0].fire("publish:task", task);
     expect(onPublishTask).toHaveBeenCalledWith("d1", task);
+  });
+
+  it("收 device:control → 调 onDeviceControl(deviceId, action);非法 action 忽略", () => {
+    const { hub, sockets, onDeviceControl } = setup();
+    hub.registerDevice({ deviceId: "d1", deviceName: "x" });
+    sockets[0].fire("device:control", { action: "pause" });
+    sockets[0].fire("device:control", { action: "resume" });
+    sockets[0].fire("device:control", { action: "bogus" }); // 忽略
+    expect(onDeviceControl.mock.calls).toEqual([["d1", "pause"], ["d1", "resume"]]);
   });
 
   it("connected 反映 socket 状态;close 断开全部", async () => {

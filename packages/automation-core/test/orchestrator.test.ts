@@ -338,3 +338,39 @@ describe("停机", () => {
     expect(() => fleet.add(cfg({ id: "d1" }))).toThrow(/重复/);
   });
 });
+
+describe("远程启停 pause/resume", () => {
+  it("pause 后不再跑新批;resume 后恢复(下批仍先 recover)", async () => {
+    const h = harness();
+    const fleet = createFleet(h.deps);
+    const phone = fleet.add(cfg());
+    await h.clock.advance(10);
+    expect(h.runs.slice(0, 2)).toEqual(["recoverToFeed", "search"]);
+    const before = h.runs.length;
+
+    phone.pause();
+    expect(phone.isPaused()).toBe(true);
+    await h.clock.advance(120_000); // 推进很久
+    expect(h.runs.length).toBe(before); // 暂停期间没跑新工作流
+
+    phone.resume();
+    expect(phone.isPaused()).toBe(false);
+    await h.clock.advance(10);
+    expect(h.runs.slice(before, before + 2)).toEqual(["recoverToFeed", "search"]); // 恢复后先 recover 再跑
+
+    phone.stop();
+    await phone.done;
+  });
+
+  it("pause 期间 stop 仍能退出", async () => {
+    const h = harness();
+    const fleet = createFleet(h.deps);
+    const phone = fleet.add(cfg());
+    await h.clock.advance(10);
+    phone.pause();
+    await h.clock.advance(1000);
+    phone.stop(); // 暂停中请求停止
+    await phone.done; // 能退出,不卡死
+    expect(phone.isPaused()).toBe(true); // 暂停标志不影响退出
+  });
+});
