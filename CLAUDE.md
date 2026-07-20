@@ -24,7 +24,7 @@ services/
   signing-station/            装机台（Fastify + zsign + ASC API；OTA 自助分发）
   telemetry-collector/  @telemetry/collector   埋点采集（Postgres）
   update-server/ @autotk/update-server  自建 expo-updates OTA 热更服务（给旧 apps/mobile 推 JS 热修）
-  master/    @mc/master       【2.0】GPU 主机上的主控：运行时装配 + 单机冒烟工具（多机装配待做）
+  master/    @mc/master       【2.0】GPU 主机上的主控：多机装配（config/probe/assemble/run）+ 单机冒烟
   perception/                 【2.0】GPU 感知服务（Python/FastAPI 包 LocateAnything-3B，OpenAI 兼容端点）
 packages/
   shared/        @mc/shared       管理中心协议 + AutomationParams（hub/desktop 共用）
@@ -66,9 +66,9 @@ docs/specs/                       【2.0】G0 规格：L0-WDA 规格书 / 协议
 - FP8 / flash-attn 在当前 Blackwell(sm_120) 软件栈均不通（生态未跟上）；生产 GPU 机 OS **已拍板锁 Ubuntu 24.04**。
 - 承载量：「VLM 唯一指令源」单卡 ~10 台（裸）；几百台=多卡分片。
 
-**进度**（快照 2026-07-10，详见 `docs/项目进度报告.md`）：G0 规格～G5 编排全部完成，169 单测全绿（mock 驱动/感知，离线确定性）；`services/perception` + 单机冒烟工具已写完。**下一步 = 真机联调**（顺序：冒烟 → 逐目标精度 → 组合多目标指令（perceptor-vlm 的 `protocol.ts`）→ 私信可行性 → 单工作流 search → 多机 Fleet），以及 `services/master` 多机装配、Postgres StateStore、Hub 对接。
+**进度**（快照 2026-07-10，详见 `docs/项目进度报告.md`）：G0 规格～G5 编排全部完成，169 单测全绿（mock 驱动/感知，离线确定性）；`services/perception` + 单机冒烟工具已写完。`services/master` 多机装配已完成（config/probe/assemble/run + 24 单测；@auto/* 另 174）。**下一步 = 真机联调**（顺序：冒烟 → 逐目标 640 精度 → 组合多目标指令（perceptor-vlm 的 `protocol.ts`，不服从走 P1 退化）→ 私信可行性 → 单工作流 search → 多机 `start`），剩余工程 Postgres StateStore、Hub 对接。
 
-**决策已全部拍板（2026-07-20，单一真源 `docs/决策记录-2026-07-20.md`）**：D1 纯 VLM 指令源（单卡 ~10 台规划，优化后置）/ D2 手机 IP=DHCP 静态租约+master 配置表 / D3 Hub=A 平铺 / D4 MVP 不接 License / D5 生产 OS=Ubuntu 24.04 / D6 生产分辨率 640 / D7 吞吐优化搁置 / D8 apps/mobile 彻底退役；私信必做+失败记录。落地任务 T1–T4/T6 已完成（perception 640+temperature 可配、P1 组合退化、私信失败留痕），**仅剩 T5 = `services/master` 多机装配**。
+**决策已全部拍板（2026-07-20，单一真源 `docs/决策记录-2026-07-20.md`）**：D1 纯 VLM 指令源（单卡 ~10 台规划，优化后置）/ D2 手机 IP=DHCP 静态租约+master 配置表 / D3 Hub=A 平铺 / D4 MVP 不接 License / D5 生产 OS=Ubuntu 24.04 / D6 生产分辨率 640 / D7 吞吐优化搁置 / D8 apps/mobile 彻底退役；私信必做+失败记录。落地任务 T1–T6 **已全部完成**（perception 640+temperature 可配、P1 组合退化、私信失败留痕、`services/master` 多机装配）。剩余工程（非拍板项）：Hub 上报（D3=A 平铺，run.ts 已留位）、Postgres StateStore（现用内存，已标 TODO）、真机联调。
 
 ## ⚠️ apps/mobile 暂未进 root workspace（已退役，仅考古）
 
@@ -120,6 +120,9 @@ pnpm --filter @mc/hub test           # 跑单个包
 # ---- autotk 2.0 新框架 ----
 pnpm --filter "@auto/*" test         # 174 单测（离线，mock 驱动/感知，无需真机/GPU）
 pnpm --filter "@auto/*" typecheck
+pnpm --filter @mc/master test        # master 装配层 24 单测（config/probe/assemble）
+# 多机运行时（GPU 机上，配置表见 services/master/devices.example.json）：
+#   MASTER_CONFIG=./devices.json pnpm --filter @mc/master start
 # GPU 感知服务（GPU 机上，bench 的 venv 内；640/0.8 为拍板默认值）：
 #   pip install -r services/perception/requirements.txt
 #   python services/perception/server.py --model ./LocateAnything-3B --attn sdpa --max-side 640 --port 8000
