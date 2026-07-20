@@ -3,7 +3,8 @@
 import type { RunContext, Step } from "@auto/core";
 import type { TikTokParams } from "../params";
 import { pageHazards } from "../targets";
-import { interactWithVideo } from "./common";
+import { captionAllowsFollow, captionGateNeeded, interactWithVideo, readCaption } from "./common";
+import { interactComments, scrollComments } from "./comments";
 
 const SEARCH_HZ = pageHazards("search");
 const FEED_HZ = pageHazards("feed");
@@ -65,7 +66,7 @@ export async function searchWorkflow(ctx: RunContext, maxResults = 5): Promise<v
   ctx.log(`[搜索页] 选结果:${resultTarget}`);
   if ((await ctx.runStep(tapStep("开结果视频", resultTarget, ["search.results"], ["feed.rail"], SEARCH_HZ))).status !== "ok") return;
 
-  // 5) 遍历结果视频互动(搜索结果默认对标,不做 pos/neg 筛选)
+  // 5) 遍历结果视频互动
   for (let i = 0; i < maxResults; i++) {
     if (ctx.shouldStop() || !ctx.withinWindow()) break;
     // 进流兼验:即使结果页选错,这里再判一道直播/广告 → 命中则划走不互动(双保险)
@@ -74,7 +75,18 @@ export async function searchWorkflow(ctx: RunContext, maxResults = 5): Promise<v
       ctx.log(`结果视频是${bad.has("feed.live-tag") ? "直播" : "广告"},划走不互动`);
     } else {
       ctx.stats.videosWatched++;
-      await interactWithVideo(ctx, mp);
+      // 关注按文案命中 gate(posPrompts/negPrompts;默认 ["*"]=match-all → 纯概率)。只在需要时读文案。
+      let canFollow = true;
+      if (captionGateNeeded(p.posPrompts, p.negPrompts)) {
+        const cap = await readCaption(ctx);
+        canFollow = captionAllowsFollow(cap, p.posPrompts, p.negPrompts);
+        ctx.log(`文案${canFollow ? "命中" : "未命中"}关注词`);
+      }
+      await interactWithVideo(ctx, mp, { canFollow });
+      // 评论区互动(门槛 interactEnable && interactProb;有评论按钮才进)
+      if (mp.interactEnable && ctx.chance(mp.interactProb) && (await ctx.locate(["feed.comment"])).has("feed.comment")) {
+        await interactCommentsOnResult(ctx, p, mp);
+      }
       await ctx.sleepSeconds(ctx.jitter(2));
     }
     if (i < maxResults - 1) {
@@ -82,4 +94,27 @@ export async function searchWorkflow(ctx: RunContext, maxResults = 5): Promise<v
     }
   }
   ctx.log("[搜索页] 结束");
+}
+
+/** 在当前结果视频进评论区:开→下滑收集→逐条点赞/回复→关。开不了就跳过,不挡主流程。 */
+async function interactCommentsOnResult(ctx: RunContext, p: TikTokParams, mp: TikTokParams["kwSearch"]): Promise<void> {
+  const open: Step = {
+    intent: "开评论区",
+    act: { kind: "tapTarget", target: "feed.comment" },
+    expected: ["feed.rail"],
+    hazards: FEED_HZ,
+    verify: ["comments.panel"],
+    timeout: 8000,
+    onFail: [{ kind: "retry", times: 1 }, { kind: "alertOperator", message: "开评论区失败" }],
+  };
+  if ((await ctx.runStep(open)).status !== "ok") return;
+  const comments = await scrollComments(ctx);
+  await interactComments(ctx, mp, comments, {
+    matchKeywords: p.commentMatchKeywords,
+    replyTemplates: p.fixedReplies,
+    postReplies: p.postReplies,
+    clickWaitTime: p.clickWaitTime,
+  });
+  // 关评论区:纯竖直下滑(不左滑)。
+  await ctx.swipe({ x: ctx.size.width * 0.5, y: ctx.size.height * 0.35 }, { x: ctx.size.width * 0.5, y: ctx.size.height * 0.96 }, 250);
 }

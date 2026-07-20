@@ -73,6 +73,55 @@ describe("searchWorkflow", () => {
     await expect(searchWorkflow(ctx, 3)).resolves.toBeUndefined();
     expect(ctx.stats.videosWatched).toBe(0);
   });
+
+  it("文案命中关注词 → 关注;不命中 → 不关注(posPrompts gate)", async () => {
+    // 命中:文案含 cat
+    const app1 = navToResults(new FakeApp(), (a) => a.show("search.first-clean-result"));
+    app1.on("search.first-clean-result", (a) => {
+      a.hide("search.results").hide("search.first-clean-result");
+      a.show("feed.rail").show("feed.like-off").show("feed.follow");
+      a.lines = [{ text: "a cute cat clip", box: [0.05, 0.75, 0.5, 0.77] }]; // 文案区
+    });
+    const { ctx: ctx1 } = makeCtx(app1, { searchKeywords: ["x"], posPrompts: ["cat"] });
+    await searchWorkflow(ctx1, 1);
+    expect(app1.taps).toContain("feed.follow");
+    expect(ctx1.stats.follows).toBe(1);
+
+    // 不命中:文案是 dog
+    const app2 = navToResults(new FakeApp(), (a) => a.show("search.first-clean-result"));
+    app2.on("search.first-clean-result", (a) => {
+      a.hide("search.results").hide("search.first-clean-result");
+      a.show("feed.rail").show("feed.like-off").show("feed.follow");
+      a.lines = [{ text: "a happy dog clip", box: [0.05, 0.75, 0.5, 0.77] }];
+    });
+    const { ctx: ctx2 } = makeCtx(app2, { searchKeywords: ["x"], posPrompts: ["cat"] });
+    await searchWorkflow(ctx2, 1);
+    expect(app2.taps).not.toContain("feed.follow"); // 文案未命中 → 不关注
+    expect(ctx2.stats.follows).toBe(0);
+  });
+
+  it("默认 posPrompts=['*'] → 不读文案、按概率关注(向后兼容)", async () => {
+    const app = navToResults(new FakeApp(), (a) => a.show("search.first-clean-result"));
+    app.on("search.first-clean-result", (a) => {
+      a.hide("search.results").hide("search.first-clean-result");
+      a.show("feed.rail").show("feed.like-off").show("feed.follow"); // 无 lines,不需读文案
+    });
+    const { ctx } = makeCtx(app, { searchKeywords: ["x"] }); // 默认 posPrompts ["*"]
+    await searchWorkflow(ctx, 1);
+    expect(ctx.stats.follows).toBe(1); // 纯概率(rng=0)→ 关注
+  });
+
+  it("评论区互动:门槛通过 + 有评论按钮 → 进评论区", async () => {
+    const app = navToResults(new FakeApp(), (a) => a.show("search.first-clean-result"));
+    app.on("search.first-clean-result", (a) => {
+      a.hide("search.results").hide("search.first-clean-result");
+      a.show("feed.rail").show("feed.like-off").show("feed.comment"); // 有评论按钮
+    });
+    app.on("feed.comment", (a) => a.show("comments.panel")); // 点评论 → 开面板
+    const { ctx } = makeCtx(app, { searchKeywords: ["x"] }); // 默认 kwSearch interactEnable true,rng=0 过门槛
+    await searchWorkflow(ctx, 1);
+    expect(app.taps).toContain("feed.comment"); // 进了评论区
+  });
 });
 
 describe("tiktokPlugin 装配", () => {

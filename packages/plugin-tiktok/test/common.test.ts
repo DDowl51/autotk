@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { interactWithVideo } from "../src/workflows/common";
+import { captionAllowsFollow, captionGateNeeded, interactWithVideo } from "../src/workflows/common";
 import { defaultParams } from "../src/params";
 import { FakeApp } from "./fake";
 import { makeCtx } from "./helpers";
@@ -35,5 +35,31 @@ describe("interactWithVideo(视频级,识别是否已互动)", () => {
     await interactWithVideo(ctx, defaultParams.kwSearch);
     expect(app.taps).toEqual([]);
     expect(ctx.stats).toMatchObject({ likes: 0, saves: 0, follows: 0 });
+  });
+
+  it("canFollow=false → 关注整块跳过(赞/藏照做)", async () => {
+    const app = new FakeApp().show("feed.like-off").show("feed.save-off").show("feed.follow");
+    const { ctx } = makeCtx(app);
+    await interactWithVideo(ctx, defaultParams.kwSearch, { canFollow: false });
+    expect(app.taps).toEqual(["feed.like-off", "feed.save-off"]); // 没点关注
+    expect(ctx.stats.follows).toBe(0);
+  });
+});
+
+describe("文案 gate 关注助手", () => {
+  it("captionGateNeeded:默认 ['*'] 无需读文案;有真词/排除词才需", () => {
+    expect(captionGateNeeded(["*"], [])).toBe(false);
+    expect(captionGateNeeded([], [])).toBe(false);
+    expect(captionGateNeeded(["cat"], [])).toBe(true);
+    expect(captionGateNeeded([], ["spam"])).toBe(true);
+  });
+
+  it("captionAllowsFollow:命中正词→是;不命中→否;* 或空→是;命中排除词→否(排除优先)", () => {
+    expect(captionAllowsFollow("a cute cat video", ["cat"], [])).toBe(true);
+    expect(captionAllowsFollow("a dog video", ["cat"], [])).toBe(false);
+    expect(captionAllowsFollow("anything", ["*"], [])).toBe(true);
+    expect(captionAllowsFollow("anything", [], [])).toBe(true);
+    expect(captionAllowsFollow("buy cheap spam now", ["*"], ["spam"])).toBe(false); // 命中排除词
+    expect(captionAllowsFollow("a cat and spam", ["cat"], ["spam"])).toBe(false); // 排除优先于正词
   });
 });
