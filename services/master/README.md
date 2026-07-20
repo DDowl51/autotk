@@ -4,7 +4,24 @@
 - **多机运行时 `start`**(T5):读配置表 → N 台 driver + 启动探活 → 装配 Fleet 起主循环。
 - **单机冒烟 `smoke`**:验证「截图→VLM 定位→点」单目标链路。
 
-> 尚未接:Hub 上报(D3=A 平铺,剩余工作)、Postgres StateStore(DM 去重跨重启,剩余工作)、License(D4 MVP 不接)。当前为「本地内存态、纯养号闭环」的多机装配。测试:`pnpm --filter @mc/master test`(config/probe/assemble 纯逻辑,24 例)。
+> 已接:Hub 对接(D3=A 平铺)+ 发布链路(收视频端 β1 通道 + 发布编排),设 `HUB_URL` 启用(不设=纯养号)。
+> 尚未接:Postgres StateStore(DM 去重跨重启)、License(D4 MVP 不接)、收视频端 App(W2b,Mac 构建)。
+> 测试:`pnpm --filter @mc/master test`(config/probe/assemble/hub/receiver/publish 纯逻辑,52 例)。
+
+## 环境变量
+
+| 变量 | 作用 | 缺省 |
+|---|---|---|
+| `MASTER_CONFIG` | 设备配置表路径 | `devices.json`(或首个命令行参数) |
+| `HUB_URL` | 管理中心 Hub 地址;**设了才接 Hub + 发布链路** | 未设 = 纯养号模式 |
+| `RECEIVER_PORT` | 收视频端(精简 autotk)连入的 socket 端口 | `4610` |
+
+```bash
+# 纯养号(不接管理中心):
+MASTER_CONFIG=./devices.json pnpm --filter @mc/master start
+# 接管理中心 + 发布:
+HUB_URL=http://<Hub机IP>:4000 MASTER_CONFIG=./devices.json pnpm --filter @mc/master start
+```
 
 ## 多机运行时(T5)
 
