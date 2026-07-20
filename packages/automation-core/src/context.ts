@@ -15,9 +15,11 @@ export interface RunStats {
   commentLikes: number;
   commentReplies: number;
   dmSent: number;
+  /** 私信尝试失败数(打开私信/输入/发送失败;P3 决策记录 2026-07-20:失败必须留痕)。 */
+  dmFailed: number;
 }
 export function emptyStats(): RunStats {
-  return { videosWatched: 0, likes: 0, saves: 0, follows: 0, commentLikes: 0, commentReplies: 0, dmSent: 0 };
+  return { videosWatched: 0, likes: 0, saves: 0, follows: 0, commentLikes: 0, commentReplies: 0, dmSent: 0, dmFailed: 0 };
 }
 
 export interface RunContext {

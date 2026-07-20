@@ -67,4 +67,37 @@ describe("dmCommenter", () => {
     const r = await dmCommenter(ctx, cmt("bob"), "self", DM);
     expect(r).toBe("no-avatar");
   });
+
+  it("打开私信失败 → failed,记 dm-failed+dm-tried,不记已私信、不占配额(P3)", async () => {
+    const app = new FakeApp();
+    app.dyn("profile avatar", [0.05, 0.4, 0.12, 0.42]);
+    app.on("dyn:profile avatar", (a) => a.show("dm.message-button"));
+    // 点私信按钮不出输入框(无转场)→ openChat verify 超时
+    const { ctx } = makeCtx(app, { dm: DM });
+    const r = await dmCommenter(ctx, cmt("bob"), "self", DM);
+    expect(r).toBe("failed");
+    expect(ctx.stats.dmFailed).toBe(1);
+    expect(ctx.stats.dmSent).toBe(0);
+    expect(await ctx.state.has("dm-failed:self", "bob")).toBe(true);
+    expect(await ctx.state.has("dm-tried:self", "bob")).toBe(true);
+    expect(await ctx.state.has("dm:self", "bob")).toBe(false); // 没记成已私信
+    expect(await ctx.state.peekDaily("dm-count", "self")).toBe(0); // 失败不占配额
+  });
+
+  it("输入后发送键不出现 → failed,不记已私信、不占配额(P3)", async () => {
+    const app = new FakeApp();
+    app.dyn("profile avatar", [0.05, 0.4, 0.12, 0.42]);
+    app.on("dyn:profile avatar", (a) => a.show("dm.message-button"));
+    app.on("dm.message-button", (a) => a.show("dm.input"));
+    // dm.input 在,但输入后 dm.send 永不出现 → typeStep verify 超时
+    const { ctx } = makeCtx(app, { dm: DM });
+    const r = await dmCommenter(ctx, cmt("bob"), "self", DM);
+    expect(r).toBe("failed");
+    expect(app.typed).toEqual(["hi bob"]); // 字已输入,但发送失败
+    expect(ctx.stats.dmFailed).toBe(1);
+    expect(ctx.stats.dmSent).toBe(0);
+    expect(await ctx.state.has("dm-failed:self", "bob")).toBe(true);
+    expect(await ctx.state.has("dm:self", "bob")).toBe(false);
+    expect(await ctx.state.peekDaily("dm-count", "self")).toBe(0);
+  });
 });

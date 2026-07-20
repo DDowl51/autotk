@@ -6,11 +6,23 @@ import type { DmParams } from "../params";
 import { genReply } from "../gen";
 import { COMMENT_REGION, snippet } from "./comments";
 
-export type DmResult = "sent" | "skip-dedup" | "capped" | "cant" | "no-avatar";
+export type DmResult = "sent" | "skip-dedup" | "capped" | "cant" | "no-avatar" | "failed";
 
 const DM_NS = (account: string) => `dm:${account}`;
 const DM_TRIED_NS = (account: string) => `dm-tried:${account}`;
+const DM_FAILED_NS = (account: string) => `dm-failed:${account}`;
 const DM_COUNT_NS = "dm-count";
+
+/**
+ * 失败收尾(P3,决策记录 2026-07-20:私信失败必须留痕):记 dm-failed + dm-tried,
+ * 不记「已私信」、不占每日配额——配额只数真发出去的。
+ */
+async function recordFailure(ctx: RunContext, account: string, user: string, reason: string): Promise<void> {
+  await ctx.state.add(DM_FAILED_NS(account), user);
+  await ctx.state.add(DM_TRIED_NS(account), user);
+  ctx.stats.dmFailed++;
+  ctx.log(`私信失败 @${user}: ${reason}`);
+}
 
 /** 从左边缘右滑返回(退出对方主页/私信页,回我的主页视频)。 */
 function backGesture(ctx: RunContext): Promise<void> {
@@ -50,8 +62,9 @@ export async function dmCommenter(ctx: RunContext, c: Comment, account: string, 
     onFail: [{ kind: "retry", times: 1 }, { kind: "alertOperator", message: "打开私信失败" }],
   };
   if ((await ctx.runStep(openChat)).status !== "ok") {
-    await backGesture(ctx);
-    return "cant";
+    await recordFailure(ctx, account, user, "打开私信失败");
+    await backGesture(ctx); // 还在对方主页,退一层
+    return "failed";
   }
   const text = genReply(dm.dmTemplates, { user }, () => ctx.random());
   if (text) {
@@ -64,12 +77,15 @@ export async function dmCommenter(ctx: RunContext, c: Comment, account: string, 
       timeout: 6000,
       onFail: [{ kind: "alertOperator", message: "私信输入失败" }],
     };
-    if ((await ctx.runStep(typeStep)).status === "ok") {
-      await ctx.tapTarget("dm.send");
-      ctx.stats.dmSent++;
+    if ((await ctx.runStep(typeStep)).status !== "ok" || !(await ctx.tapTarget("dm.send"))) {
+      await recordFailure(ctx, account, user, "输入或发送失败");
+      await backGesture(ctx); // 私信页 → 对方主页 → 我的视频
+      await backGesture(ctx);
+      return "failed";
     }
+    ctx.stats.dmSent++;
   }
-  // 记去重 + 每日计数(无论话术是否空都记已私信过,避免下次重进)
+  // 记去重 + 每日计数(话术空也记已私信过,避免下次重进)
   await ctx.state.add(DM_NS(account), user);
   await ctx.state.incrDaily(DM_COUNT_NS, account);
   // 返回我的主页视频评论区(私信页 → 对方主页 → 我的视频)
