@@ -8,8 +8,8 @@ import {
   type ReactNode,
 } from "react";
 import type { Socket } from "socket.io-client";
-import type { DeviceInfo, DeviceLogMsg, ConfigPatch, PublishTask } from "@mc/shared";
-import { connectHub, watchLogs, pushConfig, enqueuePublish, renameDevice, removeDevice } from "./hub";
+import type { ControlAction, DeviceInfo, DeviceLogMsg, ConfigPatch, PublishTask } from "@mc/shared";
+import { connectHub, watchLogs, pushConfig, pushControl, enqueuePublish, renameDevice, removeDevice } from "./hub";
 import { getPublisherApi } from "./publish-ipc";
 import { getHubApi } from "./hub-ipc";
 import { addRename, loadRenames, saveRenames, type RenameOp } from "./renameHistory";
@@ -72,6 +72,8 @@ interface HubContextValue {
   renameHistory: RenameOp[];
   /** 删除设备：通知 Hub 从列表移除（手机重连会重新出现）+ 乐观移除本地。 */
   removeDevice: (deviceId: string) => void;
+  /** 远程启停一组设备（pause=停止/resume=启动）。 */
+  control: (deviceIds: string[], action: ControlAction) => void;
 }
 
 const Ctx = createContext<HubContextValue | null>(null);
@@ -148,6 +150,12 @@ export function HubProvider({ children }: { children: ReactNode }) {
     if (!on) setLogs((prev) => clearLogs(prev, deviceId)); // 关闭时清缓冲省内存
   };
   const logsOf = (deviceId: string) => getLogs(logs, deviceId);
+
+  const doControl = (deviceIds: string[], action: ControlAction) => {
+    if (deviceIds.length === 0) return;
+    track("device_control", { devices: deviceIds.length, action });
+    pushControl(socketRef.current, deviceIds, action);
+  };
 
   const doPushConfig = (
     targets: Array<{ deviceId: string; deviceName: string }>,
@@ -280,6 +288,7 @@ export function HubProvider({ children }: { children: ReactNode }) {
         renameDevice: doRenameDevice,
         renameHistory,
         removeDevice: doRemoveDevice,
+        control: doControl,
       }}
     >
       {children}

@@ -1,8 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
 import { Table, Drawer, Descriptions, Input, Select, Space, Button, Divider, Typography, Popconfirm, message, type TableColumnsType } from "antd";
 import { SearchOutlined, SettingOutlined } from "@ant-design/icons";
-import { moduleLabel, pageLabel, type DeviceInfo, type DeviceBattery } from "@mc/shared";
+import { moduleLabel, pageLabel, type ConfigPatch, type DeviceInfo, type DeviceBattery } from "@mc/shared";
 import { useHub } from "../hubState";
+
+type WorkflowValue = NonNullable<ConfigPatch["activeWorkflow"]>;
+const WORKFLOW_OPTIONS: { value: WorkflowValue; label: string }[] = [
+  { value: "search", label: "搜索互动" },
+  { value: "followMonitor", label: "关注监控" },
+  { value: "profileAndDM", label: "主页+私信" },
+  { value: "off", label: "停（不跑）" },
+];
+const wfLabel = (v: WorkflowValue) => WORKFLOW_OPTIONS.find((o) => o.value === v)?.label ?? v;
 import { statusKind, filterDevices, batteryTone, STATUS_LABEL, type StatusKind } from "../devices";
 import { renamesFor } from "../renameHistory";
 import { PageHeader, StatusDot, Mono, EmptyHint, LogPanel } from "../ui";
@@ -22,8 +31,15 @@ function BatteryCell({ battery }: { battery?: DeviceBattery }) {
 }
 
 export function Devices({ goGuide }: { goGuide: () => void }) {
-  const { devices, connected, stalledMs, logsOf, watch, renameDevice, removeDevice, renameHistory } = useHub();
+  const { devices, connected, stalledMs, logsOf, watch, renameDevice, removeDevice, renameHistory, pushConfig, control } = useHub();
   const [sel, setSel] = useState<DeviceInfo | null>(null);
+  const [wfSel, setWfSel] = useState<Record<string, WorkflowValue>>({}); // 本地记住每台设过的工作流(activeWorkflow 不在 status 里)
+
+  const setWorkflow = (r: DeviceInfo, v: WorkflowValue) => {
+    setWfSel((m) => ({ ...m, [r.deviceId]: v }));
+    pushConfig([{ deviceId: r.deviceId, deviceName: r.deviceName }], { activeWorkflow: v });
+    message.success(`${r.deviceName}：切到「${wfLabel(v)}」`);
+  };
 
   // 打开详情 → 订阅该台日志（手机切快频）；关闭/切换 → 取消订阅。
   const selId = sel?.deviceId;
@@ -56,6 +72,42 @@ export function Devices({ goGuide }: { goGuide: () => void }) {
       render: (v: string) => <Mono>{v}</Mono>,
     },
     { title: "状态", render: (_v, r) => <StatusDot kind={kindOf(r)} /> },
+    {
+      title: "工作流",
+      width: 130,
+      render: (_v, r) => (
+        <div onClick={(e) => e.stopPropagation()}>
+          <Select
+            size="small"
+            style={{ width: 116 }}
+            placeholder="选工作流"
+            value={wfSel[r.deviceId]}
+            options={WORKFLOW_OPTIONS}
+            onChange={(v) => setWorkflow(r, v)}
+          />
+        </div>
+      ),
+    },
+    {
+      title: "启停",
+      width: 84,
+      render: (_v, r) => {
+        const running = !!r.status?.running;
+        return (
+          <div onClick={(e) => e.stopPropagation()}>
+            {running ? (
+              <Button size="small" onClick={() => control([r.deviceId], "pause")}>
+                停止
+              </Button>
+            ) : (
+              <Button size="small" type="primary" ghost onClick={() => control([r.deviceId], "resume")}>
+                启动
+              </Button>
+            )}
+          </div>
+        );
+      },
+    },
     { title: "模块", render: (_v, r) => moduleLabel(r.status?.module) },
     { title: "当前页面", render: (_v, r) => pageLabel(r.status?.page) },
     {
@@ -111,6 +163,25 @@ export function Devices({ goGuide }: { goGuide: () => void }) {
         >
           批量修改设置{selectedDevices.length > 0 ? `（${selectedDevices.length}）` : ""}
         </Button>
+        {selectedDevices.length > 0 && (
+          <>
+            <Select
+              placeholder={`批量设工作流（${selectedDevices.length}）`}
+              style={{ width: 190 }}
+              value={undefined}
+              options={WORKFLOW_OPTIONS}
+              onChange={(v: WorkflowValue) => {
+                pushConfig(
+                  selectedDevices.map((d) => ({ deviceId: d.deviceId, deviceName: d.deviceName })),
+                  { activeWorkflow: v },
+                );
+                message.success(`已给 ${selectedDevices.length} 台切「${wfLabel(v)}」`);
+              }}
+            />
+            <Button onClick={() => control(selectedDevices.map((d) => d.deviceId), "resume")}>批量启动</Button>
+            <Button onClick={() => control(selectedDevices.map((d) => d.deviceId), "pause")}>批量停止</Button>
+          </>
+        )}
       </Space>
 
       <Table
