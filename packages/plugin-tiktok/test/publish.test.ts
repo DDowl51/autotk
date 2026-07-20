@@ -4,9 +4,9 @@ import { pageHazards } from "../src/targets";
 import { FakeApp } from "./fake";
 import { makeCtx } from "./helpers";
 
-/** 组一个能一路走通发布的世界。 */
+/** 组一个能一路走通发布的世界(基地:推荐流可见 + 底部 [+])。 */
 function publishWorld(): FakeApp {
-  const app = new FakeApp().show("publish.plus");
+  const app = new FakeApp().show("feed.rail").show("publish.plus"); // 基地:发布前 recover 探到 feed.rail
   app
     .on("publish.plus", (a) => a.show("publish.upload"))
     .on("publish.upload", (a) => a.hide("publish.upload").show("publish.album-first"))
@@ -28,10 +28,18 @@ describe("publish", () => {
   });
 
   it("某步验证目标始终不出现 → failed(不误报成功)", async () => {
-    const app = new FakeApp().show("publish.plus"); // 点+后 upload 不出现
+    const app = new FakeApp().show("feed.rail").show("publish.plus"); // 基地 OK,但点+后 upload 不出现
     const { ctx } = makeCtx(app, {});
     const r = await publish(ctx, { caption: "x" }, pageHazards("publish"), pageHazards("feed"));
     expect(r).toBe("failed");
+  });
+
+  it("回基地失败(既非推荐流也退不出)→ failed,不进发布流", async () => {
+    const app = new FakeApp(); // 无 feed.rail、无 publish.plus、退不出
+    const { ctx } = makeCtx(app, {});
+    const r = await publish(ctx, { caption: "x" }, pageHazards("publish"), pageHazards("feed"));
+    expect(r).toBe("failed");
+    expect(app.taps).toEqual([]); // 没点 publish.plus(recover 就失败了)
   });
 
   it("权限窗(相机)挡路 → allow 处理后继续", async () => {

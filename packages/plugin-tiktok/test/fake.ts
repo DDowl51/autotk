@@ -17,6 +17,7 @@ export class FakeApp {
   present = new Map<string, Box>();
   taps: string[] = []; // 点中的目标 id(未知点记 "?")
   swipes = 0;
+  lastSwipe?: { from: Point; to: Point }; // 最近一次滑动坐标(测 recover 区分下滑/右滑)
   typed: string[] = [];
   /** 当前屏 OCR 文本行(评论解析用)。 */
   lines: TextLine[] = [];
@@ -89,8 +90,9 @@ export class FakeApp {
       }
       this.taps.push("?");
     },
-    swipe: async (): Promise<void> => {
+    swipe: async (from: Point, to: Point): Promise<void> => {
       this.swipes++;
+      this.lastSwipe = { from, to };
       this.onSwipe?.(this);
     },
     typeText: async (s: string): Promise<void> => {

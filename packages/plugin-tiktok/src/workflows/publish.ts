@@ -3,6 +3,7 @@
 // 故每台装一个极小「收视频 App」下载+存相册(WDA 干不了);master 发布编排(T8)负责先确保视频到位再调本工作流。
 // 语义见 docs/specs/L3-业务规格.md/§7.6。权限窗(相机/麦克风/相册)由 publish 页 hazards 的 allow 处理。
 import type { RunContext, Step } from "@auto/core";
+import { recoverToFeed } from "./recover";
 
 export interface PublishInput {
   caption: string;
@@ -18,7 +19,11 @@ function step(intent: string, act: Step["act"], expected: string[], verify: stri
  * 返回 published/failed 供 Hub 回报。
  */
 export async function publish(ctx: RunContext, input: PublishInput, publishHazards: string[], feedHazards: string[]): Promise<PublishResult> {
-  // 0) 复位到能看到底部 [+] 的基地(简化:假定已在可发起页;真机需先 recoverToFeed)
+  // 0) 先回基地(能看到底部 [+] 的干净推荐流)——从任意深页复位;回不去就放弃,绝不从深页盲发。
+  if (!(await recoverToFeed(ctx))) {
+    ctx.log("[发布] 回基地失败,放弃");
+    return "failed";
+  }
   // 1) 点 [+] → 相机/上传页
   if ((await ctx.runStep(step("点+创建", { kind: "tapTarget", target: "publish.plus" }, ["publish.plus"], ["publish.upload"], feedHazards))).status !== "ok") return "failed";
   // 2) 上传/相册入口 → 相册

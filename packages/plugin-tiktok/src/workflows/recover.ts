@@ -1,5 +1,8 @@
-// 回基地(L3 §3.2-4):确认在推荐流;不在则 iOS 边缘右滑逐级退,退不出=失败。
-// 探测走 Step 合同(纯观察步)——危险弹窗在探测中被顺手处理,不会挡死。
+// 回基地(L3 §3.2-4):确认在推荐流;不在则逐级脱困。多策略——
+//   ① 危险弹窗:探测步 hazards 顺手处理(权限窗/购物卡/内嵌网页/分享面板)。
+//   ② 评论面板(浮层):竖直下滑关(边缘右滑关不掉它,养号最常停这里)。
+//   ③ 其它 pushed 页(搜索/主页/私信):iOS 边缘右滑逐级退。
+// 退不出 = 失败,由调用方升级为 alertOperator(绝不盲动乱滑,坑清单 D1)。
 import type { RunContext, Step } from "@auto/core";
 import { pageHazards } from "../targets";
 
@@ -17,19 +20,20 @@ function probeStep(): Step {
 }
 
 /** 回推荐流基地。返回是否成功;不上抛(调用方决定升级)。 */
-export async function recoverToFeed(ctx: RunContext, maxBacks = 3): Promise<boolean> {
-  for (let i = 0; i <= maxBacks; i++) {
+export async function recoverToFeed(ctx: RunContext, maxSteps = 6): Promise<boolean> {
+  const { width: w, height: h } = ctx.size;
+  for (let i = 0; i <= maxSteps; i++) {
     if (ctx.shouldStop()) return false;
     const r = await ctx.runStep(probeStep());
     if (r.status === "ok") return true;
     if (r.status === "stopped") return false;
-    if (i < maxBacks) {
-      // iOS 边缘右滑返回(与引擎 backGesture 同手势)
-      await ctx.swipe(
-        { x: 0.02 * ctx.size.width, y: 0.5 * ctx.size.height },
-        { x: 0.78 * ctx.size.width, y: 0.5 * ctx.size.height },
-        200,
-      );
+    if (i < maxSteps) {
+      // 评论面板在场 → 竖直下滑关(浮层,边缘右滑无效);否则当 pushed 页 → 边缘右滑退。
+      if ((await ctx.locate(["comments.panel"])).has("comments.panel")) {
+        await ctx.swipe({ x: 0.5 * w, y: 0.35 * h }, { x: 0.5 * w, y: 0.96 * h }, 250);
+      } else {
+        await ctx.swipe({ x: 0.02 * w, y: 0.5 * h }, { x: 0.78 * w, y: 0.5 * h }, 200);
+      }
       await ctx.sleepSeconds(ctx.jitter(1));
     }
   }
