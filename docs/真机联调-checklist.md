@@ -1,155 +1,205 @@
-# autotk 2.0 真机联调 · 分步 checklist
+# autotk 2.0 · 空白 Windows 从零部署 + 真机联调 checklist
 
-> 日期:2026-07-20　适用:GPU 感知服务 + master + iPhone(WDA)已就位后,验证整条链在真机上跑通。
-> 原则:**便宜→贵**——先验单目标、再逐目标、再组合、再工作流、再多机;每步过了再进下一步,别跳。
-> 每步给:**目的 / 前置 / 命令 / 通过标准 / 不通过→动作**。命令按 bash(Linux/Mac/Git-bash);
-> PowerShell 把 `A=x B=y cmd` 写成 `$env:A="x"; $env:B="y"; cmd`。
-> 相关拍板见 `决策记录-2026-07-20.md`(640=D6 / 温度=P2 / 组合退化=P1 / 私信=P3)。
+> 日期:2026-07-20　目标:一台**全新 Windows 机器** + 一台 iPhone,从零装到能跑 2.0 养号闭环并逐项验证。
+> 分两部分:**第一部分 从零部署**(装工具链→GPU 感知服务→master→手机 WDA)、**第二部分 联调测试**(便宜→贵逐项验)。
+> 命令默认 **PowerShell**(Windows);GPU 服务若走 WSL/Linux 用 bash。相关拍板见 `决策记录-2026-07-20.md`。
 
 ---
 
-## 阶段 0 · 环境起栈(不碰手机也能做一半)
+# 第一部分 · 空白 Windows 从零部署
 
-- [ ] **GPU 感知服务起着**:Ubuntu 24.04 机上,bench venv 内
-      `python services/perception/server.py --model ./LocateAnything-3B --attn sdpa --max-side 640 --port 8000`
-      → `curl http://<GPU机IP>:8000/health` 返回 `{"ok":true,"max_side":640}`。
-- [ ] **感知服务单测(不用手机)**:拿 `bench/locateanything/shots/` 里任一张真机截图,按 `services/perception/README.md` 的 curl 例(把 `<BASE64>` 换成该图 base64)打一次 `/v1/chat/completions`
-      → 响应 `choices[0].message.content` 含 `<box>…</box>`。**这一步先把"模型+服务"与"手机"解耦确认**,省得后面分不清是谁的锅。
-- [ ] **手机就绪**:WDA 跑着(浏览器开 `http://<手机IP>:8100/status` 有响应)、TikTok **已登录**并在前台。
-- [ ] **网络(D2)**:手机 IP 为路由器 DHCP 静态租约;**驱动电脑到 `手机IP:8100` 和 `GPU机IP:8000` 都通**(各 `curl` 一下)。
-- [ ] **仓库就绪**:驱动电脑上 `pnpm install`(含 `@auto/*` + `@mc/master`)。
+## 0. 前置(硬件 / 账号)
+
+- [ ] **这台 Windows 机器有 NVIDIA GPU**(实测 RTX 5060 Ti / Blackwell;跑感知服务)。**无 GPU** → 感知服务得放另一台有 GPU 的机,master 仍可在本机,`vlm.url` 指过去。
+- [ ] **一台 iPhone**(实测 iPhone 8)+ 数据线;iPhone 与 Windows 机**同一个 WiFi/局域网**;路由器能设 **DHCP 静态租约**(D2)。
+- [ ] **一个 Apple ID**:装 WDA 到非越狱 iPhone 必需(免费账号可 7 天签;长期用付费账号或走装机台)。
+- [ ] Windows 10/11 x64,有管理员权限。
+
+## 1. 装基础工具链
+
+- [ ] **Git + Node + pnpm**(scoop 最省事):
+  ```powershell
+  # 装 scoop(若没有):
+  Set-ExecutionPolicy -Scope CurrentUser RemoteSigned; irm get.scoop.sh | iex
+  scoop install git nodejs
+  npm i -g pnpm            # pnpm 版本需 ≥ 仓库 packageManager 钉的(10.28)
+  node -v; pnpm -v         # 验证
+  ```
+- [ ] **Python 3.11 或 3.12**(给感知服务;torch cu128 有对应轮子)。**从 python.org 装最稳**(scoop 的 python 可能是过新版本、torch 无轮子)。装时勾 "Add to PATH"。
+  ```powershell
+  python --version         # 应是 3.11.x 或 3.12.x
+  ```
+
+## 2. 拿仓库 + 装 Node 依赖
+
+- [ ] ```powershell
+  git clone <你的仓库地址> D:\autotk    # 或已在本机
+  cd D:\autotk
+  pnpm install                          # 装全部 workspace(含 @auto/* + @mc/master;不含已退役 apps/mobile)
+  pnpm --filter "@auto/*" --filter @mc/master test    # 离线自检:应 174 + 24 全绿
+  ```
+- **不通过**:`pnpm` 找不到 → 重开终端让 PATH 生效;测试红 → 先别往下,贴报错。
+
+## 3. GPU 感知服务(perception)—— 大脑
+
+**两条路线,二选一。** 想最快起测选 A;想和生产(D5=Ubuntu 24.04)一致、为将来 flash-attn/FP8 留路选 B。
+
+### 路线 A · 原生 Windows(最快)
+> bench 实测 BF16 768 在原生 Windows 与 WSL **同速**(~477ms);模型官方标注 Linux only 但已在 Windows 实测跑通(仅 sdpa,不碰 flash-attn/FP8——它们本就搁置 D7)。
+
+- [ ] 建 venv 装 torch(**必须 cu128 轮子**,否则不认 Blackwell sm_120):
+  ```powershell
+  cd D:\autotk\services\perception
+  python -m venv .venv; .\.venv\Scripts\Activate.ps1
+  pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+  pip install "transformers==4.57.1" "huggingface_hub<1.0" pillow torchao
+  pip install -r requirements.txt        # fastapi/uvicorn/pydantic
+  # 若模型加载报缺 decord/lmdb 等 → pip install decord lmdb(按报错补)
+  python -c "import torch; print(torch.cuda.get_device_name(0), torch.cuda.get_device_capability(0))"
+  #  应打印你的卡名 + (12, 0)
+  ```
+- [ ] 下模型(被墙走镜像):
+  ```powershell
+  $env:HF_ENDPOINT="https://hf-mirror.com"
+  huggingface-cli download nvidia/LocateAnything-3B --local-dir .\LocateAnything-3B
+  ```
+- [ ] 起服务:
+  ```powershell
+  python server.py --model .\LocateAnything-3B --attn sdpa --max-side 640 --port 8000
+  ```
+
+### 路线 B · WSL2 Ubuntu 24.04(与生产一致)
+- [ ] `wsl --install -d Ubuntu-24.04`(Windows 侧装好 NVIDIA 驱动即可,CUDA 自动透传进 WSL,**WSL 内不用再装驱动**)。
+- [ ] 进 WSL,按 `LocateAnything-3B-5060Ti-性能报告.md` §9 建 **Python 3.11 venv + torch 2.8.0+cu128 + transformers 4.57.1 + huggingface_hub<1.0 + decord/lmdb/torchvision/torchao**,同样 `pip install -r requirements.txt`,下模型,`python server.py --model ./LocateAnything-3B --attn sdpa --max-side 640 --port 8000`。
+
+### 验感知服务(两路线通用)
+- [ ] `curl http://localhost:8000/health` → `{"ok":true,"max_side":640}`。
+- [ ] **脱离手机先验模型**:拿 `bench/locateanything/shots/` 任一张真机截图,按 `services/perception/README.md` 的 curl 例把 `<BASE64>` 换成该图 base64 打 `/v1/chat/completions` → 响应含 `<box>…</box>`。**这一步确认"模型+服务"没问题,后面出错就只可能是手机/网络。**
+- 记下本机局域网 IP(`ipconfig`),后面 master 与手机用 `http://<这台IP>:8000`。
+
+## 4. master 主控(装配 N 台)
+
+- [ ] 建设备配置表(**真实文件已 gitignore,不会误提交**):
+  ```powershell
+  cd D:\autotk\services\master
+  copy devices.example.json devices.json
+  # 编辑 devices.json:vlm.url 填 http://<GPU机IP>:8000;
+  #   每台 id(编号)/udid/host(手机 DHCP 静态租约 IP);params 里配 searchKeywords 等
+  ```
+- [ ] **先别急着 start**——master 一起来就会探活连手机,得等第 5 步手机 WDA 起来。配好即可,启动在第二部分阶段 6/7。
+
+## 5. 手机端(iPhone)从零:装 WDA + TikTok
+
+> **2.0 手机只需 WDA + TikTok**,比旧系统轻一半:**不装 autotk App、不要激活码、不用标定**(那些是已退役旧引擎的步骤;VLM 直接出坐标)。
+
+- [ ] **装 Apple USB 驱动**:Windows 装 **iTunes** 或 **「Apple 设备」App**(否则电脑连不上手机、不弹「信任此电脑」)。手机连线、解锁、点**「信任此电脑」**。
+- [ ] **装 go-ios**(跨平台 CLI,Windows 可用,装/挂镜像/跑 WDA 都靠它):
+  ```powershell
+  npm i -g go-ios
+  ios list                 # 能列出你的设备 UDID = USB 通了
+  ```
+- [ ] **装 WDA**:需要一个**已签名的 `WebDriverAgent.ipa`**(装机台云编译产物,或自己用 Apple ID 签的 WDA)。
+  ```powershell
+  ios install --path=WebDriverAgent.ipa
+  ```
+  装后手机:设置 → 通用 → VPN与设备管理 → **信任开发者证书**;设置 → 隐私与安全性 → **开发者模式** → 开 → **重启**。
+  > 生产量产装机走**装机台**(`services/signing-station`,扫码即装 + 自动注册 UDID),测一台用 go-ios 直装即可,不必部署整个装机台。
+- [ ] **挂开发者镜像 + 起 WDA**:
+  ```powershell
+  ios image auto           # 自动下载并挂载对应 iOS 版本的开发者镜像
+  ios runwda --bundleid=<WDA的bundleid> --testrunnerbundleid=<...Runner> --xctestconfig=WebDriverAgentRunner.xctest
+  # runwda 需保持运行、手机保持 USB 连着(维持 XCTest 会话;WDA 长会话稳定性是已知约束)
+  ```
+- [ ] **验 WDA 通**:WDA 默认监听 `0.0.0.0:8100`,起来后可经 WiFi 访问:
+  ```powershell
+  curl http://<手机WiFi_IP>:8100/status     # 返回含 "ready" / sessionId 即成功
+  ```
+- [ ] **TikTok 就绪**:手机登录好 TikTok 国际版、能正常刷视频;建议关 TikTok 自动更新(换版可能要重调 phrase)。
+- [ ] **别让屏幕锁**:设置 → 显示与亮度 → 自动锁定 → **永不**;手机常插电、亮度调低。**屏一锁自动化就停。**
+- [ ] **网络定型(D2)**:路由器给这台手机的 MAC 绑 **DHCP 静态租约**(固定 IP),把该 IP 填进 `services/master/devices.json` 的 `host`。
+
+## 6. 本次不部署的服务(诚实边界)
+
+2.0 核心养号闭环**只要 perception + master + 手机**。以下暂不涉及:
+- **管理中心 Hub / desktop**:master↔Hub 对接尚未建(剩余工程);要几百台面板/批量改设置/文件夹发视频才需要。
+- **license**:D4 拍板 MVP 不接(无激活门禁)。
+- **signing-station 装机台**:量产"扫码即装"服务,自身需 Apple 凭据 + 域名 + docker;测一台手机用 go-ios 直装,不必部署。
+- **telemetry 埋点**:可选;master 不设 `TELEMETRY_URL` 则 no-op。
+- **发布链路**:缺"收视频 App"(D9,Mac-build)+ Hub 对接,见第二部分阶段 8。
 
 ---
+
+# 第二部分 · 联调测试(环境已由第一部分起好)
+
+> 原则:**便宜→贵**,每步过了再下一步。每步给:目的 / 命令 / 通过标准 / 不通过→动作。
+> 冒烟命令在**驱动电脑**(= 本 Windows 机)跑。PowerShell 传环境变量:`$env:WDA_URL="..."; $env:VLM_URL="..."; pnpm --filter @mc/master smoke`。
 
 ## 阶段 1 · 单机冒烟:单目标 find+tap(链路通 + 单目标精度)
-
-**目的**:证明「WDA 截图 → VLM 定位 → 回坐标 → 真点」整条链在真机上闭合。
-
-- [ ] 把 TikTok **停在能看到点赞键的视频页**。
-- [ ] 只定位不点(先肉眼核对):
-      `WDA_URL=http://<手机IP>:8100 VLM_URL=http://<GPU机IP>:8000 TARGET=feed.like-off pnpm --filter @mc/master smoke`
-- [ ] 打开生成的 `smoke-shot.png`,看报的**像素中心是否压在白心上**。
-- [ ] 真点验证:同命令加 `TAP=1` → 手机上点赞心**变红**。
-- **通过**:`✅ 命中`,坐标落在目标上,`TAP=1` 手机真点中。
-- **不通过**:
-  - `❌ 未定位到` → 目标不在当前屏(换页)/ 组合格式模型不吃(见阶段 3)/ region 先验过滤掉了。
-  - 命中但坐标偏 → 记下偏多少,进阶段 2 逐目标看是普遍偏还是个别目标偏。
-  - 连不上 → 回阶段 0 的网络项。
-
----
+- [ ] TikTok 停在**能看到点赞键的视频页**;先只定位不点:
+  ```powershell
+  $env:WDA_URL="http://<手机IP>:8100"; $env:VLM_URL="http://<GPU机IP>:8000"; $env:TARGET="feed.like-off"
+  pnpm --filter @mc/master smoke
+  ```
+- [ ] 打开生成的 `smoke-shot.png`,看报的像素中心是否压在白心上;确认后加 `$env:TAP="1"` 重跑 → 手机点赞心变红。
+- **通过**:`✅ 命中`、坐标对、`TAP=1` 真点中。
+- **不通过**:`❌ 未定位到`=目标不在屏/组合格式模型不吃(阶段 3)/region 过滤掉了;连不上=回第一部分网络项。
 
 ## 阶段 2 · 逐目标扫注册表(**= 640 精度地板实测,D6 安全网**)
-
-**目的**:逐个验关键 Target 的定位精度;这一轮**就是 640 分辨率的实测**(实测原本只覆盖过 768/512)。每个都 `TARGET=<id>` 单独跑,把 TikTok 停在**该目标可见的页**,看 `smoke-shot.png`。
-
-右栏浮动类(验"只互动未点赞/未收藏"的白色识别):
-- [ ] `feed.like-off`(未点赞白心)　- [ ] `feed.save-off`(未收藏白书签)
-
-系统权限窗(验"**不走 WDA /alert**、截图+VLM+tap"路径):
-- [ ] `sys.location-perm`(定位权限 Don't Allow——带地图那种,IMG_0008 实证过)
-- [ ] `sys.photo-perm`(相册权限 Allow Access——发布会用到)
-
-**小目标酸性测试(640 成败看这个)**:
-- [ ] `ad.shop-promo`(购物促销卡下方的关闭 ×,IMG_0002,~15px 最小最孤立)
-- [ ] `browser.inapp`(内嵌网页左上角 ×,IMG_0007)
-
-动态/评论区类(停在**评论区打开**的页):
-- [ ] `comments.commenter-avatar` —— 注意其 phrase 指"某条评论作者头像",单跑可改传具体短语:
-      `TARGET="the avatar of the comment that says '<某条评论前几个词>'"`(工作流里本就是带具体片段调的)。
-- [ ] `dm.message-button`(在**别人主页**页跑)
-
-发布链路 UI 锚点(停在对应页逐个核;发布本身见阶段 8):
-- [ ] `publish.plus` - [ ] `publish.upload` - [ ] `publish.album-first` - [ ] `publish.next` - [ ] `publish.caption` - [ ] `publish.post`
-
-**通过**:每个都 `✅ 命中` 且 png 上坐标压在目标上。
-**不通过**:
-- **`ad.shop-promo` 小 × miss / 飘** → **这是 D6 的回退触发点**:重启 perception 换 `--max-side 768` 复跑本目标;稳了就生产锁 768(README/CLAUDE 里 640→768 一处参数)。
-- 个别目标 miss → 该 Target 的 phrase 措辞不佳,改 `packages/plugin-tiktok/src/target-registry.json` 的 `phrase`(记得**同步 `docs/specs/target-registry.json` 副本**,逐字节),重跑。
-- **顺带做 P2 温度对比**:同一目标连跑 3–5 次看框抖不抖;想对比就重启 perception 加 `--temperature 0.7` 再跑同批,若 0.8 抖动/幻觉明显更大 → 生产回 0.7(决策权在需求方)。
-
----
+每个 `$env:TARGET="<id>"` 单独跑,TikTok 停在该目标可见的页,看 `smoke-shot.png`。
+- [ ] 右栏浮动:`feed.like-off`(未赞白心)、`feed.save-off`(未藏白书签)
+- [ ] 系统权限窗(验**不走 /alert**):`sys.location-perm`(Don't Allow)、`sys.photo-perm`(Allow Access)
+- [ ] **小目标酸性测试(640 成败看这个)**:`ad.shop-promo`(购物卡下方 × ,~15px)、`browser.inapp`(内嵌网页左上 ×)
+- [ ] 评论区(停评论区打开页):`comments.commenter-avatar`(可改传具体短语 `the avatar of the comment that says '<片段>'`)、`dm.message-button`(在别人主页)
+- [ ] 发布锚点:`publish.plus`/`publish.upload`/`publish.album-first`/`publish.next`/`publish.caption`/`publish.post`
+- **通过**:每个 `✅ 命中` 且坐标压在目标上。
+- **不通过**:
+  - **`ad.shop-promo` 小 × miss/飘 → D6 回退触发**:perception 重启换 `--max-side 768` 复跑,稳了生产锁 768。
+  - 个别 miss → 改 `packages/plugin-tiktok/src/target-registry.json` 的 `phrase`(**同步 `docs/specs/target-registry.json` 副本**)重跑。
+  - **顺带 P2 温度对比**:同目标连跑 3–5 次看抖不抖;重启 perception 加 `--temperature 0.7` 对比,0.8 抖/幻觉更大就回 0.7。
 
 ## 阶段 3 · 组合多目标指令(**最大未验风险 + P1 退化验证**)
-
-**目的**:生产每步一次问「本页 hazards + 本步 expected」多个目标(省 GPU,承载量关键)。模型对**组合格式**(`buildLocateInstruction`:`1. …\n2. …` → `1: <box>… / 2: none`)的服从度**从未真机验过**。
-
-- [ ] **需要一个多目标探针**——现 `smoke` 只测单目标。两选一:
-  - (推荐)给 `smoke.ts` 加个 `TARGETS=a,b,c` 多目标模式(小改,可让我加),一次问多个,看返回格式;
-  - 或直接进阶段 6 跑 `search` 工作流,看 master 日志里每步的组合查询命中情况。
-- [ ] 停在**同时有 2+ 个已知目标**的页(如视频页:`feed.like-off` + `feed.comment` + `feed.rail`),发组合查询。
-- **通过(模型服从)**:响应是 `1: <box>…` / `2: none` 逐行格式,在场目标都命中 → **组合可用,每步 1 次 VLM 调用**(承载按 D1 的 ~10 台/卡)。
-- **不通过(模型不吃,吐散文)**:自动走 **P1 退化**(`perceptor-vlm` 已实现)——只查优先级最高的第一个目标,**每步 VLM 调用 ×2–3、承载等比下降**。此时:
-  - 先试改 `packages/perceptor-vlm/src/protocol.ts` 的 `buildLocateInstruction` 措辞(单一真源),再验;
-  - 若怎么调都不服从,认 P1 退化为常态,并把承载预期下调(反馈给 D1)。
-
----
+- [ ] 现 `smoke` 只测单目标;要测组合服从度,**给 smoke 加 `TARGETS=a,b,c` 多目标模式**(小改,可让我加),或进阶段 6 跑 search 看 master 日志的每步组合命中。
+- **通过(服从)**:响应逐行 `1: <box>…`/`2: none`,在场目标都命中 → 组合可用,每步 1 次 VLM 调用(承载按 D1 ~10 台/卡)。
+- **不通过(吐散文)**:自动走 **P1 退化**(只查首个最高优先目标),每步调用 ×2–3、承载下降 → 调 `perceptor-vlm/src/protocol.ts` 的 `buildLocateInstruction` 措辞再验;仍不服从则认退化为常态,承载下调反馈 D1。
 
 ## 阶段 4 · 危险自动处理(权限窗/弹窗)
-
-**目的**:验决策循环的「危险优先」——页面转换时弹出的权限窗/购物卡/内嵌网页被**自动关掉再继续**,不是卡死也不是盲动。
-
-- [ ] 制造或等一个危险出现(购物卡/内嵌网页在正常刷视频时常出;权限窗在首次用某功能时出),观察 master 日志:危险被检出 → tap 关掉 → 重观测继续。
-- [ ] 危险**关不掉 N 次** → 应升级到 `alertOperator`(停手+告警),**绝不盲滑脱困**(旧系统血泪)。
-- **通过**:危险自动消解,流程继续;关不掉时是"停+告警"而非乱动。
-- **不通过**:卡住 → 看是没检出(该 hazard 未激活/phrase 不准,回阶段 2 修该目标)还是检出没关掉(tap 坐标偏)。
-
----
+- [ ] 等/造一个危险(购物卡、内嵌网页刷视频常出;权限窗首次用某功能出),看 master 日志:危险检出→tap 关掉→重观测继续。
+- [ ] 危险关不掉 N 次 → 应 `alertOperator`(停手告警),**绝不盲滑**。
+- **不通过**:卡住 → 没检出(hazard 未激活/phrase 不准,回阶段 2)vs 检出没关掉(坐标偏)。
 
 ## 阶段 5 · 私信可行性(**P3,平台风险未知数**)
-
-**目的**:TikTok 反垃圾会不会拦私信——这是**只能真机首验**的事。
-
-- [ ] 用一份**测试配置**开私信(`dm.dmEnable=true` + `dmKeywords` + `dmTemplates`,`dmDailyCap` 设小如 2),对一个**你自己的小号**发。
-- [ ] 观察:私信按钮在否 → 输入框出否 → 发送后对方**真收到**否。
-- [ ] 验 P3 留痕:打开私信失败/输入发送失败 → 记 `dm-failed:<account>` + `stats.dmFailed`,**不占每日配额**;去重(同人不重发)+ 限量(到 cap 停)生效。
-- **通过**:私信真发出且对方收到,失败有记录、配额/去重正确。
-- **不通过**:发不出/被拦 → 记录现象反馈需求方;功能③按 D9 讨论过的降级(但需求方要求私信必做,故重点是拿到"能不能发"的真机结论)。
-
----
+- [ ] 测试配置开私信(`dm.dmEnable=true`+关键词+话术,`dmDailyCap` 设小如 2),对**自己小号**发。
+- [ ] 观察:私信按钮在否→输入框出否→对方真收到否;验 P3 留痕:失败记 `dm-failed:<account>`+`stats.dmFailed`、**不占配额**、去重+限量生效。
+- **不通过**:发不出/被拦 → 记录现象反馈需求方(私信需求方要求必做,重点是拿到"能不能发"的真机结论)。
 
 ## 阶段 6 · 单工作流端到端(search)
-
-**目的**:一台手机跑通一个完整业务闭环,验业务逻辑 + 真实导航手势 + 中途危险处理。
-
-- [ ] 用**单台** `devices.json`(只 1 台),配 `searchKeywords`,`MASTER_CONFIG=./devices.json pnpm --filter @mc/master start`。
-- [ ] 看日志走完:切搜索 → 输入词 → 提交 → **选首个非广告非直播结果**(找不到退第二个)→ 进流兼验 → **只互动未点赞/未收藏** → 评论区互动。
-- **通过**:整条流顺下来,无失控、无盲滑;白心/白书签识别对(不重复点导致取消);广告/直播结果被跳过。
-- **不通过**:某步反复失败 → 看是该步的 expected/hazard 目标定位问题(回阶段 2)还是手势坐标问题(改工作流手势)。
-
-> 跑通 search 后,可同法验 `profileAndDM`(主页+私信)、`followMonitor`(打粉)——各自停在能起步的页。
-
----
+- [ ] **单台** `devices.json`(1 台)配 `searchKeywords`,起主控:
+  ```powershell
+  cd D:\autotk\services\master; $env:MASTER_CONFIG="./devices.json"; pnpm --filter @mc/master start
+  ```
+- [ ] 看日志走完:切搜索→输入词→提交→**选首个非广告非直播结果**→进流兼验→**只互动未点赞/未收藏**→评论区互动。
+- **不通过**:某步反复失败 → 该步 expected/hazard 定位问题(回阶段 2)vs 手势坐标问题(改工作流手势)。
+> 同法可验 `profileAndDM`(主页+私信)、`followMonitor`(打粉)。
 
 ## 阶段 7 · 多机 Fleet(`start` 扩量)
-
-**目的**:验配置表 + 启动探活 + 错峰 + 多台共享一个 VLM 不打架。
-
-- [ ] `devices.json` 配 **2 台**(照 `services/master/devices.example.json`),`start`。
-- [ ] 看**启动探活**:两台都 `✅ 可达 分辨率`;故意拔一台网线/改错 IP → 该台 `❌ 不可达: 原因` 并被跳过,另一台照常起。
-- [ ] 看**错峰**:两台启动有 `staggerMs` 间隔,不同时打 VLM。
-- [ ] 跑一阵看:两台互不串扰(各自 PhoneSession),VLM 队列串行不崩;`Ctrl-C` 优雅停(等当前批跑完)。
-- **通过**:探活如实、错峰生效、两台稳态跑、优雅停。**再逐步加到目标台数**,观察单卡吞吐是否成瓶颈(对齐 D1 承载)。
-- **不通过**:探活连不上 → D2 网络/IP;VLM 排队拖垮 → 单卡台数到顶(多卡分片,D1)。
-
----
+- [ ] `devices.json` 配 **2 台**(照 `devices.example.json`),`start`。
+- [ ] 看**启动探活**:两台都 `✅ 可达 分辨率`;故意改错一台 IP → 该台 `❌ 不可达: 原因` 被跳过,另一台照常起。
+- [ ] 看**错峰**(staggerMs 间隔不同时打 VLM)、两台互不串扰、`Ctrl-C` 优雅停(等当前批跑完)。
+- **通过**:探活如实、错峰生效、稳态跑、优雅停 → **逐步加台数**,观察单卡吞吐是否成瓶颈(对齐 D1)。
 
 ## 阶段 8 · 发布(**暂缺件,阻塞中**)
-
-**目的**:文件夹工作流下发视频 → 手机相册 → TikTok 发布。
-
-- [ ] ⛔ **依赖未完成**:发布视频**进相册**需"收视频 App"(D9,Mac-build,任务 T7)+ Hub 对接 + master 发布编排(T8)。`publish.ts` 的 UI 操作已就绪(阶段 2 已单验其锚点),但"确保视频在相册"这一前置件还没建。
-- [ ] 待 T7/T8 落地后再验:桌面扫视频+文案 → master 收 `publish:task` → 触发收视频 App 存相册 → `publish.ts` 发布 → 回报。
+- [ ] ⛔ 依赖未完成:视频**进相册**需"收视频 App"(D9,Mac-build,T7)+ Hub 对接 + master 发布编排(T8)。`publish.ts` 的 UI 操作已就绪(阶段 2 已验锚点),缺"确保视频在相册"前置件。
 
 ---
 
-## 附:本轮验证对应的拍板 / 回退触发
+## 附:验证对应的拍板 / 回退触发
 
-| 现象 | 对应拍板 | 回退/动作 |
+| 现象 | 拍板 | 回退/动作 |
 |---|---|---|
-| `ad.shop-promo` 小 × 在 640 下 miss | D6 生产分辨率 | perception 换 `--max-side 768`,生产锁 768 |
-| 框 run-to-run 抖动大 / 幻觉多 | P2 温度 0.8 | perception 换 `--temperature 0.7` |
-| 组合指令模型不服从 | P1 组合退化 | 已自动退化只查首个;调 `protocol.ts` 措辞;承载下调反馈 D1 |
-| 私信被平台拦 | P3 私信必做 | 拿真机结论反馈需求方 |
-| 单卡台数到顶 | D1 纯 VLM ~10 台 | 多卡分片;VLM 优化后置(D7) |
+| `ad.shop-promo` 小 × 在 640 miss | D6 | perception 换 `--max-side 768`,生产锁 768 |
+| 框抖动大 / 幻觉多 | P2 温度 0.8 | perception 换 `--temperature 0.7` |
+| 组合指令不服从 | P1 | 已自动退化查首个;调 `protocol.ts`;承载下调反馈 D1 |
+| 私信被拦 | P3 | 拿真机结论反馈需求方 |
+| 单卡台数到顶 | D1 纯 VLM ~10 台 | 多卡分片;VLM 优化后置 D7 |
 
-**联调期每验证一项,回填 `docs/项目进度报告.md` §7 的"真机待验项",并在此 checklist 勾选。**
+**每验过一项,回填 `docs/项目进度报告.md` §7 真机待验项,并在此勾选。**
