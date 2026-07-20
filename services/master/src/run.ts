@@ -6,8 +6,8 @@
 //   MASTER_CONFIG=./devices.json pnpm --filter @mc/master start     # 或把路径作首个参数
 // 前置:GPU perception 服务起着;各手机 WDA 跑着 + TikTok 已登录;配置表 IP 为 DHCP 静态租约。
 //
-// ⚠️ 尚未接:Hub 上报(D3=A 平铺,剩余工作)、Postgres StateStore(DM 去重跨重启,剩余工作)、
-// License(D4 MVP 不接)。当前为「本地内存态、纯跑养号闭环」的多机装配。
+// Hub 对接(D3=A 平铺)+ 发布链路已接,设 HUB_URL 才启用(不设=纯养号模式)。
+// ⚠️ 尚未接:Postgres StateStore(DM 去重跨重启,剩余工作)、License(D4 MVP 不接)。
 import { readFileSync } from "node:fs";
 import {
   createFleet,
@@ -19,10 +19,15 @@ import {
 } from "@auto/core";
 import { createIosWdaDriver } from "@auto/driver-ios-wda";
 import { createOpenAiBackend, createVlmPerceptor } from "@auto/perceptor-vlm";
-import { ONCE_PER_DAY, pickWorkflow, tiktokPlugin } from "@auto/plugin-tiktok";
+import { ONCE_PER_DAY, pageHazards, pickWorkflow, publish, tiktokPlugin } from "@auto/plugin-tiktok";
 import { parseConfig, type ResolvedConfig } from "./config";
 import { probeAll, summarize, type ProbeOne } from "./probe";
 import { buildPhoneConfigs } from "./assemble";
+import { createHubClient, type HubClient } from "./hub/hubClient";
+import { toDeviceStatus } from "./hub/statusReporter";
+import { applyConfigPatch } from "./hub/configInbox";
+import { createReceiverHub, type ReceiverHub } from "./receiver/receiverServer";
+import { createPublishOrchestrator } from "./publish/orchestrator";
 
 function loadConfig(path: string): ResolvedConfig {
   let raw: unknown;
@@ -94,14 +99,73 @@ async function main(): Promise<void> {
   };
   const fleet = createFleet(deps);
   for (const c of configs) fleet.add(c);
-  console.log(`已启动 ${configs.length} 台(错峰 ${config.staggerMs}ms/台)。Ctrl-C 优雅停止。`);
+  console.log(`已启动 ${configs.length} 台(错峰 ${config.staggerMs}ms/台)。`);
 
   let stopping = false;
+
+  // ——— 管理中心对接 + 发布链路(设 HUB_URL 才启用)———
+  const hubUrl = process.env.HUB_URL;
+  let hub: HubClient | undefined;
+  let receiver: ReceiverHub | undefined;
+  let statusTimer: ReturnType<typeof setInterval> | undefined;
+  if (hubUrl) {
+    const receiverPort = Number(process.env.RECEIVER_PORT ?? 4610);
+    receiver = createReceiverHub({ port: receiverPort, log: (m) => console.log(m) });
+    // 每台当前 params/schedule(config:apply 深合并的基线,热更后更新)。
+    const deviceState = new Map(configs.map((c) => [c.id, { params: c.params, schedule: c.schedule }]));
+    const orch = createPublishOrchestrator({
+      receiver,
+      getHandle: (id) => fleet.get(id),
+      publishFn: (ctx, input) => publish(ctx, input, pageHazards("publish"), pageHazards("feed")),
+      report: (deviceId, taskId, status, error) => hub?.reportPublishResult(deviceId, taskId, status, error),
+      sleep,
+    });
+    hub = createHubClient({
+      hubUrl,
+      onConfigApply: async (deviceId, patch) => {
+        const handle = fleet.get(deviceId);
+        const cur = deviceState.get(deviceId);
+        if (!handle || !cur) return { ok: false, error: `无此设备: ${deviceId}` };
+        try {
+          const applied = applyConfigPatch(cur.params, cur.schedule, patch);
+          if (applied.params !== undefined) {
+            handle.updateParams(applied.params); // 校验失败抛错 → 回 {ok:false}
+            cur.params = applied.params;
+          }
+          if (applied.schedule !== undefined) {
+            handle.updateSchedule(applied.schedule);
+            cur.schedule = applied.schedule;
+          }
+          return { ok: true };
+        } catch (e) {
+          return { ok: false, error: e instanceof Error ? e.message : String(e) };
+        }
+      },
+      onPublishTask: (deviceId, task) => void orch.handlePublishTask(deviceId, task),
+      log: (m) => console.log(m),
+    });
+    const nameOf = new Map(config.devices.map((d) => [d.id, d.name]));
+    for (const c of configs) hub.registerDevice({ deviceId: c.id, deviceName: nameOf.get(c.id) ?? c.id });
+    statusTimer = setInterval(() => {
+      for (const c of configs) {
+        const h = fleet.get(c.id);
+        if (h) hub!.reportStatus(c.id, toDeviceStatus(h, { running: !stopping, ts: Date.now() }));
+      }
+    }, 5000);
+    console.log(`已接管理中心 Hub ${hubUrl};收视频通道 :${receiverPort}`);
+  } else {
+    console.log("未设 HUB_URL —— 纯养号模式,不接管理中心/发布。");
+  }
+  console.log("Ctrl-C 优雅停止。");
+
   const shutdown = async (sig: string): Promise<void> => {
     if (stopping) return;
     stopping = true;
     console.log(`\n收到 ${sig},停止所有手机(等当前批跑完)…`);
+    if (statusTimer) clearInterval(statusTimer);
     await fleet.stopAll();
+    await hub?.close();
+    await receiver?.close();
     console.log("已全部退出。");
     process.exit(0);
   };
