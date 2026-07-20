@@ -1,19 +1,19 @@
 // 关注监控 / 打粉:切到「关注」流 → 逐条视频进评论区打粉回复。到底检测靠文案连续相同。
 // 语义见 docs/specs/L3-业务规格.md §6.4。开启即纯打粉,与养号互斥(编排器保证)。
 import type { RunContext, Step } from "@auto/core";
+import { matchComment } from "../comments";
 import type { TikTokParams } from "../params";
 import { interactComments, scrollComments } from "./comments";
-
-// 文案区(左下带,避开评论区/输入栏)。
-const CAPTION_REGION: readonly [number, number, number, number] = [0, 0.72, 0.72, 0.88];
+import { readCaption } from "./common";
+import { dmCommenter } from "./dm";
 
 function step(intent: string, act: Step["act"], expected: string[], verify: string[], hazards: string[]): Step {
   return { intent, act, expected, hazards, verify, timeout: 10000, onFail: [{ kind: "retry", times: 1 }, { kind: "recover" }, { kind: "alertOperator", message: `关注流步失败: ${intent}` }] };
 }
 
-/** 读当前视频文案(拼行)。OCR 未接则空串。 */
-async function readCaption(ctx: RunContext): Promise<string> {
-  return (await ctx.readText(CAPTION_REGION)).join(" ").replace(/\s+/g, " ").trim();
+/** 当前登录账号标识(DM 去重/限量按它分账号)。运行时由编排器注入,缺省 "self"。 */
+function accountOf(p: TikTokParams): string {
+  return (p as unknown as { account?: string }).account ?? "self";
 }
 
 export async function followMonitor(ctx: RunContext, feedHazards: string[], maxVideos = 5): Promise<void> {
@@ -26,6 +26,8 @@ export async function followMonitor(ctx: RunContext, feedHazards: string[], maxV
   // 覆盖:词/话术留空则沿用全局
   const matchKeywords = mp.commentMatchKeywords.length ? mp.commentMatchKeywords : p.commentMatchKeywords;
   const replyTemplates = mp.fixedReplies.length ? mp.fixedReplies : p.fixedReplies;
+  const account = accountOf(p);
+  const dmOn = p.dm.dmEnable && p.dm.dmKeywords.length > 0 && p.dm.dmTemplates.length > 0;
 
   // 切「关注」流
   if ((await ctx.runStep(step("切关注流", { kind: "tapTarget", target: "nav.following-tab" }, ["nav.following-tab"], ["feed.rail"], feedHazards))).status !== "ok") return;
@@ -51,6 +53,18 @@ export async function followMonitor(ctx: RunContext, feedHazards: string[], maxV
     if ((await ctx.runStep(step("开评论区", { kind: "tapTarget", target: "feed.comment" }, ["feed.rail"], ["comments.panel"], feedHazards))).status === "ok") {
       const comments = await scrollComments(ctx);
       await interactComments(ctx, mp, comments, { matchKeywords, replyTemplates, postReplies: p.postReplies, clickWaitTime: p.clickWaitTime });
+      // 🆕 私信:命中 DM 关键词的评论者 → 点头像进主页 → 发话术(去重+每日限量在 dmCommenter 内)
+      if (dmOn) {
+        for (const c of comments) {
+          if (ctx.shouldStop()) break;
+          if (c.isAd) continue;
+          if (!matchComment(c.text, p.dm.dmKeywords)) continue;
+          const r = await dmCommenter(ctx, c, account, p.dm);
+          ctx.log(`私信 @${c.author}: ${r}`);
+          if (r === "capped") break; // 到每日上限,本趟不再发
+          await ctx.sleepSeconds(ctx.jitter(p.clickWaitTime));
+        }
+      }
       await ctx.runStep(step("关评论区", { kind: "swipe", from: { x: ctx.size.width * 0.5, y: ctx.size.height * 0.35 }, to: { x: ctx.size.width * 0.5, y: ctx.size.height * 0.96 } }, ["comments.panel"], ["feed.rail"], []));
     }
 
