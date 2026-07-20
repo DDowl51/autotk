@@ -111,10 +111,10 @@ export function Devices({ goGuide }: { goGuide: () => void }) {
     { title: "模块", render: (_v, r) => moduleLabel(r.status?.module) },
     { title: "当前页面", render: (_v, r) => pageLabel(r.status?.page) },
     {
-      title: "赞/关注/评论/视频",
+      title: "赞/关注/评论/视频/私信",
       render: (_v, r) => {
         const s = r.status?.stats;
-        return s ? <Mono>{`${s.likes}/${s.follows}/${s.comments}/${s.videos}`}</Mono> : "—";
+        return s ? <Mono>{`${s.likes}/${s.follows}/${s.comments}/${s.videos}/${s.dmSent ?? 0}`}</Mono> : "—";
       },
     },
     {
@@ -264,6 +264,18 @@ export function Devices({ goGuide }: { goGuide: () => void }) {
               {selected.status?.stats
                 ? `${selected.status.stats.likes} / ${selected.status.stats.follows} / ${selected.status.stats.comments} / ${selected.status.stats.videos}`
                 : "—"}
+            </Descriptions.Item>
+            <Descriptions.Item label="私信（成功 / 失败）">
+              {selected.status?.stats ? (
+                <span>
+                  {selected.status.stats.dmSent ?? 0} /{" "}
+                  <span style={{ color: (selected.status.stats.dmFailed ?? 0) > 0 ? "#fca5a5" : undefined }}>
+                    {selected.status.stats.dmFailed ?? 0}
+                  </span>
+                </span>
+              ) : (
+                "—"
+              )}
             </Descriptions.Item>
             <Descriptions.Item label="电量">
               <BatteryCell battery={selected.status?.battery} />
