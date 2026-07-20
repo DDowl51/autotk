@@ -3,16 +3,18 @@
   "note": "autotk 2.0 目标初始注册表。数据来自旧 popupDetect/alertIntent + 本会话真机实测。ocr 为字符串正则(加载时 new RegExp(pattern,'i'))。region/box 为归一化[0..1]。handler 仅 hazard。见 target-registry-说明.md。",
   "activation": {
     "globalHazards": [
-      "sys.location-perm",
+      "sys.perm-deny",
       "sys.tracking",
-      "sys.notif-perm",
       "sys.fb-login",
       "popup.login",
       "popup.notif",
       "popup.addyours",
       "popup.passkey",
       "ad.shop-promo",
-      "browser.inapp"
+      "browser.inapp",
+      "popup.not-now",
+      "popup.not-interested",
+      "popup.generic-close"
     ],
     "pageHazards": {
       "feed": [
@@ -37,7 +39,8 @@
       "publish": [
         "sys.camera-perm",
         "sys.mic-perm",
-        "sys.photo-perm"
+        "sys.photo-perm",
+        "publish.post-confirm"
       ]
     },
     "pageExpected": {
@@ -60,21 +63,15 @@
   },
   "targets": [
     {
-      "id": "sys.location-perm",
+      "id": "sys.perm-deny",
       "kind": "hazard",
       "hazardClass": "system",
       "handler": "deny",
       "phrase": "the Don't Allow button",
       "ocr": "don'?t\\s*allow|不允许",
       "verified": true,
-      "box": [
-        0.14,
-        0.78,
-        0.72,
-        0.07
-      ],
-      "source": "IMG_0008 实测;iOS 定位权限(带地图);VLM 定位 Don't Allow→tap(该窗 /alert 读不到,alert 通道已弃)",
-      "notes": "绝不点 Allow Once/Allow While Using App;弯引号 U+2019 已并入正则"
+      "source": "通用 iOS 权限窗拒绝(联系人/通知/位置…);实测:通讯录窗 Don't Allow 居中左按钮(通用DontAllow-hazard.png)、IMG_0008 带地图定位窗按钮更靠下;VLM 定位 Don't Allow→tap(系统窗 /alert 对带地图窗读不到,已弃)",
+      "notes": "通用,替代原 sys.location-perm/sys.notif-perm。标准居中弹窗 Don't Allow 在左按钮(约 y0.61);带地图定位窗 3 按钮更靠下(约 y0.81)——VLM 按 phrase 定位不依赖固定坐标,故不设 box。绝不点 OK/Allow/Allow Once/Allow While Using App(弯引号 U+2019 已并入正则)"
     },
     {
       "id": "sys.tracking",
@@ -84,15 +81,6 @@
       "phrase": "the Ask App Not to Track button",
       "ocr": "ask app not to track|不允许跟踪",
       "source": "alertIntent"
-    },
-    {
-      "id": "sys.notif-perm",
-      "kind": "hazard",
-      "hazardClass": "system",
-      "handler": "deny",
-      "phrase": "the Don't Allow button",
-      "ocr": "don'?t\\s*allow|不允许",
-      "source": "alertIntent;通知权限系统窗"
     },
     {
       "id": "sys.fb-login",
@@ -266,6 +254,35 @@
       "ocr": "send to|share to|分享到|发送给",
       "source": "popupDetect sheet",
       "notes": "误开的分享面板;下滑或点外部关"
+    },
+    {
+      "id": "popup.not-now",
+      "kind": "hazard",
+      "hazardClass": "overlay",
+      "handler": "tapBox",
+      "phrase": "the Not Now button (暂不 / 以后再说 / 稍后)",
+      "ocr": "not now|暂不|暂时不|以后再说|稍后再说|下次(再说)?",
+      "source": "通用:各类提示弹窗的「暂不 / Not Now」软拒绝出口",
+      "notes": "通用软拒绝;绝不点「开启 / 允许 / 立即」等确认按钮"
+    },
+    {
+      "id": "popup.not-interested",
+      "kind": "hazard",
+      "hazardClass": "overlay",
+      "handler": "tapBox",
+      "phrase": "the Not interested (不感兴趣) button in a menu or feedback card",
+      "ocr": "not interested|不感兴趣",
+      "source": "通用:长按菜单 / 推广卡出现「不感兴趣」时点它关闭",
+      "notes": "⚠️假设:出现「不感兴趣」= 误触长按菜单或推广卡,点它可关闭。会给算法负反馈,但仅在该按钮真实在屏时触发(正常浏览不出现)。若不想给负反馈,把 handler 改为 back"
+    },
+    {
+      "id": "popup.generic-close",
+      "kind": "hazard",
+      "hazardClass": "overlay",
+      "handler": "tapBox",
+      "phrase": "the small close (X) button at a corner of a modal popup card or bottom sheet overlaying the screen (not the main video UI)",
+      "source": "通用兜底:未被专门识别的弹窗,点其角落 × 关闭",
+      "notes": "兜底项,列在 globalHazards 末位——专门弹窗各自先匹配,剩下不认识的才由它关。⚠️位置不定故不设 region;可能误命中持久小组件的 ×(如 Free Gifts),需收敛再加 region 或从 globalHazards 去激活"
     },
     {
       "id": "feed.live-tag",
@@ -637,13 +654,14 @@
     {
       "id": "publish.upload",
       "kind": "expected",
-      "phrase": "the Upload/相册 entry on the camera page",
+      "phrase": "the photo/album thumbnail button at the bottom-left of the camera page — it shows a live preview of your most recent gallery photo, so its picture is not fixed",
       "region": [
-        0.8,
-        0.85,
-        0.2,
-        0.12
-      ]
+        0,
+        0.84,
+        0.24,
+        0.16
+      ],
+      "notes": "左下角相册入口:显示相册第一张图的缩略,样子不固定;靠位置+缩略图形态定位,不靠固定图案"
     },
     {
       "id": "publish.album-first",
@@ -659,13 +677,14 @@
     {
       "id": "publish.next",
       "kind": "expected",
-      "phrase": "the Next/下一步 button",
+      "phrase": "the red Next (下一步) button at the bottom-right",
       "region": [
-        0.75,
-        0.9,
-        0.25,
-        0.1
-      ]
+        0.5,
+        0.88,
+        0.5,
+        0.12
+      ],
+      "notes": "红色按钮,底部偏右;中心约 x0.73(Next识别不准.png 实测),故 region 左界放宽到 0.5 才含得住,原 0.75 会把中心排除掉"
     },
     {
       "id": "publish.caption",
@@ -681,13 +700,31 @@
     {
       "id": "publish.post",
       "kind": "expected",
-      "phrase": "the Post/发布 button",
+      "phrase": "the red Post (发布) button at the bottom-right",
       "region": [
-        0.75,
-        0.9,
-        0.25,
-        0.1
-      ]
+        0.5,
+        0.88,
+        0.5,
+        0.12
+      ],
+      "notes": "红色按钮,底部偏右;中心约 x0.74(添加Post-now.png 实测),region 左界同 publish.next 放宽到 0.5"
+    },
+    {
+      "id": "publish.post-confirm",
+      "kind": "hazard",
+      "hazardClass": "overlay",
+      "handler": "tapBox",
+      "phrase": "the Post Now (立即发布) button in the 'Post video publicly?' confirmation dialog",
+      "ocr": "post now|立即发布|post publicly|公开发布|发布视频",
+      "region": [
+        0.5,
+        0.57,
+        0.37,
+        0.11
+      ],
+      "verified": true,
+      "source": "添加Post-now.png 实测;点 Post 后弹「Post video publicly?」确认窗,须点右侧 Post Now 才真正发布",
+      "notes": "发布确认弹窗(公开账号/首发时出现);作 publish 页 hazard——post 步验证 feed.rail 期间由 awaitTargets 自动点掉,弹窗不出现则无妨。绝不点左侧 Cancel"
     },
     {
       "id": "feed.like-off",

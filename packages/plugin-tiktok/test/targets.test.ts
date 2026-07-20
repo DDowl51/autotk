@@ -4,16 +4,25 @@ import { activation, pageHazards, targets } from "../src/targets";
 
 describe("targets 加载", () => {
   it("加载全部目标,可建成注册表(无重复)", () => {
-    expect(targets.length).toBe(62);
+    expect(targets.length).toBe(65);
     const r = toRegistry(targets);
     expect(r.get("nav.search-icon")?.kind).toBe("expected");
     expect(r.get("ad.shop-promo")?.hazardClass).toBe("overlay");
     expect(r.get("ad.shop-promo")?.handler).toBe("tapBox");
-    // 新增:白色未互动目标 + 干净结果 + 广告视频
+    // 白色未互动目标 + 干净结果 + 广告视频
     expect(r.get("feed.like-off")?.kind).toBe("expected");
     expect(r.get("feed.save-off")?.kind).toBe("expected");
     expect(r.get("search.first-clean-result")?.kind).toBe("expected");
     expect(r.get("feed.ad-marker")?.handler).toBe("swipeAway");
+    // 通用危险(× / Not now / Not interested)+ 通用拒绝 + 发布确认
+    expect(r.get("sys.perm-deny")?.handler).toBe("deny");
+    expect(r.get("popup.generic-close")?.handler).toBe("tapBox");
+    expect(r.get("popup.not-now")?.kind).toBe("hazard");
+    expect(r.get("popup.not-interested")?.kind).toBe("hazard");
+    expect(r.get("publish.post-confirm")?.hazardClass).toBe("overlay");
+    // 旧的按类型拒绝项已并入通用 sys.perm-deny
+    expect(r.get("sys.location-perm")).toBeUndefined();
+    expect(r.get("sys.notif-perm")).toBeUndefined();
   });
 
   it("region 加载时由 [x,y,w,h] 换算成角点 Box,且全注册表合法(x1<x2≤1, y1<y2≤1)", () => {

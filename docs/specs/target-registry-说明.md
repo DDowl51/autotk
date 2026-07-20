@@ -36,9 +36,10 @@
 
 | 来源 | 提炼出的 Target |
 |---|---|
-| 本会话真机实测(verified) | `sys.location-perm`(IMG_0008)、`ad.shop-promo`(IMG_0002)、`browser.inapp`(IMG_0007)、`search.result-2` |
+| 真机实测(verified) | `sys.perm-deny`(IMG_0008 带地图定位窗 + 通用DontAllow-hazard.png 通讯录窗)、`ad.shop-promo`(IMG_0002)、`browser.inapp`(IMG_0007)、`search.result-2`、`publish.post-confirm`(添加Post-now.png)、`publish.next`/`publish.post` region(Next识别不准.png/添加Post-now.png) |
 | 旧 `popupDetect` SIGNATURES | login/notif/addyours/notif-friend/avatar/policy/notif-comment/security-check/passkey/location-inapp/sheet |
-| 旧 `alertIntent` DENY/ALLOW | sys.tracking/notif-perm/fb-login/camera/mic/photo-perm |
+| 旧 `alertIntent` DENY/ALLOW | sys.tracking/fb-login/camera/mic/photo-perm(原 location-perm/notif-perm 已并入通用 `sys.perm-deny`) |
+| 通用危险(2026-07-20 加) | `sys.perm-deny`(通用 Don't Allow)、`popup.not-now`(通用 Not Now)、`popup.not-interested`(不感兴趣)、`popup.generic-close`(通用弹窗角落 × 兜底) |
 | 旧 `isLivePage` / `isAdComment` | `feed.live-tag` / `comment.ad-first` |
 | 旧 `anchors.ts` / 标定 | feed.*/nav.*/comments.*/profile.*/publish.*(坐标改由 VLM 定位,anchors 仅作 region 先验) |
 
