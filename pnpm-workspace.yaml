@@ -5,6 +5,10 @@ packages:
   # It keeps its own self-contained install (apps/mobile/pnpm-workspace.yaml) until that
   # "phase 4" integration. Re-include it (drop this exclusion) once Metro config is added.
   - "!apps/mobile"
+  # apps/receiver（2.0 收视频端,RN/Expo）同样排除:自带安装,只能 Mac 构建。
+  # 纯逻辑(agent/downloader)测试借已装 vitest 的包跑:
+  #   pnpm --filter @mc/master exec vitest run --root apps/receiver
+  - "!apps/receiver"
   - services/*
   - packages/*
 

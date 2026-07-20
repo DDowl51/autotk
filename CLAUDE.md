@@ -15,6 +15,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```
 apps/
   mobile/              旧手机端 autotk（RN/Expo，**已退役 2026-07-20**，仅知识库）——见下方「⚠️ 未进 workspace」
+  receiver/  @autotk/receiver  【2.0】收视频端：极小 iOS App，连 master→下载视频存相册（发布链路 W2b，RN/Expo，Mac 构建；同样排除出 workspace）
   desktop/   @mc/desktop      管理中心 Electron 桌面端
   web/       @license/web     license 管理后台（React+Vite+AntD）
 services/
@@ -105,6 +106,7 @@ docs/specs/                       【2.0】G0 规格：L0-WDA 规格书 / 协议
   | Hub 端口表 | `apps/desktop/electron/netutil.cjs` 的 `HUB_PORTS`（内嵌 Hub 按此表挑第一个空闲端口） | `apps/mobile/src/hub/hubUrl.ts` 的 `HUB_PORTS`（手机端口兜底重连按同表扫） | 必须逐一致 | 改一处两处同步；跑 `pnpm --filter @mc/hub test` + 手机 `bash tests/run.sh` |
   | 标定档结构 `DeviceProfile` | `apps/mobile/src/engine/onDeviceUI.ts`（App 侧） | `apps/mobile/tools/deviceProfile.ts`（REPL/标定侧） | 手动同步 | 改字段两处同步；页面锚点比例是**单一真源** `src/engine/anchors.ts`（两边 import，无副本）；跑手机 `bash tests/run.sh` |
   | 【2.0】Target 注册表 | `packages/plugin-tiktok/src/target-registry.json`（运行时真源） | `docs/specs/target-registry.json`（规格档） | 逐字节同步 | 改注册表两处同步；注意 `region` 是 `[x,y,w,h]`、代码 `Box` 是角点——加载时换算（d0b0330 修过的高危坑）；跑 `pnpm --filter @auto/plugin-tiktok test` |
+  | 【2.0】收视频端协议 | `services/master/src/receiver/protocol.ts`（master 侧真源） | `apps/receiver/src/protocol.ts`（vendored，端在 workspace 外） | 同语义 | 改 download/hello/progress 消息两处同步；master 侧跑 `pnpm --filter @mc/master test`，端跑 `pnpm --filter @mc/master exec vitest run --root apps/receiver` |
 
   **2026-07-20 起**：apps/mobile 已退役——表中 mobile 相关行（Hub 协议子集 / license SDK 副本 / telemetry mobile 副本 / Hub 端口表 / DeviceProfile）**冻结，不再需要同步**；telemetry 只剩 desktop/license 两份副本要同步。仍生效的缝：telemetry（desktop/license）、IPA 母包（WDA）、【2.0】Target 注册表。改完把**两边的测试都跑一遍**确认仍绿，并在回复里说明波及到了哪些包。
 - **架构基调到处是「端口-适配器」**：纯业务逻辑放不依赖框架的 `core`/`domain`（用假实现单测），框架/外部脏活（Prisma、HTTP、zsign、socket.io、ImageMagick）放 `adapters`。**改规则改核心层并补测，改接线改适配器。**

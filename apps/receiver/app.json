@@ -1,0 +1,33 @@
+{
+  "expo": {
+    "name": "autotk-receiver",
+    "slug": "autotk-receiver",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.autotk.receiver",
+      "infoPlist": {
+        "UIBackgroundModes": ["location"],
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "用于后台保活,让收视频端持续接收并保存要发布的视频",
+        "NSLocationWhenInUseUsageDescription": "用于后台保活",
+        "NSLocalNetworkUsageDescription": "在同一 WiFi 下从局域网主控下载要发布的视频",
+        "NSAppTransportSecurity": { "NSAllowsLocalNetworking": true }
+      }
+    },
+    "plugins": [
+      "expo-location",
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "用于把要发布的视频保存进相册",
+          "savePhotosPermission": "用于把要发布的视频保存进相册",
+          "isAccessMediaLocationEnabled": false
+        }
+      ]
+    ],
+    "runtimeVersion": "1.0.0"
+  }
+}
