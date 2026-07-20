@@ -69,3 +69,8 @@ services/signing-station/apps/
 # 各包 node:test 垫片临时文件（run.sh 生成，异常退出会残留）
 _tsconfig.test.json
 **/test/_shims.d.ts
+
+# master 真实设备配置表（含真 UDID/IP，勿提交；示例是 devices.example.json）+ 冒烟截图
+services/master/devices.json
+services/master/*.local.json
+services/master/smoke-shot.png

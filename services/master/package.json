@@ -5,7 +5,9 @@
   "type": "module",
   "description": "多机编排运行时(装配 core+driver+perceptor+plugin)。含单机冒烟工具。",
   "scripts": {
+    "start": "tsx src/run.ts",
     "smoke": "tsx src/smoke.ts",
+    "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -17,6 +19,7 @@
   "devDependencies": {
     "@types/node": "^20.16.10",
     "tsx": "^4.19.1",
-    "typescript": "^5.6.2"
+    "typescript": "^5.6.2",
+    "vitest": "^2.1.2"
   }
 }
