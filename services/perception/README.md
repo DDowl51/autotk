@@ -12,8 +12,8 @@ LocateAnything 自定义架构(MoonViT + Parallel Box Decoding + 自定义 `gene
 source la3b/bin/activate           # 或你 bench 用的那个 venv
 pip install -r requirements.txt
 
-# 2) 起服务(模型路径同 bench)
-python server.py --model ./LocateAnything-3B --attn sdpa --max-side 768 --host 0.0.0.0 --port 8000
+# 2) 起服务(模型路径同 bench;640/0.8 是默认值,写出来只为显式)
+python server.py --model ./LocateAnything-3B --attn sdpa --max-side 640 --temperature 0.8 --host 0.0.0.0 --port 8000
 #   显存紧/想提速:加 --fp8(务必之后用冒烟工具复核坐标没塌)
 ```
 
@@ -21,7 +21,7 @@ python server.py --model ./LocateAnything-3B --attn sdpa --max-side 768 --host 0
 
 ```bash
 curl http://localhost:8000/health
-# {"ok":true,"max_side":768}
+# {"ok":true,"max_side":640}
 
 # 模拟一次 grounding(把 <BASE64> 换成一张截图的 base64):
 curl -s http://localhost:8000/v1/chat/completions -H 'Content-Type: application/json' -d '{
@@ -40,6 +40,6 @@ curl -s http://localhost:8000/v1/chat/completions -H 'Content-Type: application/
 - 并发:单 worker 线程池串行化推理(batch=1 现实);多台手机请求会排队。
 
 ## 注意
-- `--max-side 768`:生产锁 768 保精度(bench:512 会 miss shop 小 ✕)。
+- `--max-side 640`:2026-07-20 拍板的生产分辨率(`docs/决策记录-2026-07-20.md` D6)。精度实测仅覆盖 768(十张全准)/512(miss shop 小 ✕);640 靠真机逐目标验收顺带实测,**小目标不稳就回 `--max-side 768`**。
 - FP8 只量化 LLM 解码层、排除视觉塔(否则坐标崩)——与 bench 同纪律。启用后**必复核坐标**。
-- 采样参数沿用 bench(temp 0.7),坐标会有轻微 run-to-run 抖动;要更稳可后续改 `do_sample=False`(需确认模型 generate 接受)。
+- 采样温度默认 0.8(拍板「稍调高」,P1/P2;请求体 `temperature` 可逐次覆盖)。**bench 全部精度数据在 0.7 下测得**,更高温度坐标 run-to-run 抖动更大——真机验收时对比 0.7/0.8 再锁定;要更稳可后续试 `do_sample=False`(需确认模型 generate 接受)。

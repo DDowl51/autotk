@@ -7,8 +7,10 @@
 vLLM 未必认。此服务薄薄一层 transformers + FastAPI,已被 bench 验证能出 <box>。
 
 跑法(GPU 机,bench 那个 venv 里 + pip install fastapi uvicorn):
-  python server.py --model ./LocateAnything-3B --attn sdpa --max-side 768 --host 0.0.0.0 --port 8000
+  python server.py --model ./LocateAnything-3B --attn sdpa --max-side 640 --host 0.0.0.0 --port 8000
   # 显存紧/想提速再加 --fp8（务必之后复核坐标没塌）
+  # 生产分辨率 640 系 2026-07-20 拍板(决策记录 D6);实测仅覆盖 768(全准)/512(丢小目标),
+  # 真机逐目标验收即 640 的实测——小目标不稳就回 --max-side 768。
 
 自检:
   curl http://localhost:8000/health
@@ -57,12 +59,13 @@ def load_model(args):
         quantize_(model, Float8WeightOnlyConfig(), filter_fn=only_llm_linears)
         print("已应用 FP8(weight-only,排除视觉塔)——务必复核坐标精度")
 
-    STATE.update(tokenizer=tokenizer, processor=processor, model=model, max_side=args.max_side)
-    print(f"就绪:max_side={args.max_side} attn={args.attn} fp8={args.fp8}")
+    STATE.update(tokenizer=tokenizer, processor=processor, model=model,
+                 max_side=args.max_side, temperature=args.temperature)
+    print(f"就绪:max_side={args.max_side} attn={args.attn} fp8={args.fp8} temperature={args.temperature}")
 
 
 @torch.no_grad()
-def infer(image: Image.Image, instruction: str, max_new_tokens: int) -> str:
+def infer(image: Image.Image, instruction: str, max_new_tokens: int, temperature: float) -> str:
     """1:1 复用 bench.ground(),但 text 直接用调用方传来的完整 instruction(不再包 'Locate...')。"""
     max_side = STATE["max_side"]
     if max_side and max(image.size) > max_side:
@@ -84,7 +87,7 @@ def infer(image: Image.Image, instruction: str, max_new_tokens: int) -> str:
         tokenizer=tokenizer,
         max_new_tokens=max_new_tokens,
         use_cache=True, generation_mode="hybrid",
-        temperature=0.7, do_sample=True, top_p=0.9, repetition_penalty=1.1, verbose=False,
+        temperature=temperature, do_sample=True, top_p=0.9, repetition_penalty=1.1, verbose=False,
     )
     ans = resp[0] if isinstance(resp, tuple) else resp
     return ans if isinstance(ans, str) else str(ans)
@@ -135,8 +138,9 @@ def health():
 async def chat(req: ChatReq):
     instruction, image = extract(req.messages)
     max_new = req.max_tokens or 128
+    temp = req.temperature if req.temperature is not None else STATE["temperature"]
     loop = asyncio.get_event_loop()
-    content = await loop.run_in_executor(_pool, infer, image, instruction, max_new)
+    content = await loop.run_in_executor(_pool, infer, image, instruction, max_new, temp)
     return {
         "id": f"chatcmpl-{int(time.time()*1000)}",
         "object": "chat.completion",
@@ -149,7 +153,10 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", default="./LocateAnything-3B")
     ap.add_argument("--attn", default="sdpa")
-    ap.add_argument("--max-side", type=int, default=768)
+    # 640 = 2026-07-20 拍板的生产分辨率(决策记录 D6);精度实测仅覆盖 768/512,不稳回 768。
+    ap.add_argument("--max-side", type=int, default=640)
+    # 0.8 = 拍板「稍调高」(P1/P2);bench 全部精度数据在 0.7 下测得,真机对比后再锁定。
+    ap.add_argument("--temperature", type=float, default=0.8)
     ap.add_argument("--fp8", action="store_true")
     ap.add_argument("--host", default="0.0.0.0")
     ap.add_argument("--port", type=int, default=8000)
