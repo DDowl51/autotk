@@ -15,6 +15,9 @@ const TARGETS: Target[] = [
   { id: "feed.live", phrase: "LIVE badge", kind: "hazard", hazardClass: "category", handler: "swipeAway" },
   { id: "sheet.share", phrase: "share sheet", kind: "hazard", hazardClass: "overlay", handler: "back" },
   { id: "ad.comment", phrase: "ad comment", kind: "hazard", hazardClass: "category", handler: "skip" },
+  // 带 ocr 特征的危险(走「一次检测」OCR 优先路径):点按类 + 手势类各一。
+  { id: "ad.promo-ocr", phrase: "close ad", kind: "hazard", hazardClass: "overlay", handler: "tapBox", ocr: "sponsored|advertisement" },
+  { id: "feed.live-ocr", phrase: "LIVE badge", kind: "hazard", hazardClass: "category", handler: "swipeAway", ocr: "\\bLIVE\\b" },
 ];
 
 function mkDeps(w: FakeWorld): EngineDeps {
@@ -247,6 +250,57 @@ describe("handler 分支", () => {
     expect(o).toMatchObject({ status: "hazard", id: "ad.comment" });
     expect(w.taps).toHaveLength(0);
     expect(w.swipes).toHaveLength(0);
+  });
+});
+
+describe("危险一次检测(OCR 优先·多机吞吐)", () => {
+  it("多个 ocr 危险:一次读屏覆盖全部(不是每个危险一次),干净页 0 次危险 grounding", async () => {
+    const w = new FakeWorld().show("feed.rail");
+    w.lines = [{ text: "为你推荐", box: [0.1, 0.05, 0.4, 0.08] }]; // 无任何危险特征词
+    const s = step({
+      intent: "确认在流",
+      expected: ["feed.rail"],
+      hazards: ["sys.deny-ocr", "ad.promo-ocr", "sys.perm"], // 2 个 ocr + 1 个无 ocr
+      verify: [],
+    });
+    const o = await decide(s, mkDeps(w));
+    expect(o.status).toBe("ok");
+    expect(w.readTexts).toBe(1); // 2 个 ocr 危险共用「一次读屏」,不是各读一次
+    const grounded = w.locateCalls.flat();
+    expect(grounded).not.toContain("sys.deny-ocr"); // ocr 危险靠读屏检测,不 grounding
+    expect(grounded).not.toContain("ad.promo-ocr");
+    expect(grounded).toContain("sys.perm"); // 无 ocr 危险仍走 grounding 检测(兜底)
+  });
+
+  it("ocr 命中点按类 → 再定位关闭键取坐标 → 处理", async () => {
+    const w = new FakeWorld().show("sys.deny-ocr", [0.2, 0.6, 0.5, 0.65]).show("feed.rail");
+    w.lines = [{ text: "Don't Allow", box: [0.25, 0.61, 0.45, 0.63] }];
+    const o = await decide(step({ intent: "x", expected: ["feed.rail"], hazards: ["sys.deny-ocr"] }), mkDeps(w));
+    expect(o).toMatchObject({ status: "hazard", id: "sys.deny-ocr" });
+    expect(w.readTexts).toBe(1);
+    expect(w.locateCalls.flat()).toContain("sys.deny-ocr"); // 命中后再 grounding 取关闭键框
+    expect(w.taps).toHaveLength(1); // deny → 点定位到的框
+  });
+
+  it("ocr 命中手势类(swipeAway)→ 不 grounding,直接盲滑", async () => {
+    const w = new FakeWorld().show("feed.rail"); // 不 show feed.live-ocr:手势类不需定位
+    w.lines = [{ text: "LIVE", box: [0.1, 0.1, 0.2, 0.13] }];
+    const o = await decide(step({ intent: "x", expected: ["feed.rail"], hazards: ["feed.live-ocr"] }), mkDeps(w));
+    expect(o).toMatchObject({ status: "hazard", id: "feed.live-ocr" });
+    expect(w.readTexts).toBe(1);
+    expect(w.locateCalls.flat()).not.toContain("feed.live-ocr"); // 手势类不定位
+    expect(w.swipes).toHaveLength(1);
+    expect(w.taps).toHaveLength(0);
+  });
+
+  it("ocr 不命中(特征词不在屏上)→ 判无危险,继续正常目标", async () => {
+    const w = new FakeWorld().show("feed.like", [0.8, 0.4, 0.9, 0.5]).show("feed.rail");
+    w.lines = [{ text: "普通视频文案", box: [0.1, 0.9, 0.6, 0.94] }]; // 不含 sponsored/advertisement
+    const s = step({ intent: "点赞", act: { kind: "tapTarget", target: "feed.like" }, expected: ["feed.like"], hazards: ["ad.promo-ocr"], verify: ["feed.rail"] });
+    const o = await decide(s, mkDeps(w));
+    expect(o.status).toBe("ok");
+    expect(w.taps).toHaveLength(1); // 点的是 feed.like,不是危险
+    expect(w.locateCalls.flat()).not.toContain("ad.promo-ocr"); // 特征不命中 → 不定位危险
   });
 });
 

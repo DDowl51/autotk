@@ -15,6 +15,8 @@ export class FakeWorld {
   swipes: { from: Point; to: Point; durMs: number }[] = [];
   typed: string[] = [];
   screenshots = 0;
+  readTexts = 0; // OCR 读屏次数(验「一次检测」省调用)
+  locateCalls: string[][] = []; // 每次 grounding 定位的 id 列表(验危险不逐个 grounding)
   /** OCR 读到的文本行(危险 OCR 二次确认用);默认空。 */
   lines: TextLine[] = [];
   /** 事件时间线:到点(sleep 推进时钟触发)改变屏上目标。 */
@@ -74,6 +76,7 @@ export class FakeWorld {
 
   perceptor: Perceptor = {
     locate: async (_img: ImageBytes, queries: LocateQuery[]): Promise<Hit[]> => {
+      this.locateCalls.push(queries.map((q) => q.id));
       const out: Hit[] = [];
       for (const q of queries) {
         const box = this.present.get(q.id);
@@ -82,6 +85,7 @@ export class FakeWorld {
       return out;
     },
     readText: async (_img: ImageBytes, region?: Box): Promise<TextLine[]> => {
+      this.readTexts++;
       if (!region) return this.lines;
       const [x1, y1, x2, y2] = region;
       return this.lines.filter((l) => {

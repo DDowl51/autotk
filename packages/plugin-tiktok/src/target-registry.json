@@ -10,13 +10,10 @@
     ],
     "pageHazards": {
       "feed": [
-        "popup.notif-friend",
-        "feed.live-tag",
-        "feed.ad-marker"
+        "popup.notif-friend"
       ],
       "comments": [
-        "popup.notif-comment",
-        "comment.ad-first"
+        "popup.notif-comment"
       ],
       "search": [
         "popup.location-inapp"

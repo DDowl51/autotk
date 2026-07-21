@@ -45,7 +45,7 @@ export class FakeApp {
     this.present.set(id, this.boxFor(id));
     return this;
   }
-  /** 显示一个带 ocr 的危险 + 在它框内放一行匹配文字(供引擎 OCR 二次确认过关,模拟真弹窗有文字)。 */
+  /** 显示一个带 ocr 的危险 + 在它框内放一行匹配文字(供引擎「一次检测」OCR 读到其特征词,模拟真弹窗有文字)。 */
   showWithText(id: string, text: string): this {
     this.show(id);
     const b = this.present.get(id)!;
@@ -53,7 +53,10 @@ export class FakeApp {
     return this;
   }
   hide(id: string): this {
+    const b = this.present.get(id);
     this.present.delete(id);
+    // 弹窗消失 → 其文字也从屏上没了:清掉 showWithText 在该框放的行(否则残留文字会被 OCR 一次检测误判危险仍在)。
+    if (b) this.lines = this.lines.filter((l) => !(l.box[0] === b[0] && l.box[1] === b[1] && l.box[2] === b[2] && l.box[3] === b[3]));
     return this;
   }
   on(id: string, fn: (a: FakeApp) => void): this {

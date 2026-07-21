@@ -1,7 +1,7 @@
 // 决策引擎(core,与 app 无关)。每步:观测 → 组合定位 → 危险优先 → 期望执行 → 验证/轮询 → 超时升级。
 // 公理 A1–A4 的直接落地。全部依赖经 EngineDeps 注入,便于 mock 截图序列离线单测。
 import { centerPx, normPx, type Point, type Size } from "./geometry";
-import type { Driver, Hit, LocateQuery, Perceptor } from "./interfaces";
+import type { Driver, Hit, LocateQuery, Perceptor, TextLine } from "./interfaces";
 import type { BasicOp, Escalation, Step } from "./step";
 import type { HazardClass, Target, TargetRegistry } from "./target";
 
@@ -52,50 +52,68 @@ export async function locateTargets(deps: EngineDeps, ids: string[]): Promise<Ma
 }
 
 /**
- * 幻觉治理(P2):VLM 定位到的危险框,若该 Target 带 `ocr`,用 OCR 核对框内**真有对应文字**才算数。
- * 框内读不到匹配文字 = 屏上其实没这个危险(grounding 对不存在目标幻觉出框)→ 判未命中,不处理。
- * 无 `ocr` 的危险(如浮层弹窗的 × 无文字可核)→ 信 VLM。OCR 出错/正则坏 → 不拦(避免漏掉真危险)。
+ * 危险优先·**一次检测**(2026-07-21,为多机吞吐重构)。为什么不逐个 grounding 查危险:
+ * LocateAnything 单目标 → N 个危险 = N 次定位;且模型对不存在目标幻觉出框,还得逐个 OCR 复核 →
+ * 每轮十几次 VLM,几百台跑不动。改法:**读一次屏上文字**,用各危险的 `ocr` 特征在全屏文本里匹配 ——
+ * 命中即该危险在场(其标志文字真的在屏上,不靠 grounding 幻觉,天然过滤假阳)。干净页 0 次额外定位;
+ * 真有弹窗才对命中的那个 grounding 取关闭键坐标(点按类),手势类(swipeAway/back/skip)连定位都免。
+ * 每轮成本:干净页=1 次 OCR;有危险=1 OCR+1 定位。危险优先与全部覆盖都不变。
+ * 无 `ocr` 特征的危险(图标类无文字可匹配)→ 退回**逐个 grounding 检测**(信 VLM);
+ * 故凡进「页级危险」的都应带 `ocr`(内容类标记如直播/广告不进此网,交工作流逻辑判,免字幕误伤)。
  */
-async function hazardConfirmed(deps: EngineDeps, id: string, hit: Hit): Promise<boolean> {
-  const ocr = target(deps, id).ocr;
-  if (!ocr) return true;
-  let re: RegExp;
-  try {
-    re = new RegExp(ocr, "i");
-  } catch {
-    return true; // 正则坏 → 不拦
+async function detectHazard(deps: EngineDeps, hazardIds: string[]): Promise<{ id: string; hit: Hit } | undefined> {
+  if (hazardIds.length === 0) return undefined;
+  const sorted = [...hazardIds].sort(
+    (a, b) => HAZARD_ORDER[target(deps, a).hazardClass ?? "overlay"] - HAZARD_ORDER[target(deps, b).hazardClass ?? "overlay"],
+  );
+  let lines: TextLine[] | null = null; // 懒读:有 ocr 危险时才读一次屏,后续 ocr 危险共用
+  for (const id of sorted) {
+    const t = target(deps, id);
+    if (!t.ocr) {
+      // 无 ocr 特征 → grounding 检测(图标类无文字;信 VLM)。
+      const h = (await locateTargets(deps, [id])).get(id);
+      if (h) return { id, hit: h };
+      continue;
+    }
+    let re: RegExp;
+    try {
+      re = new RegExp(t.ocr, "i");
+    } catch {
+      continue; // 正则坏 → 跳过该危险
+    }
+    if (lines === null) {
+      try {
+        lines = await deps.perceptor.readText(await deps.driver.screenshot());
+      } catch {
+        lines = []; // OCR 故障 → 本轮当作无 ocr 危险命中(宁可漏，不盲动)
+      }
+    }
+    const line = lines.find((l) => re.test(l.text));
+    if (!line) continue;
+    // 命中危险特征文字。点按类(deny/allow/tapBox)再 grounding 取关闭键坐标(定不到就退用匹配行框);
+    // 手势类(swipeAway/back/skip)不需坐标,用匹配行框占位(handleHazard 不读它)。
+    const handler = t.handler ?? "tapBox";
+    if (handler === "deny" || handler === "allow" || handler === "tapBox") {
+      const h = (await locateTargets(deps, [id])).get(id);
+      return { id, hit: h ?? { id, box: line.box, score: 1 } };
+    }
+    return { id, hit: { id, box: line.box, score: 1 } };
   }
-  try {
-    const [x1, y1, x2, y2] = hit.box;
-    // 稍扩框,容纳按钮文字(VLM 框常贴边)。
-    const region: Hit["box"] = [Math.max(0, x1 - 0.03), Math.max(0, y1 - 0.015), Math.min(1, x2 + 0.03), Math.min(1, y2 + 0.015)];
-    const lines = await deps.perceptor.readText(await deps.driver.screenshot(), region);
-    return lines.some((l) => re.test(l.text));
-  } catch {
-    return true; // OCR 故障 → 不拦
-  }
+  return undefined;
 }
 
 /**
- * 单目标观测(LocateAnything 组合查询只返回第一个目标——真机实测 2026-07-21,只能逐个单查)。
- * **危险优先(公理)**:先按 class 优先级逐个**单查**危险,命中并 OCR 二次确认即返回处理——
- * 弹窗/权限窗很可能挡住或干扰正常操作,必须先清干净再动目标(处理完一个即返回,由 runStep 重跑本步,
- * 逐个清完所有危险,受 MAX_HAZARD_HANDLES 熔断)。全部无危险后,才按序单查 wantIds(要点/期望),命中即返回。
- * 组合查询虽省调用但模型只回第一个目标 → 只能拆成逐个单查;危险数即每 poll 的额外查询数,故各步 hazards 只列真会挡路的。
+ * 单目标观测。**危险优先(公理)**:先一次检测危险(detectHazard),命中即先处理——弹窗/权限窗
+ * 很可能挡住或干扰正常操作,必须先清干净再动目标(处理完一个即返回,由 runStep 重跑本步,逐个清完,
+ * 受 MAX_HAZARD_HANDLES 熔断)。无危险后,才按序**单查** wantIds(要点/期望;组合查询模型只回第一个),命中即返回。
  */
 async function observeStep(
   deps: EngineDeps,
   wantIds: string[],
   hazardIds: string[],
 ): Promise<{ hit?: { id: string; hit: Hit }; hazard?: { id: string; hit: Hit } }> {
-  const sorted = [...hazardIds].sort(
-    (a, b) => HAZARD_ORDER[target(deps, a).hazardClass ?? "overlay"] - HAZARD_ORDER[target(deps, b).hazardClass ?? "overlay"],
-  );
-  for (const id of sorted) {
-    const h = (await locateTargets(deps, [id])).get(id);
-    if (h && (await hazardConfirmed(deps, id, h))) return { hazard: { id, hit: h } };
-    if (h) deps.log?.(`危险(${id}) OCR 二次确认未过 → 判幻觉,跳过`);
-  }
+  const hz = await detectHazard(deps, hazardIds);
+  if (hz) return { hazard: hz };
   for (const id of wantIds) {
     const h = (await locateTargets(deps, [id])).get(id);
     if (h) return { hit: { id, hit: h } };

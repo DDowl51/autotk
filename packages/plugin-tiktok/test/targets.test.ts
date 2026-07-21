@@ -51,6 +51,17 @@ describe("targets 加载", () => {
     expect(activation.pageExpected.feed).toContain("feed.rail");
     const feed = pageHazards("feed");
     expect(feed).toEqual(expect.arrayContaining(activation.globalHazards));
-    expect(feed).toContain("feed.live-tag"); // 页面专属
+    expect(feed).toContain("popup.notif-friend"); // 页面专属(模态弹窗,特征词 specific)
+  });
+
+  it("内容类标记(直播/广告)不进每轮危险网:全屏 OCR 一次检测下会被字幕误伤,交工作流逻辑显式处理", () => {
+    // feed.live-tag / feed.ad-marker(swipeAway)由 following.ts / search.ts 用 ctx.locate 显式判;
+    // comment.ad-first 由 comments.ts 经 c.isAd 判。留在 pageHazards 里会被 "LIVE"/"广告" 字幕触发误滑。
+    const feed = pageHazards("feed");
+    expect(feed).not.toContain("feed.live-tag");
+    expect(feed).not.toContain("feed.ad-marker");
+    expect(pageHazards("comments")).not.toContain("comment.ad-first");
+    // 但目标定义仍在(供工作流显式 locate)
+    expect(targets.find((t) => t.id === "feed.live-tag")?.handler).toBe("swipeAway");
   });
 });
