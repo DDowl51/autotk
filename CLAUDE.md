@@ -44,7 +44,7 @@ docs/specs/                       【2.0】G0 规格：L0-WDA 规格书 / 协议
 
 | 包 | 角色 | 必读文档 |
 |---|---|---|
-| `packages/automation-core` + `driver-ios-wda` + `perceptor-vlm` + `plugin-tiktok` + `services/master` + `services/perception` | **【2.0 主线】新自动化框架**：core+plugin+依赖倒置，VLM 集中识别 | `docs/项目进度报告.md`（进度权威快照）、`docs/自动化框架-架构设计总纲.md`（权威总纲）、`docs/specs/*` |
+| `packages/automation-core` + `driver-ios-wda` + `perceptor-vlm` + `plugin-tiktok` + `services/master` + `services/perception` + `apps/receiver` | **【2.0 主线】新自动化框架**：core+plugin+依赖倒置，VLM 集中识别 | `docs/项目进度报告.md`（进度快照）、`docs/自动化框架-架构设计总纲.md`（权威总纲）、`docs/真机部署手册.md`（**命令级部署**）、`docs/真机联调-checklist.md`、`docs/specs/*` |
 | `apps/mobile` | **旧手机端（已退役 2026-07-20）**：仅作知识库，不再改动；WDA×TikTok 教训已提炼进 `docs/specs/` | `apps/mobile/CLAUDE.md`（考古时读） |
 | `services/update-server` | **OTA 热更**：expo-updates 协议 v1 自建服务器（原服务旧 apps/mobile；旧端退役后暂无服务对象，去留待定） | `services/update-server/README.md` |
 | `services/hub` + `services/publisher` + `apps/desktop` + `packages/shared` | **管理中心**：云 Hub + Electron，看几百台手机、批量改设置、文件夹发视频 | `docs/management-center/README.md`、`docs/management-center/dev-phase23.md` |
