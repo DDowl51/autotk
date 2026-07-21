@@ -116,6 +116,16 @@ export async function searchWorkflow(ctx: RunContext, maxResults = 5): Promise<v
       if ((await ctx.runStep(nextStep(FEED_HZ))).status !== "ok") break;
     }
   }
+  // 搜索结束时人在结果视频页、深在栈里:连续右滑返回(视频→结果→搜索→推荐流),最多 3 次;
+  // 每次先看是否已回流(feed.rail),回到即停——避免在推荐流上多滑触发误导航。回不去交下个工作流的 recover。
+  const { width: bw, height: bh } = ctx.size;
+  for (let b = 0; b < 3; b++) {
+    if (ctx.shouldStop()) break;
+    if ((await ctx.locate(["feed.rail"])).has("feed.rail")) break;
+    ctx.log(`[搜索页] 返回推荐流(第 ${b + 1}/3 次右滑)`);
+    await ctx.swipe({ x: 0.02 * bw, y: 0.5 * bh }, { x: 0.78 * bw, y: 0.5 * bh }, 200);
+    await ctx.sleepSeconds(ctx.jitter(1));
+  }
   ctx.log("[搜索页] 结束");
 }
 
