@@ -3,15 +3,7 @@
 // 由客户端**后过滤**兜底——命中框中心落在 region 外即视为误判丢弃(specs「先验区域降误判」)。
 import type { Box, Hit, ImageBytes, LocateQuery, Perceptor, TextLine } from "@auto/core";
 import type { PerceptorBackend } from "./backend";
-import {
-  buildFindInstruction,
-  buildLocateInstruction,
-  buildOcrInstruction,
-  locateResponseComplies,
-  parseFirstBox,
-  parseLocateResponse,
-  parseOcrResponse,
-} from "./protocol";
+import { buildFindInstruction, buildOcrInstruction, parseFirstBox, parseOcrResponse } from "./protocol";
 
 export interface VlmPerceptorOpts {
   backend: PerceptorBackend;
@@ -46,23 +38,19 @@ export function createVlmPerceptor(o: VlmPerceptorOpts): Perceptor {
     async locate(img: ImageBytes, queries: LocateQuery[]): Promise<Hit[]> {
       if (queries.length === 0) return [];
       for (const q of queries) if (q.region) assertRegion(q.region);
-      const maxTokens = o.locateMaxTokens ?? Math.max(64, 16 + 24 * queries.length);
-      const raw = await o.backend.infer(img, buildLocateInstruction(queries), { maxTokens });
-      const byId = new Map(queries.map((q) => [q.id, q]));
-      const inRegion = (h: Hit): boolean => {
-        const region = byId.get(h.id)?.region;
-        return !region || centerInRegion(h.box, region);
-      };
-      if (locateResponseComplies(raw)) return parseLocateResponse(raw, queries).filter(inRegion);
-      // ⚠️ P1 退化(2026-07-20 拍板,docs/决策记录-2026-07-20.md):组合指令完全不被服从
-      // (响应里没有任何 "<n>: <box>/none" 行)时,只查第一个目标——引擎拼查询 hazards 在前
-      // (engine.ts queryIds),故「第一个」=最高优先;本帧放弃其余目标,宁缺勿乱。
-      const first = queries[0];
-      const raw2 = await o.backend.infer(img, buildFindInstruction(first.phrase), {
-        maxTokens: o.locateMaxTokens ?? 64,
-      });
-      const box = parseFirstBox(raw2);
-      return box ? [{ id: first.id, box, score: 1 }].filter(inRegion) : [];
+      // LocateAnything-3B 是**单目标** grounding 模型:一句 phrase → 一个框。组合查询(编号列多目标)
+      // 即使格式服从也只返回第一个目标——真机实测 2026-07-21(2/3/4/5/6 目标同查均只回 1 个),
+      // 与模型架构一致(PBD 框头 + 自定义 hybrid generate,原生任务即单指代表达)。
+      // 故**逐个单查**(同一帧图,各命中框中心须落在其 region 内)。N 目标 = N 次推理,是该模型固有成本,
+      // 引擎正常一步只单查 1 个;各步 hazards/expected 只列必要项以控每 poll 调用数。
+      const maxTokens = o.locateMaxTokens ?? 64;
+      const hits: Hit[] = [];
+      for (const q of queries) {
+        const raw = await o.backend.infer(img, buildFindInstruction(q.phrase), { maxTokens });
+        const box = parseFirstBox(raw);
+        if (box && (!q.region || centerInRegion(box, q.region))) hits.push({ id: q.id, box, score: 1 });
+      }
+      return hits;
     },
     async readText(img: ImageBytes, region?: Box): Promise<TextLine[]> {
       if (region) assertRegion(region);

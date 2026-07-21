@@ -52,9 +52,9 @@ async function main(): Promise<void> {
   writeFileSync("smoke-shot.png", shot);
   console.log(`截图 ${shot.length} 字节 → 存 smoke-shot.png`);
 
-  // 3) VLM 定位(一次组合查询,和引擎跑时同路径)
+  // 3) VLM 定位(逐个单查——LocateAnything 单目标模型,locate 内部对每个目标各发一次;和引擎跑时同路径)
   const perceptor = createVlmPerceptor({ backend: createOpenAiBackend({ baseUrl: vlmUrl, model: vlmModel }) });
-  console.log(`感知: ${vlmUrl} — 组合查询 ${queries.length} 目标中…`);
+  console.log(`感知: ${vlmUrl} — 逐个单查 ${queries.length} 目标中…`);
   const t0 = Date.now();
   const hits = await perceptor.locate(shot, queries);
   const ms = Date.now() - t0;
@@ -71,7 +71,7 @@ async function main(): Promise<void> {
     }
   }
   if (queries.length > 1) {
-    console.log(`\n💡 若某目标单查(TARGET=)能中、组合(TARGETS=)漏 → 模型组合能力不足这个数,减少一次查询的目标数。`);
+    console.log(`\n💡 locate 已逐个单查(每目标一次推理)。多目标 = 多次调用,是单目标模型的固有成本。`);
   }
 
   // 4) 可选真点(点第一个命中的)

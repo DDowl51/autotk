@@ -76,21 +76,31 @@ async function hazardConfirmed(deps: EngineDeps, id: string, hit: Hit): Promise<
   }
 }
 
-/** 危险按 class 优先级取第一个「命中且 OCR 二次确认通过」的(降幻觉)。 */
-async function firstConfirmedHazard(
+/**
+ * 单目标观测(LocateAnything 组合查询只返回第一个目标——真机实测 2026-07-21,只能逐个单查)。
+ * **危险优先(公理)**:先按 class 优先级逐个**单查**危险,命中并 OCR 二次确认即返回处理——
+ * 弹窗/权限窗很可能挡住或干扰正常操作,必须先清干净再动目标(处理完一个即返回,由 runStep 重跑本步,
+ * 逐个清完所有危险,受 MAX_HAZARD_HANDLES 熔断)。全部无危险后,才按序单查 wantIds(要点/期望),命中即返回。
+ * 组合查询虽省调用但模型只回第一个目标 → 只能拆成逐个单查;危险数即每 poll 的额外查询数,故各步 hazards 只列真会挡路的。
+ */
+async function observeStep(
   deps: EngineDeps,
+  wantIds: string[],
   hazardIds: string[],
-  hitMap: Map<string, Hit>,
-): Promise<{ id: string; hit: Hit } | undefined> {
-  const cands = hazardIds
-    .filter((id) => hitMap.has(id))
-    .sort((a, b) => HAZARD_ORDER[target(deps, a).hazardClass ?? "overlay"] - HAZARD_ORDER[target(deps, b).hazardClass ?? "overlay"]);
-  for (const id of cands) {
-    const hit = hitMap.get(id)!;
-    if (await hazardConfirmed(deps, id, hit)) return { id, hit };
-    deps.log?.(`危险(${id}) OCR 二次确认未过 → 判幻觉,跳过`);
+): Promise<{ hit?: { id: string; hit: Hit }; hazard?: { id: string; hit: Hit } }> {
+  const sorted = [...hazardIds].sort(
+    (a, b) => HAZARD_ORDER[target(deps, a).hazardClass ?? "overlay"] - HAZARD_ORDER[target(deps, b).hazardClass ?? "overlay"],
+  );
+  for (const id of sorted) {
+    const h = (await locateTargets(deps, [id])).get(id);
+    if (h && (await hazardConfirmed(deps, id, h))) return { hazard: { id, hit: h } };
+    if (h) deps.log?.(`危险(${id}) OCR 二次确认未过 → 判幻觉,跳过`);
   }
-  return undefined;
+  for (const id of wantIds) {
+    const h = (await locateTargets(deps, [id])).get(id);
+    if (h) return { hit: { id, hit: h } };
+  }
+  return {};
 }
 
 // —— 手势 ——
@@ -157,17 +167,15 @@ async function execAct(deps: EngineDeps, act: BasicOp, hitMap: Map<string, Hit>)
 async function awaitTargets(deps: EngineDeps, verifyIds: string[], hazardIds: string[], deadline: number): Promise<boolean> {
   if (verifyIds.length === 0) return true;
   const pollMs = deps.pollMs ?? POLL_MS;
-  const queryIds = [...new Set([...verifyIds, ...hazardIds])];
   while (deps.now() < deadline) {
     if (deps.shouldStop()) return false;
-    const hitMap = await locateTargets(deps, queryIds);
-    const hz = await firstConfirmedHazard(deps, hazardIds, hitMap);
-    if (hz) {
-      await handleHazard(deps, hz.id, hz.hit); // 关掉弹窗后继续等 verify
+    const obs = await observeStep(deps, verifyIds, hazardIds);
+    if (obs.hazard) {
+      await handleHazard(deps, obs.hazard.id, obs.hazard.hit); // 关掉弹窗后继续等 verify
       await deps.sleep(pollMs); // 让时钟前进 + 给 UI 更新时间(防危险短暂 persist 时忙循环)
       continue;
     }
-    if (verifyIds.some((id) => hitMap.has(id))) return true;
+    if (obs.hit) return true; // 任一 verify 命中
     await deps.sleep(pollMs);
   }
   return false;
@@ -188,29 +196,26 @@ export async function decide(step: Step, deps: EngineDeps): Promise<DecideOutcom
   const pollMs = deps.pollMs ?? POLL_MS;
   const deadline = deps.now() + step.timeout;
   const actId = actTargetId(step.act);
-  // 组合查询把 expected + 要点目标排最前(模型对靠前的目标更可靠;hazards 靠后)。
-  // 危险处理优先级由 firstConfirmedHazard 的 class 排序决定,与查询顺序无关。
-  const queryIds = [...new Set([...step.expected, ...(actId ? [actId] : []), ...step.hazards])];
+  // 要找的目标:要点目标(要执行的)优先,其次期望(证明在对的页)。单查,命中即够。
+  const wantIds = actId ? [actId, ...step.expected] : step.expected;
 
   while (deps.now() < deadline) {
     if (deps.shouldStop()) return { status: "stopped" };
-    const hitMap = await locateTargets(deps, queryIds);
-    deps.log?.(`👁 观测 → 命中 [${[...hitMap.keys()].join(", ") || "无"}]`); // 真机看 VLM 每帧找到了什么
+    const obs = await observeStep(deps, wantIds, step.hazards);
+    deps.log?.(`👁 观测 → ${obs.hazard ? "危险 " + obs.hazard.id : obs.hit ? "命中 " + obs.hit.id : "无"}`);
 
-    // ① 危险优先(OCR 二次确认降幻觉)
-    const hz = await firstConfirmedHazard(deps, step.hazards, hitMap);
-    if (hz) {
-      await handleHazard(deps, hz.id, hz.hit);
-      return { status: "hazard", id: hz.id };
+    // ① 危险优先:observeStep 先扫危险,命中即先处理(清完再动目标)
+    if (obs.hazard) {
+      await handleHazard(deps, obs.hazard.id, obs.hazard.hit);
+      return { status: "hazard", id: obs.hazard.id };
     }
-    // ② 期望在 →(要点的目标也在)执行 act,再验证。要点的目标还没出现 = 加载中,继续轮询。
-    const exp = step.expected.find((id) => hitMap.has(id));
-    if (exp && (!actId || hitMap.has(actId))) {
-      if (step.act && step.act.kind !== "none") await execAct(deps, step.act, hitMap);
+    // ② 找到目标:act 步须找到「要点目标」才点(找到的是期望=页对但按钮未现,继续轮询等要点)
+    if (obs.hit && (!actId || obs.hit.id === actId)) {
+      if (step.act && step.act.kind !== "none") await execAct(deps, step.act, new Map([[obs.hit.id, obs.hit.hit]]));
       const ok = await awaitTargets(deps, step.verify, step.hazards, deadline);
       return ok ? { status: "ok" } : { status: "timeout" };
     }
-    // ③ 期望不在 / 要点的目标未现 ≠ 失败:先当加载中,轮询
+    // ③ 还没好 → 轮询
     await deps.sleep(pollMs);
   }
   // ④ 超时

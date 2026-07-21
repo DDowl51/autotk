@@ -1,18 +1,9 @@
 // grounding + OCR 协议(客户端拼 prompt + 解析 <box>)。与 LocateAnything 输出对齐:
 // <box><x1><y1><x2><y2></box>,坐标 0-1000 归一化。此文件是「协议单一真源」——
 // 真机若发现模型偏好别的措辞/格式,只改这里。
-import type { Box, Hit, LocateQuery, TextLine } from "@auto/core";
-
-/** 组合定位指令:一次问多个目标,按序号返回框或 none(每步一次调用,省 GPU)。 */
-export function buildLocateInstruction(queries: LocateQuery[]): string {
-  const items = queries.map((q, i) => `${i + 1}. ${q.phrase}`).join("\n");
-  return (
-    "Locate each region below in the image. For each item, output one line:\n" +
-    '"<n>: <box><x1><y1><x2><y2></box>" with integer coordinates in 0-1000, ' +
-    'or "<n>: none" if it is not present.\n' +
-    items
-  );
-}
+// 注:LocateAnything-3B 是单目标模型(见 perceptor.ts locate 注释),定位一律走单目标 find 指令,
+// 无「组合查询」协议——曾有过 buildLocateInstruction/parseLocateResponse,真机证伪后已删(2026-07-21)。
+import type { Box, TextLine } from "@auto/core";
 
 /**
  * 4 个 0-1000 整数 → 归一化 Box。越界(>1000)或退化(x1≥x2 / y1≥y2)= 模型输出畸形,
@@ -25,34 +16,7 @@ function toBox(x1: string, y1: string, x2: string, y2: string): Box | null {
   return [n[0] / 1000, n[1] / 1000, n[2] / 1000, n[3] / 1000];
 }
 
-// 冒号前后只容 [ \t](不吃换行):防叙述句「…items 1 and 2:」+ 下一行裸框被误绑成序号 2。
-const LINE_RE = /(\d+)[ \t]*:[ \t]*<box><(\d+)><(\d+)><(\d+)><(\d+)><\/box>/g;
-
-/** 解析组合定位响应 → Hit[]。按序号映射回 query.id;none/缺行/畸形框不返回(=缺席)。坐标 /1000 归一化。 */
-export function parseLocateResponse(text: string, queries: LocateQuery[]): Hit[] {
-  const out: Hit[] = [];
-  const seen = new Set<number>();
-  for (const m of text.matchAll(LINE_RE)) {
-    const n = parseInt(m[1], 10);
-    const q = queries[n - 1];
-    if (!q || seen.has(n)) continue;
-    const box = toBox(m[2], m[3], m[4], m[5]);
-    if (!box) continue; // 畸形框不占序号:后面若有同序号的合法行仍可用
-    seen.add(n);
-    out.push({ id: q.id, box, score: 1 });
-  }
-  return out;
-}
-
-/**
- * 组合响应是否「服从协议」:凡出现过任意一行 "<n>: <box>…" 或 "<n>: none" 即算服从
- * (全 none = 服从的缺席,不是不服从)。用于判定是否触发 P1 退化(见 perceptor.ts)。
- */
-export function locateResponseComplies(text: string): boolean {
-  return /\d+[ \t]*:[ \t]*<box>/.test(text) || /\d+[ \t]*:[ \t]*none/i.test(text);
-}
-
-/** 单目标定位指令。备用工具:生产的 ctx.find 走组合协议(buildLocateInstruction);此为调试/特殊场景。 */
+/** 单目标定位指令:一句 phrase → 一个框(LocateAnything 原生任务)。定位链路唯一入口。 */
 export function buildFindInstruction(phrase: string): string {
   return `Locate the region that matches: ${phrase}. Output "<box><x1><y1><x2><y2></box>" with coordinates 0-1000, or "none".`;
 }

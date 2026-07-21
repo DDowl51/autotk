@@ -15,19 +15,41 @@ class FakeBackend implements PerceptorBackend {
 
 const IMG: ImageBytes = new Uint8Array([1]);
 
-describe("locate", () => {
-  it("hazards+expected 拼进同一条组合指令(每步一次推理)", async () => {
+describe("locate（单目标逐查）", () => {
+  it("N 目标 → N 次单目标推理,各调用只含自己那句 phrase,命中按序回填", async () => {
     const b = new FakeBackend();
-    b.responses.push("1: <box><100><100><200><200></box>\n2: <box><700><700><800><800></box>");
+    b.responses.push("<box><100><100><200><200></box>", "<box><700><700><800><800></box>");
     const p = createVlmPerceptor({ backend: b });
     const hits = await p.locate(IMG, [
       { id: "sys.perm", phrase: "the Don't Allow button" },
       { id: "feed.like", phrase: "the like heart" },
     ]);
-    expect(b.calls).toHaveLength(1);
-    expect(b.calls[0].instruction).toContain("1. the Don't Allow button");
-    expect(b.calls[0].instruction).toContain("2. the like heart");
+    expect(b.calls).toHaveLength(2); // 单目标模型:一目标一次调用(组合查询只会回第一个)
+    expect(b.calls[0].instruction).toContain("the Don't Allow button");
+    expect(b.calls[0].instruction).not.toContain("the like heart"); // 各调用互不含对方 phrase
+    expect(b.calls[1].instruction).toContain("the like heart");
     expect(hits.map((h) => h.id)).toEqual(["sys.perm", "feed.like"]);
+    expect(hits[0].box).toEqual([0.1, 0.1, 0.2, 0.2]);
+  });
+
+  it("部分命中:present 的回填,absent(none)的跳过", async () => {
+    const b = new FakeBackend();
+    b.responses.push("none", "<box><100><100><200><200></box>");
+    const p = createVlmPerceptor({ backend: b });
+    const hits = await p.locate(IMG, [
+      { id: "a", phrase: "x" },
+      { id: "b", phrase: "y" },
+    ]);
+    expect(hits).toEqual([{ id: "b", box: [0.1, 0.1, 0.2, 0.2], score: 1 }]);
+    expect(b.calls).toHaveLength(2); // 缺席也各查一次(同一帧)
+  });
+
+  it("全部缺席 → 空数组", async () => {
+    const b = new FakeBackend();
+    b.responses.push("none", "none");
+    const p = createVlmPerceptor({ backend: b });
+    expect(await p.locate(IMG, [{ id: "a", phrase: "x" }, { id: "b", phrase: "y" }])).toEqual([]);
+    expect(b.calls).toHaveLength(2);
   });
 
   it("空 queries 不调后端,直接 []", async () => {
@@ -40,7 +62,7 @@ describe("locate", () => {
   it("region 后过滤:命中框中心在先验区域外 → 丢弃(治幻觉)", async () => {
     const b = new FakeBackend();
     // 目标声明在上半屏,模型却框到下半屏 → 应被拒
-    b.responses.push("1: <box><400><800><600><900></box>");
+    b.responses.push("<box><400><800><600><900></box>");
     const p = createVlmPerceptor({ backend: b });
     const hits = await p.locate(IMG, [{ id: "t", phrase: "x", region: [0, 0, 1, 0.5] }]);
     expect(hits).toEqual([]);
@@ -48,7 +70,7 @@ describe("locate", () => {
 
   it("region 内的命中保留;无 region 不过滤", async () => {
     const b = new FakeBackend();
-    b.responses.push("1: <box><400><100><600><200></box>\n2: <box><400><800><600><900></box>");
+    b.responses.push("<box><400><100><600><200></box>", "<box><400><800><600><900></box>");
     const p = createVlmPerceptor({ backend: b });
     const hits = await p.locate(IMG, [
       { id: "in", phrase: "a", region: [0, 0, 1, 0.5] },
@@ -66,53 +88,15 @@ describe("locate", () => {
     expect(b.calls).toHaveLength(0); // 坏参数不该打后端
   });
 
-  it("maxTokens 随目标数增长,可用 locateMaxTokens 锁定", async () => {
+  it("maxTokens 默认 64(单目标输出短),可用 locateMaxTokens 覆盖", async () => {
     const b = new FakeBackend();
-    b.responses.push("1: none", "1: none"); // 服从的缺席(空响应会触发 P1 退化,干扰调用计数)
+    b.responses.push("none", "none");
     const p = createVlmPerceptor({ backend: b });
-    await p.locate(IMG, Array.from({ length: 10 }, (_, i) => ({ id: `t${i}`, phrase: `p${i}` })));
-    expect(b.calls[0].opts?.maxTokens).toBe(16 + 24 * 10);
+    await p.locate(IMG, [{ id: "t", phrase: "p" }]);
+    expect(b.calls[0].opts?.maxTokens).toBe(64);
     const p2 = createVlmPerceptor({ backend: b, locateMaxTokens: 512 });
     await p2.locate(IMG, [{ id: "t", phrase: "p" }]);
     expect(b.calls[1].opts?.maxTokens).toBe(512);
-  });
-
-  it("P1 退化:组合完全不被服从(叙述文本)→ 只查第一个目标(=最高优先)", async () => {
-    const b = new FakeBackend();
-    b.responses.push(
-      "I can see a permission dialog and a heart icon in this screenshot.", // 无任何 <n>: 行
-      "<box><100><100><200><200></box>",
-    );
-    const p = createVlmPerceptor({ backend: b });
-    const hits = await p.locate(IMG, [
-      { id: "sys.perm", phrase: "the Don't Allow button" }, // 引擎拼查询 hazards 在前
-      { id: "feed.like", phrase: "the like heart" },
-    ]);
-    expect(b.calls).toHaveLength(2);
-    expect(b.calls[1].instruction).toContain("the Don't Allow button"); // 单目标指令,只问第一个
-    expect(b.calls[1].instruction).not.toContain("the like heart");
-    expect(hits).toEqual([{ id: "sys.perm", box: [0.1, 0.1, 0.2, 0.2], score: 1 }]);
-  });
-
-  it("P1 不误触发:全 none 是「服从的缺席」→ 不退化,只调一次", async () => {
-    const b = new FakeBackend();
-    b.responses.push("1: none\n2: none");
-    const p = createVlmPerceptor({ backend: b });
-    const hits = await p.locate(IMG, [
-      { id: "a", phrase: "x" },
-      { id: "b", phrase: "y" },
-    ]);
-    expect(hits).toEqual([]);
-    expect(b.calls).toHaveLength(1);
-  });
-
-  it("P1 退化的命中同样过 region 后过滤", async () => {
-    const b = new FakeBackend();
-    b.responses.push("no idea", "<box><400><800><600><900></box>"); // 退化返回下半屏框
-    const p = createVlmPerceptor({ backend: b });
-    const hits = await p.locate(IMG, [{ id: "t", phrase: "x", region: [0, 0, 1, 0.5] }]); // 先验在上半屏
-    expect(b.calls).toHaveLength(2);
-    expect(hits).toEqual([]); // 区域外 → 丢弃,宁缺勿乱
   });
 });
 

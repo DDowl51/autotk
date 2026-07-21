@@ -64,6 +64,7 @@ docs/specs/                       【2.0】G0 规格：L0-WDA 规格书 / 协议
 **架构**：core+plugin+依赖倒置。`@auto/core` 定义 `Driver`/`Perceptor`/`Plugin`/`StateStore` 接口 + Step 合同决策引擎（观测→危险优先→执行→验证轮询）+ Fleet 编排，**不 import 任何插件**；TikTok 的一切在 `@auto/plugin-tiktok`（Target 注册表是声明式感知的单一数据源）。四层：L3 工作流(plugin) → L2 动作(plugin) → L1 基本操作(core: tapTarget/awaitTarget/handleHazards) → L0 原子(WDA 1:1)。onFail 升级链最后一级永远是「停手+告警」，绝不盲动。
 
 **实测硬事实**（改性能相关代码前必知，详见 `docs/LocateAnything-3B-5060Ti-性能报告.md`）：
+- 模型是**单目标 grounding**（2026-07-21 真机证实）：一次组合查询即使格式服从**也只返回第一个目标**（架构使然：PBD 框头 + 自定义 hybrid generate，原生即单指代表达）。故 `perceptor-vlm` 的 `locate()` 与引擎 `observeStep` 均**逐个单查**——组合协议 `buildLocateInstruction`/P1 退化已删。**别再引入组合多目标查询**。每 poll VLM 调用数=该页危险数+要找目标数，故各步 `hazards` 只列真会挡路项；危险优先仍是公理。
 - 模型**只支持 batch=1**（批处理假设已被推翻）；单流 ~2.1 张/s@768（RTX 5060 Ti）。
 - **生产分辨率 640（2026-07-20 拍板，不再专门 bench）**——精度实测仅覆盖 768（十张全准）与 512（丢 ~15px 小 ×）；640 由真机逐目标验收顺带实测，小目标不稳即回 768（perception `--max-side` 一个参数）。
 - FP8 / flash-attn 在当前 Blackwell(sm_120) 软件栈均不通（生态未跟上）；生产 GPU 机 OS **已拍板锁 Ubuntu 24.04**。
