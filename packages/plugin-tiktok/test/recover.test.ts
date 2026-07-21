@@ -15,13 +15,13 @@ describe("recoverToFeed 多策略脱困", () => {
     expect(app.swipes).toBe(0);
   });
 
-  it("评论面板开着(浮层)→ 竖直下滑关 → 回推荐流", async () => {
+  it("评论区开着(评论输入框在)→ 竖直下滑关 → 回推荐流", async () => {
     const app = new FakeApp();
-    app.show("comments.panel");
+    app.show("comments.input");
     app.onSwipe = (a) => {
       if (a.lastSwipe && isDown(a.lastSwipe)) {
-        a.hide("comments.panel");
-        a.show("feed.rail"); // 下滑关掉面板 → 露出推荐流
+        a.hide("comments.input");
+        a.show("feed.rail"); // 下滑关掉评论区 → 露出推荐流
       }
     };
     const { ctx } = makeCtx(app);
@@ -39,13 +39,13 @@ describe("recoverToFeed 多策略脱困", () => {
     expect(isRight(app.lastSwipe!)).toBe(true); // 边缘右滑
   });
 
-  it("先关面板再退一级(面板 → pushed → feed)混合脱困", async () => {
+  it("先关评论区再退一级(评论 → pushed → feed)混合脱困", async () => {
     const app = new FakeApp();
-    app.show("comments.panel");
+    app.show("comments.input");
     let phase = 0;
     app.onSwipe = (a) => {
       if (phase === 0 && a.lastSwipe && isDown(a.lastSwipe)) {
-        a.hide("comments.panel"); // 第一步:下滑关面板,但还在 pushed 页(无 feed.rail)
+        a.hide("comments.input"); // 第一步:下滑关评论区,但还在 pushed 页(无 feed.rail)
         phase = 1;
       } else if (phase === 1 && a.lastSwipe && isRight(a.lastSwipe)) {
         a.show("feed.rail"); // 第二步:右滑退到推荐流

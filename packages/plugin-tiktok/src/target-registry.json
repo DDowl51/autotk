@@ -307,14 +307,14 @@
     {
       "id": "feed.rail",
       "kind": "expected",
-      "phrase": "the right-side action rail with like/comment/save/share icons",
+      "phrase": "the heart-shaped like button on the right side of the screen (red if liked, white if not)",
       "region": [
         0.82,
-        0.35,
+        0.3,
         0.18,
-        0.5
+        0.55
       ],
-      "source": "railBandCenters;证明在信息流"
+      "source": "证明在信息流。锚点改具体图标(心形)——抽象「action rail」grounding 抓不住,真机 command[无](2026-07-21)"
     },
     {
       "id": "feed.like",
