@@ -8,7 +8,8 @@
 //
 // Hub 对接(D3=A 平铺)+ 发布链路已接,设 HUB_URL 才启用(不设=纯养号模式)。
 // ⚠️ 尚未接:Postgres StateStore(DM 去重跨重启,剩余工作)、License(D4 MVP 不接)。
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { networkInterfaces } from "node:os";
 import {
   createFleet,
   createMemoryStateStore,
@@ -20,7 +21,8 @@ import {
 import { createIosWdaDriver } from "@auto/driver-ios-wda";
 import { createOpenAiBackend, createVlmPerceptor } from "@auto/perceptor-vlm";
 import { ONCE_PER_DAY, pageHazards, pickWorkflow, publish, tiktokPlugin } from "@auto/plugin-tiktok";
-import { parseConfig, type ResolvedConfig } from "./config";
+import { mergeDiscoveredEntries, parseConfig, type MasterConfigFile, type ResolvedConfig } from "./config";
+import { scanForWda, subnet24Hosts, subnetOf, type WdaProbe } from "./discovery";
 import { probeAll, summarize, type ProbeOne } from "./probe";
 import { buildPhoneConfigs } from "./assemble";
 import { createHubClient, type HubClient } from "./hub/hubClient";
@@ -30,17 +32,56 @@ import { createReceiverHub, type ReceiverHub } from "./receiver/receiverServer";
 import { createPublishOrchestrator } from "./publish/orchestrator";
 import { loggingDriver } from "./loggingDriver";
 
-function loadConfig(path: string): ResolvedConfig {
-  let raw: unknown;
-  try {
-    raw = JSON.parse(readFileSync(path, "utf8"));
-  } catch (e) {
-    throw new Error(`读/解析配置 ${path} 失败: ${e instanceof Error ? e.message : e}`);
+const configHooks = { defaultParams: tiktokPlugin.defaultParams, validateParams: tiktokPlugin.validateParams };
+
+/** 读原始配置:有文件读文件;无文件但设了 MASTER_VLM_URL(desktop 拉起 master 场景)→ 合成最小配置(devices 空,靠自动发现填)。 */
+function readRawConfig(path: string): MasterConfigFile {
+  if (existsSync(path)) {
+    try {
+      return JSON.parse(readFileSync(path, "utf8")) as MasterConfigFile;
+    } catch (e) {
+      throw new Error(`读/解析配置 ${path} 失败: ${e instanceof Error ? e.message : e}`);
+    }
   }
-  return parseConfig(raw, {
-    defaultParams: tiktokPlugin.defaultParams,
-    validateParams: tiktokPlugin.validateParams,
-  });
+  const vlm = process.env.MASTER_VLM_URL;
+  if (vlm) return { vlm: { url: vlm, model: process.env.MASTER_VLM_MODEL }, devices: [] };
+  throw new Error(`配置文件不存在: ${path}(或设 MASTER_VLM_URL + MASTER_DISCOVER=1 免配置自动发现)`);
+}
+
+/** 本机 LAN IPv4(首个非回环 IPv4)——推断要扫的子网。 */
+function localIPv4(): string | null {
+  for (const ifaces of Object.values(networkInterfaces())) {
+    for (const i of ifaces ?? []) if (i.family === "IPv4" && !i.internal) return i.address;
+  }
+  return null;
+}
+const hostOf = (url: string): string => url.match(/\/\/([^:/]+)/)?.[1] ?? "";
+
+/**
+ * 局域网自动发现(MASTER_DISCOVER=1):扫子网每个 host 的 :8100(WDA)→ 命中的手机合进 raw.devices。
+ * 免手填每台 IP。子网:MASTER_SUBNET 优先,否则本机 LAN IP,再否则 VLM 地址所在段。就地改 raw。
+ */
+async function autoDiscover(raw: MasterConfigFile): Promise<void> {
+  const subnet = process.env.MASTER_SUBNET ?? subnetOf(localIPv4() ?? "") ?? subnetOf(hostOf(raw.vlm?.url ?? ""));
+  if (!subnet) {
+    console.error("自动发现:无法确定子网,请设 MASTER_SUBNET=192.168.x 重试");
+    process.exit(1);
+  }
+  console.log(`自动发现:扫 ${subnet}.1-254 的 :8100(WDA)…`);
+  const probe: WdaProbe = async (host, port) => {
+    try {
+      return await createIosWdaDriver(`http://${host}:${port}`, { timeoutMs: 1200 }).windowSize();
+    } catch {
+      return null; // 连不上/非手机
+    }
+  };
+  const found = await scanForWda(subnet24Hosts(subnet), probe, { concurrency: 48, log: (m) => console.log("  " + m) });
+  raw.devices = mergeDiscoveredEntries(raw.devices ?? [], found);
+  console.log(`自动发现:命中 ${found.length} 台;合并配置后共 ${raw.devices.length} 台`);
+  if (raw.devices.length === 0) {
+    console.error(`自动发现:未找到任何手机(确认手机 WDA 在 :8100 跑着、且与 master 同子网 ${subnet}.x)`);
+    process.exit(1);
+  }
 }
 
 function buildPerceptor(vlm: ResolvedConfig["vlm"]): Perceptor {
@@ -58,7 +99,9 @@ const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, Ma
 
 async function main(): Promise<void> {
   const path = process.argv[2] ?? process.env.MASTER_CONFIG ?? "devices.json";
-  const config = loadConfig(path);
+  const raw = readRawConfig(path);
+  if (process.env.MASTER_DISCOVER === "1") await autoDiscover(raw);
+  const config = parseConfig(raw, configHooks);
   console.log(`配置 ${path}:${config.devices.length} 台;VLM ${config.vlm.url} (${config.vlm.model})`);
 
   // 一台一 driver(探活与运行共用同一 session,避免重复建会话)。

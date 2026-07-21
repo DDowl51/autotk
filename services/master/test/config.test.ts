@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_WINDOWS } from "@auto/core";
 import { tiktokPlugin } from "@auto/plugin-tiktok";
-import { deepMerge, parseConfig, type MasterConfigFile } from "../src/config";
+import { deepMerge, mergeDiscoveredEntries, parseConfig, type DeviceEntry, type MasterConfigFile } from "../src/config";
+import type { Discovered } from "../src/discovery";
 
 // 用真插件的默认值/校验器 —— 同时验证合并结果仍是插件合法参数。
 const hooks = { defaultParams: tiktokPlugin.defaultParams, validateParams: tiktokPlugin.validateParams };
@@ -11,6 +12,43 @@ const minimal: MasterConfigFile = {
   vlm: { url: "http://gpu:8000" },
   devices: [{ id: "d1", udid: "UDID-1", host: "192.168.1.51" }],
 };
+
+describe("mergeDiscoveredEntries(局域网自动发现)", () => {
+  const disc = (host: string, w = 375, h = 667): Discovered => ({ host, port: 8100, wdaUrl: `http://${host}:8100`, size: { width: w, height: h } });
+
+  it("空配置 + 发现两台 → 用 IP 当身份合成条目(auto-/ip-)", () => {
+    const out = mergeDiscoveredEntries([], [disc("192.168.11.229"), disc("192.168.11.230")]);
+    expect(out).toHaveLength(2);
+    expect(out[0]).toMatchObject({ id: "auto-229", udid: "ip-192.168.11.229", host: "192.168.11.229", name: "192.168.11.229", size: { width: 375, height: 667 } });
+    expect(out[1].id).toBe("auto-230");
+  });
+
+  it("发现的手机已在配置里(按 host 匹配)→ 保留配置的 id/udid/name,补探到的 size", () => {
+    const cfg: DeviceEntry[] = [{ id: "01", udid: "REAL-UDID", host: "192.168.11.229", name: "iPhone-01" }];
+    const out = mergeDiscoveredEntries(cfg, [disc("192.168.11.229")]);
+    expect(out).toHaveLength(1); // 不重复
+    expect(out[0]).toMatchObject({ id: "01", udid: "REAL-UDID", name: "iPhone-01", size: { width: 375, height: 667 } });
+  });
+
+  it("配置里已有 size → 不被发现的覆盖", () => {
+    const cfg: DeviceEntry[] = [{ id: "01", udid: "U", host: "1.1.1.1", size: { width: 1170, height: 2532 } }];
+    const out = mergeDiscoveredEntries(cfg, [disc("1.1.1.1", 375, 667)]);
+    expect(out[0].size).toEqual({ width: 1170, height: 2532 });
+  });
+
+  it("配置有、但没被发现的条目保留(可能离线)", () => {
+    const cfg: DeviceEntry[] = [{ id: "01", udid: "U", host: "1.1.1.1" }];
+    const out = mergeDiscoveredEntries(cfg, [disc("2.2.2.2")]);
+    expect(out.map((e) => e.host)).toEqual(["1.1.1.1", "2.2.2.2"]);
+  });
+
+  it("合并结果能过 parseConfig(发现的手机成为合法设备)", () => {
+    const raw: MasterConfigFile = { vlm: { url: "http://gpu:8000" }, devices: mergeDiscoveredEntries([], [disc("192.168.11.229")]) };
+    const cfg = parse(raw);
+    expect(cfg.devices).toHaveLength(1);
+    expect(cfg.devices[0].wdaUrl).toBe("http://192.168.11.229:8100");
+  });
+});
 
 describe("deepMerge", () => {
   it("嵌套对象逐键合并;数组与标量整体替换", () => {

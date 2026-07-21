@@ -3,6 +3,7 @@ const path = require("node:path");
 const os = require("node:os");
 const fsp = require("node:fs/promises");
 const dgram = require("node:dgram");
+const { spawn } = require("node:child_process");
 // 阶段3 文件夹工作流的本地逻辑（扫描/去重/文案/排程/局域网直传/中转）。
 // 需先构建：npm run build -w @mc/publisher（产出 dist/，本文件 require 之）。
 const publisher = require("@mc/publisher");
@@ -131,6 +132,67 @@ function stopHub() {
   hub = null;
 }
 
+// ——— 自动拉起 master（一台机=一个桌面端就够：desktop 起内嵌 Hub 后顺带把 master 跑起来，
+// master 自动发现局域网 :8100 的手机 → 注册到本 Hub → 设备页就出现，无需手动起 master、无需手填 IP）———
+let masterProc = null;
+// 仓库根（dev：electron 从源码跑）。打包后无 master 源码 → spawn 会失败，已 try/catch 兜底不影响桌面。
+const repoRoot = () => path.join(__dirname, "..", "..", "..");
+
+function startMaster(hubPort) {
+  if (process.env.MASTER_AUTOSTART === "0") return; // 想单独手动起 master 时可关
+  if (masterProc) return;
+  const vlmUrl = process.env.VLM_URL || process.env.MASTER_VLM_URL;
+  if (!vlmUrl) {
+    logger.warn("未设 VLM_URL（GPU 感知服务地址）→ 跳过自动拉起 master。启动前设 VLM_URL 即可，或手动起 master。");
+    return;
+  }
+  const env = {
+    ...process.env,
+    HUB_URL: `http://localhost:${hubPort}`, // 连本机内嵌 Hub
+    MASTER_DISCOVER: "1", // 自动发现局域网手机
+    MASTER_VLM_URL: vlmUrl, // 无 devices.json 时用它合成最小配置
+  };
+  if (process.env.MASTER_SUBNET) env.MASTER_SUBNET = process.env.MASTER_SUBNET;
+  try {
+    // shell:true → Windows 上能找到 pnpm(.cmd)。cwd=仓库根;pnpm --filter 会切到 services/master 跑其 start。
+    masterProc = spawn("pnpm", ["--filter", "@mc/master", "start"], { cwd: repoRoot(), env, shell: true });
+    logger.info(`自动拉起 master（pid ${masterProc.pid}）VLM=${vlmUrl}，自动发现开`);
+    const fwd = (buf) => {
+      const s = buf.toString().trimEnd();
+      if (s) {
+        console.log(s); // dev 终端可见
+        logger.info("[master] " + s);
+      }
+    };
+    masterProc.stdout && masterProc.stdout.on("data", fwd);
+    masterProc.stderr && masterProc.stderr.on("data", fwd);
+    masterProc.on("exit", (code) => {
+      logger.info(`master 退出（code ${code}）`);
+      masterProc = null;
+    });
+    masterProc.on("error", (e) => {
+      logger.error("拉起 master 失败（dev 需从源码跑;打包版暂不含 master）", e);
+      masterProc = null;
+    });
+  } catch (e) {
+    logger.error("拉起 master 失败", e);
+    masterProc = null;
+  }
+}
+
+function stopMaster() {
+  if (!masterProc) return;
+  const pid = masterProc.pid;
+  try {
+    // Windows：pnpm→node 是进程树,taskkill /T 连子进程一起收(否则 master 会残留占着手机会话)。
+    if (process.platform === "win32") spawn("taskkill", ["/pid", String(pid), "/T", "/F"]);
+    else masterProc.kill("SIGINT");
+  } catch {
+    /* ignore */
+  }
+  masterProc = null;
+}
+
 // ——— 发布代理（懒启动）———
 let lan = null;
 let agent = null;
@@ -231,6 +293,7 @@ app.whenReady().then(async () => {
     // 内嵌 Hub 会立刻把持久化的定时/离线补发任务重新下发，其下载 URL 指向 LAN 服务——
     // 故 LAN 服务必须先于「渲染层打开发布页」就绪并恢复旧 token，否则重启后这些任务下载必 404。
     await ensureLan();
+    if (hub) startMaster(hub.port); // 顺带把 master 跑起来（自动发现手机 → 注册回本 Hub）
   } catch (e) {
     logger.error("内嵌 Hub 启动失败", e);
     try {
@@ -254,9 +317,13 @@ app.on("window-all-closed", () => {
   // 导致手机下载视频连不上（死连）。清掉 → 下次重开窗重新起一台。
   lan = null;
   agent = null;
+  stopMaster();
   stopHub();
   if (process.platform !== "darwin") app.quit();
 });
+
+// 兜底：进程退出前一定收掉 master（避免残留占着手机 WDA 会话）。
+app.on("before-quit", stopMaster);
 
 app.on("activate", () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();

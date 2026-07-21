@@ -1,7 +1,10 @@
 // master 配置表解析(纯逻辑,注入插件默认值/校验器 → 与具体插件解耦)。
 // D2(决策记录 2026-07-20):手机 IP = DHCP 静态租约 + 本表(UDID↔IP↔编号)为单一真源;
 // master 启动按本表拼 WDA 地址、探活、装配 N 台。参数/时段支持「全局默认 + 每台深合并覆盖」。
+// 2026-07-21 起支持「局域网自动发现」(见 discovery.ts + run.ts):扫到的手机经 mergeDiscoveredEntries
+// 合进配置表,已配的保名字/参数、新发现的用 IP 当身份——从此无需手填每台 IP。
 import { DEFAULT_WINDOWS, validateWindows, type Schedule, type Size } from "@auto/core";
+import type { Discovered } from "./discovery";
 
 export const DEFAULT_WDA_PORT = 8100;
 export const DEFAULT_STAGGER_MS = 3000;
@@ -65,6 +68,31 @@ export function deepMerge(base: unknown, over: unknown): unknown {
   if (!isPlainObject(base) || !isPlainObject(over)) return over;
   const out: Record<string, unknown> = { ...base };
   for (const k of Object.keys(over)) out[k] = deepMerge(base[k], over[k]);
+  return out;
+}
+
+/**
+ * 合并「配置表条目」与「局域网发现的手机」(自动发现模式)。
+ * - 已配的(按 host 匹配):保留其 id/udid/name/params/schedule,顺便补上探到的 size(若没配)。
+ * - 未配的新手机:用 IP 当身份合成条目(id=`auto-<末段>`,udid=`ip-<host>`,name=host)——
+ *   WiFi 下拿不到真 UDID,IP+DHCP 静态租约即稳定身份(决策"IP 当身份可以")。
+ * - 配置里有、但没被发现的条目也保留(可能暂时离线,交启动探活报,不静默丢)。
+ * 纯函数:发现动作(扫描)在 run.ts 注入,便于单测。
+ */
+export function mergeDiscoveredEntries(configEntries: DeviceEntry[], discovered: Discovered[]): DeviceEntry[] {
+  const out: DeviceEntry[] = configEntries.map((e) => ({ ...e }));
+  const byHost = new Map(out.map((e) => [e.host, e]));
+  for (const d of discovered) {
+    const existing = byHost.get(d.host);
+    if (existing) {
+      if (!existing.size) existing.size = d.size; // 补探到的分辨率
+      continue;
+    }
+    const last = d.host.split(".").pop() ?? d.host;
+    const entry: DeviceEntry = { id: `auto-${last}`, udid: `ip-${d.host}`, host: d.host, port: d.port, name: d.host, size: d.size };
+    out.push(entry);
+    byHost.set(d.host, entry); // 防同一 host 重复发现产生两条
+  }
   return out;
 }
 
