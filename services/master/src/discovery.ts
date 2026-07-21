@@ -25,6 +25,21 @@ export function subnet24Hosts(base: string): string[] {
   return Array.from({ length: 254 }, (_, i) => `${base}.${i + 1}`);
 }
 
+/**
+ * 是否「像手机 LAN 的私网 /24」:192.168.x / 10.x / 172.16-31.x。
+ * 用于自动挑网段时排除 VPN/虚拟网卡常见的非 LAN 段(198.18.x 基准测试段、100.64-127 CGNAT 等)——
+ * 真机日志里就出现过误扫 198.18.0.x 的坑(2026-07-21)。MASTER_SUBNET 显式指定则不受此限。
+ */
+export function isPrivateSubnet(base: string): boolean {
+  const p = base.split(".").map(Number);
+  if (p.length !== 3 || p.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return false;
+  const [a, b] = p;
+  if (a === 192 && b === 168) return true;
+  if (a === 10) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  return false;
+}
+
 /** 并发扫描候选 host 的 :port(默认 8100),返回可达手机(带分辨率+URL),按 IP 数字序。 */
 export async function scanForWda(
   hosts: string[],

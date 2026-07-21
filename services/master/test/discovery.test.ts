@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Size } from "@auto/core";
-import { scanForWda, subnet24Hosts, subnetOf, type WdaProbe } from "../src/discovery";
+import { isPrivateSubnet, scanForWda, subnet24Hosts, subnetOf, type WdaProbe } from "../src/discovery";
 
 const S: Size = { width: 375, height: 667 };
 
@@ -15,6 +15,17 @@ describe("subnetOf / subnet24Hosts", () => {
     expect(hs).toHaveLength(254);
     expect(hs[0]).toBe("192.168.11.1");
     expect(hs[253]).toBe("192.168.11.254");
+  });
+  it("私网段判定:192.168/10/172.16-31 为真;198.18(VPN)/100.64(CGNAT)/公网为假", () => {
+    expect(isPrivateSubnet("192.168.11")).toBe(true);
+    expect(isPrivateSubnet("10.0.0")).toBe(true);
+    expect(isPrivateSubnet("172.16.5")).toBe(true);
+    expect(isPrivateSubnet("172.31.9")).toBe(true);
+    expect(isPrivateSubnet("172.32.0")).toBe(false); // 出了 16-31
+    expect(isPrivateSubnet("198.18.0")).toBe(false); // 基准测试段(常见 VPN 虚拟网卡)
+    expect(isPrivateSubnet("100.64.0")).toBe(false); // CGNAT
+    expect(isPrivateSubnet("8.8.8")).toBe(false); // 公网
+    expect(isPrivateSubnet("bogus")).toBe(false);
   });
 });
 

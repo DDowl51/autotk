@@ -15,7 +15,7 @@ import { createIosWdaDriver } from "@auto/driver-ios-wda";
 import { createOpenAiBackend, createVlmPerceptor } from "@auto/perceptor-vlm";
 import { ONCE_PER_DAY, pageHazards, pickWorkflow, publish, tiktokPlugin } from "@auto/plugin-tiktok";
 import { mergeDiscoveredEntries, parseConfig, type MasterConfigFile, type ResolvedConfig, type ResolvedDevice } from "./config";
-import { scanForWda, subnet24Hosts, subnetOf, type Discovered, type WdaProbe } from "./discovery";
+import { isPrivateSubnet, scanForWda, subnet24Hosts, subnetOf, type Discovered, type WdaProbe } from "./discovery";
 import { createHubClient, type HubClient } from "./hub/hubClient";
 import { toDeviceStatus } from "./hub/statusReporter";
 import { applyConfigPatch } from "./hub/configInbox";
@@ -41,31 +41,44 @@ function readRawConfig(path: string): MasterConfigFile {
   return { vlm: { url: vlm, model: process.env.MASTER_VLM_MODEL }, devices: [] };
 }
 
-/** 本机 LAN IPv4(首个非回环 IPv4)——推断要扫的子网。 */
-function localIPv4(): string | null {
+/** 本机所有非回环 LAN IPv4(可能多张网卡)。 */
+function allLanIPv4(): string[] {
+  const out: string[] = [];
   for (const ifaces of Object.values(networkInterfaces())) {
-    for (const i of ifaces ?? []) if (i.family === "IPv4" && !i.internal) return i.address;
+    for (const i of ifaces ?? []) if (i.family === "IPv4" && !i.internal) out.push(i.address);
   }
-  return null;
+  return out;
 }
 const hostOf = (url: string): string => url.match(/\/\/([^:/]+)/)?.[1] ?? "";
 
-/** 要扫的子网:MASTER_SUBNET 优先,否则本机 LAN IP 段,再否则 VLM 地址段。 */
-function resolveSubnet(raw: MasterConfigFile): string | null {
-  return process.env.MASTER_SUBNET ?? subnetOf(localIPv4() ?? "") ?? subnetOf(hostOf(raw.vlm?.url ?? ""));
+/**
+ * 要扫的子网们:MASTER_SUBNET 显式指定则只扫它;否则取本机各网卡 + VLM 地址所在段里的**私网 /24**
+ * (排除 198.18 等 VPN 虚拟网卡段——真机踩过误扫 198.18.0.x)。多张真 LAN 网卡就都扫,谁也不漏。
+ */
+function resolveSubnets(raw: MasterConfigFile): string[] {
+  if (process.env.MASTER_SUBNET) return [process.env.MASTER_SUBNET];
+  const subs = new Set<string>();
+  for (const ip of allLanIPv4()) {
+    const s = subnetOf(ip);
+    if (s && isPrivateSubnet(s)) subs.add(s);
+  }
+  const vlmSub = subnetOf(hostOf(raw.vlm?.url ?? ""));
+  if (vlmSub && isPrivateSubnet(vlmSub)) subs.add(vlmSub);
+  return [...subs];
 }
-/** WDA 探针:连得上并能读到分辨率=手机,否则 null。 */
+/** WDA 探针:连得上并能读到分辨率=手机,否则 null。超时给足(锁屏/慢机建会话可能久)。 */
 const discoverProbe: WdaProbe = async (host, port) => {
   try {
-    return await createIosWdaDriver(`http://${host}:${port}`, { timeoutMs: 1200 }).windowSize();
+    return await createIosWdaDriver(`http://${host}:${port}`, { timeoutMs: 2000 }).windowSize();
   } catch {
     return null;
   }
 };
-/** 扫一遍子网 :8100,返回发现的手机(初扫与持续重扫共用)。 */
-function scanSubnet(subnet: string, quiet = false): Promise<Discovered[]> {
-  return scanForWda(subnet24Hosts(subnet), discoverProbe, {
-    concurrency: 48,
+/** 扫一组子网的 :8100,返回发现的手机(初扫与持续重扫共用)。 */
+function scanSubnets(subnets: string[], quiet = false): Promise<Discovered[]> {
+  const hosts = subnets.flatMap((s) => subnet24Hosts(s));
+  return scanForWda(hosts, discoverProbe, {
+    concurrency: 64,
     log: quiet ? undefined : (m) => console.log("  " + m),
   });
 }
@@ -87,14 +100,14 @@ async function main(): Promise<void> {
   const path = process.argv[2] ?? process.env.MASTER_CONFIG ?? "devices.json";
   const raw = readRawConfig(path);
   const discover = process.env.MASTER_DISCOVER === "1";
-  const subnet = discover ? resolveSubnet(raw) : null;
-  if (discover && !subnet) {
-    console.error("自动发现:无法确定子网,请设 MASTER_SUBNET=192.168.x 重试");
+  const subnets = discover ? resolveSubnets(raw) : [];
+  if (discover && subnets.length === 0) {
+    console.error("自动发现:未找到本机私网网卡,请设 MASTER_SUBNET=192.168.x 重试");
     process.exit(1);
   }
-  if (discover && subnet) {
-    console.log(`自动发现:扫 ${subnet}.1-254 的 :8100(WDA)…`);
-    raw.devices = mergeDiscoveredEntries(raw.devices ?? [], await scanSubnet(subnet));
+  if (discover) {
+    console.log(`自动发现:扫 ${subnets.map((s) => `${s}.1-254`).join(" / ")} 的 :8100(WDA)…`);
+    raw.devices = mergeDiscoveredEntries(raw.devices ?? [], await scanSubnets(subnets));
     console.log(`自动发现:合并配置后共 ${raw.devices.length} 台`);
   }
   const config = parseConfig(raw, configHooks);
@@ -211,12 +224,12 @@ async function main(): Promise<void> {
   }
 
   // 持续发现:定时重扫子网,新上线的手机**即时**加入 Fleet + 注册 Hub(常驻,进程不因 0 台而退)。
-  if (discover && subnet) {
+  if (discover) {
     const rescanMs = Math.max(5000, Number(process.env.MASTER_RESCAN_MS ?? 20000));
     const rescan = async (): Promise<void> => {
       if (stopping) return;
       try {
-        for (const f of await scanSubnet(subnet, true)) {
+        for (const f of await scanSubnets(subnets, true)) {
           if (activeHosts.has(f.host)) continue;
           try {
             const rd = parseConfig({ ...raw, devices: mergeDiscoveredEntries([], [f]) }, configHooks).devices[0];
@@ -230,7 +243,7 @@ async function main(): Promise<void> {
       }
     };
     setInterval(() => void rescan(), rescanMs);
-    console.log(`持续发现:每 ${Math.round(rescanMs / 1000)}s 重扫 ${subnet}.x,新手机自动加入。`);
+    console.log(`持续发现:每 ${Math.round(rescanMs / 1000)}s 重扫 ${subnets.map((s) => `${s}.x`).join("/")},新手机自动加入。`);
   }
 
   console.log("Ctrl-C 优雅停止。");
