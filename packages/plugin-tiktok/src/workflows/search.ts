@@ -69,10 +69,10 @@ export async function searchWorkflow(ctx: RunContext, maxResults = 5): Promise<v
     onFail: [{ kind: "retry", times: 1 }, { kind: "alertOperator", message: "点提交失败" }],
   };
   if ((await ctx.runStep(submitStep)).status !== "ok") return;
-  // 结果加载慢:固定等 5s,再手指下滑一下(to.y>from.y,与 recover 的「下滑」同向)把结果列表带出来,然后才找 search.results。
+  // 结果加载慢:固定等 5s,再往下翻一屏(手指上滑 to.y<from.y,内容上移、露出下面的结果),然后才找 search.results。
   await ctx.sleepSeconds(5);
   const { width: sw, height: sh } = ctx.size;
-  await ctx.swipe({ x: sw * 0.5, y: sh * 0.4 }, { x: sw * 0.5, y: sh * 0.68 }, 300);
+  await ctx.swipe({ x: sw * 0.5, y: sh * 0.7 }, { x: sw * 0.5, y: sh * 0.38 }, 300);
   await ctx.sleepSeconds(ctx.jitter(1));
   const resultsStep: Step = {
     intent: "等结果列表",
