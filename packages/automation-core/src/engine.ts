@@ -66,13 +66,17 @@ async function detectHazard(deps: EngineDeps, hazardIds: string[]): Promise<{ id
   const sorted = [...hazardIds].sort(
     (a, b) => HAZARD_ORDER[target(deps, a).hazardClass ?? "overlay"] - HAZARD_ORDER[target(deps, b).hazardClass ?? "overlay"],
   );
+  const ocrCount = sorted.filter((id) => target(deps, id).ocr).length; // 本轮靠读屏检测的危险数(打日志用)
   let lines: TextLine[] | null = null; // 懒读:有 ocr 危险时才读一次屏,后续 ocr 危险共用
   for (const id of sorted) {
     const t = target(deps, id);
     if (!t.ocr) {
       // 无 ocr 特征 → grounding 检测(图标类无文字;信 VLM)。
       const h = (await locateTargets(deps, [id])).get(id);
-      if (h) return { id, hit: h };
+      if (h) {
+        deps.log?.(`🛡 危险扫描 → 命中 ${id}(无ocr,grounding)`);
+        return { id, hit: h };
+      }
       continue;
     }
     let re: RegExp;
@@ -90,6 +94,7 @@ async function detectHazard(deps: EngineDeps, hazardIds: string[]): Promise<{ id
     }
     const line = lines.find((l) => re.test(l.text));
     if (!line) continue;
+    deps.log?.(`🛡 危险扫描(读屏 ${ocrCount} 项)→ 命中 ${id}「${line.text}」`);
     // 命中危险特征文字。点按类(deny/allow/tapBox)再 grounding 取关闭键坐标(定不到就退用匹配行框);
     // 手势类(swipeAway/back/skip)不需坐标,用匹配行框占位(handleHazard 不读它)。
     const handler = t.handler ?? "tapBox";
@@ -99,6 +104,7 @@ async function detectHazard(deps: EngineDeps, hazardIds: string[]): Promise<{ id
     }
     return { id, hit: { id, box: line.box, score: 1 } };
   }
+  if (ocrCount > 0) deps.log?.(`🛡 危险扫描(读屏 ${ocrCount} 项)→ 无`);
   return undefined;
 }
 

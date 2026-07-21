@@ -416,7 +416,7 @@
     {
       "id": "search.submit",
       "kind": "expected",
-      "phrase": "the red Search submit button",
+      "phrase": "the Search submit button",
       "region": [
         0.8,
         0,

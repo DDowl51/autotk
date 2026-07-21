@@ -43,7 +43,7 @@ describe("searchWorkflow", () => {
     expect(app.typed).toEqual(["beach"]);
     expect(ctx.stats.videosWatched).toBe(3);
     expect(app.taps.filter((t) => t === "feed.like-off")).toHaveLength(3);
-    expect(app.swipes).toBe(2);
+    expect(app.swipes).toBe(3); // 提交后「下滑露结果」1 次 + 3 条结果间切换 2 次
   });
 
   it("VLM 找不到干净结果 → 退回点第二个(跳广告位)", async () => {

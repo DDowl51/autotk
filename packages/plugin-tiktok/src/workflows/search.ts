@@ -58,8 +58,31 @@ export async function searchWorkflow(ctx: RunContext, maxResults = 5): Promise<v
     onFail: [{ kind: "retry", times: 1 }, { kind: "alertOperator", message: "输入关键词失败" }],
   };
   if ((await ctx.runStep(typeStep)).status !== "ok") return;
-  // 3) 提交 → 出现结果列表
-  if ((await ctx.runStep(tapStep("提交搜索", "search.submit", ["search.submit"], ["search.results"], SEARCH_HZ))).status !== "ok") return;
+  // 3) 提交搜索(点提交键;不立即验结果——结果加载慢,靠下面「固定等待 + 下滑 + 找 search.results」确认)
+  const submitStep: Step = {
+    intent: "提交搜索",
+    act: { kind: "tapTarget", target: "search.submit" },
+    expected: ["search.submit"],
+    hazards: SEARCH_HZ,
+    verify: [], // 纯动作:点了就算
+    timeout: 8000,
+    onFail: [{ kind: "retry", times: 1 }, { kind: "alertOperator", message: "点提交失败" }],
+  };
+  if ((await ctx.runStep(submitStep)).status !== "ok") return;
+  // 结果加载慢:固定等 5s,再手指下滑一下(to.y>from.y,与 recover 的「下滑」同向)把结果列表带出来,然后才找 search.results。
+  await ctx.sleepSeconds(5);
+  const { width: sw, height: sh } = ctx.size;
+  await ctx.swipe({ x: sw * 0.5, y: sh * 0.4 }, { x: sw * 0.5, y: sh * 0.68 }, 300);
+  await ctx.sleepSeconds(ctx.jitter(1));
+  const resultsStep: Step = {
+    intent: "等结果列表",
+    expected: ["search.results"],
+    hazards: SEARCH_HZ,
+    verify: ["search.results"],
+    timeout: 10000,
+    onFail: [{ kind: "retry", times: 1 }, { kind: "recover" }, { kind: "alertOperator", message: "搜索结果未出现" }],
+  };
+  if ((await ctx.runStep(resultsStep)).status !== "ok") return;
   // 4) 选结果:优先「首个非广告非直播」,VLM 找不到则退回点第二个(跳广告位)
   const cand = await ctx.locate(["search.first-clean-result", "search.result-2"]);
   const resultTarget = cand.has("search.first-clean-result") ? "search.first-clean-result" : "search.result-2";
