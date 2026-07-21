@@ -34,7 +34,10 @@ import { loggingDriver } from "./loggingDriver";
 
 const configHooks = { defaultParams: tiktokPlugin.defaultParams, validateParams: tiktokPlugin.validateParams };
 
-/** 读原始配置:有文件读文件;无文件但设了 MASTER_VLM_URL(desktop 拉起 master 场景)→ 合成最小配置(devices 空,靠自动发现填)。 */
+/** VLM 地址缺省:本机 :8000(perception 与 master 同机的常见部署);远端 GPU 设 MASTER_VLM_URL 覆盖。 */
+const DEFAULT_VLM_URL = "http://localhost:8000";
+
+/** 读原始配置:有文件读文件;无文件 → 合成最小配置(vlm 用 MASTER_VLM_URL 或默认本机 8000,devices 空靠自动发现填)。 */
 function readRawConfig(path: string): MasterConfigFile {
   if (existsSync(path)) {
     try {
@@ -43,9 +46,8 @@ function readRawConfig(path: string): MasterConfigFile {
       throw new Error(`读/解析配置 ${path} 失败: ${e instanceof Error ? e.message : e}`);
     }
   }
-  const vlm = process.env.MASTER_VLM_URL;
-  if (vlm) return { vlm: { url: vlm, model: process.env.MASTER_VLM_MODEL }, devices: [] };
-  throw new Error(`配置文件不存在: ${path}(或设 MASTER_VLM_URL + MASTER_DISCOVER=1 免配置自动发现)`);
+  const vlm = process.env.MASTER_VLM_URL || DEFAULT_VLM_URL;
+  return { vlm: { url: vlm, model: process.env.MASTER_VLM_MODEL }, devices: [] };
 }
 
 /** 本机 LAN IPv4(首个非回环 IPv4)——推断要扫的子网。 */

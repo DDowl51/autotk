@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain, dialog } = require("electron");
 const path = require("node:path");
 const os = require("node:os");
+const fss = require("node:fs");
 const fsp = require("node:fs/promises");
 const dgram = require("node:dgram");
 const { spawn } = require("node:child_process");
@@ -141,11 +142,8 @@ const repoRoot = () => path.join(__dirname, "..", "..", "..");
 function startMaster(hubPort) {
   if (process.env.MASTER_AUTOSTART === "0") return; // 想单独手动起 master 时可关
   if (masterProc) return;
-  const vlmUrl = process.env.VLM_URL || process.env.MASTER_VLM_URL;
-  if (!vlmUrl) {
-    logger.warn("未设 VLM_URL（GPU 感知服务地址）→ 跳过自动拉起 master。启动前设 VLM_URL 即可，或手动起 master。");
-    return;
-  }
+  // VLM 默认本机 :8000（desktop 与 perception 同机的常见部署）；远端 GPU 才需设 VLM_URL 覆盖。
+  const vlmUrl = process.env.VLM_URL || process.env.MASTER_VLM_URL || "http://localhost:8000";
   const env = {
     ...process.env,
     HUB_URL: `http://localhost:${hubPort}`, // 连本机内嵌 Hub
@@ -153,10 +151,18 @@ function startMaster(hubPort) {
     MASTER_VLM_URL: vlmUrl, // 无 devices.json 时用它合成最小配置
   };
   if (process.env.MASTER_SUBNET) env.MASTER_SUBNET = process.env.MASTER_SUBNET;
+  // 打包后 master 被 esbuild 打成 build/master.cjs（与 main.cjs 同级);有它就用 electron 自带 node 跑,
+  // 不依赖外部 pnpm/node → 真·一个软件搞定。dev 从源码跑时没有它 → 退回 pnpm 起 master。
+  const bundled = path.join(__dirname, "master.cjs");
   try {
-    // shell:true → Windows 上能找到 pnpm(.cmd)。cwd=仓库根;pnpm --filter 会切到 services/master 跑其 start。
-    masterProc = spawn("pnpm", ["--filter", "@mc/master", "start"], { cwd: repoRoot(), env, shell: true });
-    logger.info(`自动拉起 master（pid ${masterProc.pid}）VLM=${vlmUrl}，自动发现开`);
+    if (fss.existsSync(bundled)) {
+      env.ELECTRON_RUN_AS_NODE = "1"; // 让 electron 二进制以纯 node 模式跑 bundle
+      masterProc = spawn(process.execPath, [bundled], { cwd: app.getPath("userData"), env });
+    } else {
+      // shell:true → Windows 上能找到 pnpm(.cmd)。cwd=仓库根;pnpm --filter 会切到 services/master 跑其 start。
+      masterProc = spawn("pnpm", ["--filter", "@mc/master", "start"], { cwd: repoRoot(), env, shell: true });
+    }
+    logger.info(`自动拉起 master（pid ${masterProc.pid}）VLM=${vlmUrl}，自动发现开;${fss.existsSync(bundled) ? "打包版(bundle)" : "dev(pnpm)"}`);
     const fwd = (buf) => {
       const s = buf.toString().trimEnd();
       if (s) {
@@ -171,7 +177,7 @@ function startMaster(hubPort) {
       masterProc = null;
     });
     masterProc.on("error", (e) => {
-      logger.error("拉起 master 失败（dev 需从源码跑;打包版暂不含 master）", e);
+      logger.error("拉起 master 失败", e);
       masterProc = null;
     });
   } catch (e) {

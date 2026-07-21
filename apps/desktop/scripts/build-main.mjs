@@ -21,4 +21,19 @@ await build({
 mkdirSync("build", { recursive: true });
 copyFileSync("electron/preload.cjs", "build/preload.cjs");
 
-console.log("✅ 主进程已打包 → build/main.cjs (+ preload.cjs)");
+// 再把 master（services/master/src/run.ts）连同 @auto/*（都以 src/index.ts 为入口，esbuild 直接吃 TS）
+// + socket.io + target-registry.json 打成一个自包含 cjs → build/master.cjs。
+// 打包后 electron 主进程用「electron 自带 node」（ELECTRON_RUN_AS_NODE）fork 它 → 无需外部 pnpm/node，
+// 双击一个安装包即含「管理中心 + 自动发现 + 驱动手机」。ws 的可选原生加速件置外（缺省即可，ws 有兜底）。
+await build({
+  entryPoints: ["../../services/master/src/run.ts"],
+  bundle: true,
+  platform: "node",
+  format: "cjs",
+  target: "node20",
+  external: ["electron", "bufferutil", "utf-8-validate"],
+  outfile: "build/master.cjs",
+  logLevel: "info",
+});
+
+console.log("✅ 主进程已打包 → build/main.cjs (+ preload.cjs + master.cjs)");
