@@ -597,12 +597,12 @@
     {
       "id": "profile.grid-first",
       "kind": "expected",
-      "phrase": "the first (top-left) video cell in the profile grid",
+      "phrase": "the first (top-left) video thumbnail in the profile posts grid (leftmost cell of the top row)",
       "region": [
         0,
-        0.4,
-        0.4,
-        0.3
+        0.55,
+        0.5,
+        0.45
       ]
     },
     {
