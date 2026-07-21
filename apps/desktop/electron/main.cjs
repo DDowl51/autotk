@@ -139,18 +139,48 @@ let masterProc = null;
 // 仓库根（dev：electron 从源码跑）。打包后无 master 源码 → spawn 会失败，已 try/catch 兜底不影响桌面。
 const repoRoot = () => path.join(__dirname, "..", "..", "..");
 
+// 后台（master）设置：GPU 识别服务地址 + 扫描网段。存 userData，渲染层「设置」页可改，改完重启 master 生效。
+// 打包版遇到多网卡/远端 GPU 时，靠这里零命令配置（不用改环境变量）。
+const masterSettingsFile = () => path.join(app.getPath("userData"), "master-settings.json");
+let masterSettings = { vlmUrl: "", subnet: "" };
+async function loadMasterSettings() {
+  try {
+    const d = JSON.parse(await fsp.readFile(masterSettingsFile(), "utf8"));
+    masterSettings = { vlmUrl: ((d && d.vlmUrl) || "").trim(), subnet: ((d && d.subnet) || "").trim() };
+  } catch {
+    /* 首次运行/无文件 → 用默认（空 vlmUrl=本机 :8000；空 subnet=自动挑本机私网卡） */
+  }
+}
+async function saveMasterSettings(s) {
+  masterSettings = { vlmUrl: (((s && s.vlmUrl) || "")).trim(), subnet: (((s && s.subnet) || "")).trim() };
+  try {
+    await fsp.writeFile(masterSettingsFile(), JSON.stringify(masterSettings));
+  } catch {
+    /* 落盘失败忽略（仍以内存值重启 master 生效） */
+  }
+  return masterSettings;
+}
+function restartMaster() {
+  stopMaster();
+  // 等旧进程被 taskkill 收掉，再用新设置起（避免两份同时扫/注册）。
+  setTimeout(() => {
+    if (hub) startMaster(hub.port);
+  }, 1500);
+}
+
 function startMaster(hubPort) {
   if (process.env.MASTER_AUTOSTART === "0") return; // 想单独手动起 master 时可关
   if (masterProc) return;
-  // VLM 默认本机 :8000（desktop 与 perception 同机的常见部署）；远端 GPU 才需设 VLM_URL 覆盖。
-  const vlmUrl = process.env.VLM_URL || process.env.MASTER_VLM_URL || "http://localhost:8000";
+  // VLM 地址优先级：设置页填的 > 环境变量 > 默认本机 :8000（desktop 与 perception 同机的常见部署）。
+  const vlmUrl = masterSettings.vlmUrl || process.env.VLM_URL || process.env.MASTER_VLM_URL || "http://localhost:8000";
   const env = {
     ...process.env,
     HUB_URL: `http://localhost:${hubPort}`, // 连本机内嵌 Hub
     MASTER_DISCOVER: "1", // 自动发现局域网手机
     MASTER_VLM_URL: vlmUrl, // 无 devices.json 时用它合成最小配置
   };
-  if (process.env.MASTER_SUBNET) env.MASTER_SUBNET = process.env.MASTER_SUBNET;
+  const subnet = masterSettings.subnet || process.env.MASTER_SUBNET; // 设置页填的网段优先
+  if (subnet) env.MASTER_SUBNET = subnet;
   // 打包后 master 被 esbuild 打成 build/master.cjs（与 main.cjs 同级);有它就用 electron 自带 node 跑,
   // 不依赖外部 pnpm/node → 真·一个软件搞定。dev 从源码跑时没有它 → 退回 pnpm 起 master。
   const bundled = path.join(__dirname, "master.cjs");
@@ -259,6 +289,14 @@ async function ensureAgent(rootDir, schedule) {
 handle("hub:port", async () => ensureHub());
 handle("hub:lanIp", async () => pickLanIPv4(os.networkInterfaces()));
 
+// 后台设置（GPU 识别地址 + 扫描网段）：读/存；存后用新设置重启 master。
+handle("master:getSettings", async () => masterSettings);
+handle("master:saveSettings", async (_e, s) => {
+  const saved = await saveMasterSettings(s);
+  restartMaster();
+  return saved;
+});
+
 handle("publisher:chooseRoot", async () => {
   const r = await dialog.showOpenDialog({ properties: ["openDirectory", "createDirectory"] });
   return r.canceled || r.filePaths.length === 0 ? null : r.filePaths[0];
@@ -299,6 +337,7 @@ app.whenReady().then(async () => {
     // 内嵌 Hub 会立刻把持久化的定时/离线补发任务重新下发，其下载 URL 指向 LAN 服务——
     // 故 LAN 服务必须先于「渲染层打开发布页」就绪并恢复旧 token，否则重启后这些任务下载必 404。
     await ensureLan();
+    await loadMasterSettings(); // 读设置页保存的 GPU 地址/网段(供 startMaster 使用)
     if (hub) startMaster(hub.port); // 顺带把 master 跑起来（自动发现手机 → 注册回本 Hub）
   } catch (e) {
     logger.error("内嵌 Hub 启动失败", e);

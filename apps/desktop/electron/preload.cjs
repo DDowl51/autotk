@@ -16,3 +16,10 @@ contextBridge.exposeInMainWorld("hub", {
   getPort: () => ipcRenderer.invoke("hub:port"),
   getLanIp: () => ipcRenderer.invoke("hub:lanIp"),
 });
+
+// 后台（master）设置：GPU 识别服务地址 + 扫描网段。设置页读/存，存后主进程用新设置重启 master。
+contextBridge.exposeInMainWorld("master", {
+  available: true,
+  getSettings: () => ipcRenderer.invoke("master:getSettings"),
+  saveSettings: (s) => ipcRenderer.invoke("master:saveSettings", s),
+});

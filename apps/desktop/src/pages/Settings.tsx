@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Form, Input, InputNumber, Button, Space, ColorPicker, App as AntApp } from "antd";
 import { CheckOutlined, FolderOpenOutlined } from "@ant-design/icons";
 import { useHub } from "../hubState";
@@ -9,6 +9,11 @@ import { PageHeader, SectionCard } from "../ui";
 import { C, ACCENTS } from "../theme";
 import { QrPanel } from "./QrPanel";
 
+// 后台（master）设置桥（桌面 app 内才有；浏览器预览为 undefined → 该节隐藏）。
+type MasterSettings = { vlmUrl: string; subnet: string };
+type MasterApi = { getSettings: () => Promise<MasterSettings>; saveSettings: (s: MasterSettings) => Promise<MasterSettings> };
+const getMasterApi = (): MasterApi | undefined => (window as unknown as { master?: MasterApi }).master;
+
 export function Settings() {
   const { hubUrl, setHubUrl, reconnect, connected, embedded, stalledMinutes, setStalledMinutes } = useHub();
   const { accent, setAccent } = useAppTheme();
@@ -17,6 +22,34 @@ export function Settings() {
   const [url, setUrl] = useState(hubUrl);
   const [videoRoot, setVideoRoot] = useState(loadSettings().videoRoot);
   const [stall, setStall] = useState(stalledMinutes);
+
+  // 后台识别设置（GPU 地址 + 网段）
+  const master = useMemo(() => getMasterApi(), []);
+  const [vlmUrl, setVlmUrl] = useState("");
+  const [subnet, setSubnet] = useState("");
+  const [savingMaster, setSavingMaster] = useState(false);
+  useEffect(() => {
+    if (!master) return;
+    master
+      .getSettings()
+      .then((s) => {
+        setVlmUrl(s.vlmUrl || "");
+        setSubnet(s.subnet || "");
+      })
+      .catch(() => {});
+  }, [master]);
+  const saveMaster = async () => {
+    if (!master) return;
+    setSavingMaster(true);
+    try {
+      await master.saveSettings({ vlmUrl: vlmUrl.trim(), subnet: subnet.trim() });
+      message.success("已保存，正在用新设置重启后台识别（约几秒）…");
+    } catch {
+      message.error("保存失败");
+    } finally {
+      setSavingMaster(false);
+    }
+  };
 
   const saveHub = () => {
     setHubUrl(url.trim());
@@ -67,6 +100,29 @@ export function Settings() {
       </SectionCard>
 
       <div style={{ height: 16 }} />
+
+      {master && (
+        <>
+          <SectionCard title="识别服务与设备发现（GPU / 网段）">
+            <div style={{ color: "#8595a4", fontSize: 13, marginBottom: 12 }}>
+              GPU 识别服务（perception）地址与要扫描的网段。都可留空：地址空=本机 :8000；网段空=自动挑本机私网卡（192.168/10/172.16-31，排除 VPN 段）。改完保存会用新设置重启后台识别（约几秒），手机会重新自动发现。
+            </div>
+            <Form layout="vertical" style={{ maxWidth: 460 }}>
+              <Form.Item label="GPU 识别服务地址（VLM）" extra="perception 服务地址；与桌面端同机时留空即用本机 :8000。">
+                <Input value={vlmUrl} onChange={(e) => setVlmUrl(e.target.value)} placeholder="http://192.168.11.191:8000（留空=本机 :8000）" />
+              </Form.Item>
+              <Form.Item label="扫描网段" extra="手机所在的 /24 段，如 192.168.11（会扫 .1–254）。留空=自动挑本机私网卡。">
+                <Input value={subnet} onChange={(e) => setSubnet(e.target.value)} placeholder="192.168.11（留空=自动）" />
+              </Form.Item>
+              <Button type="primary" loading={savingMaster} onClick={saveMaster}>
+                保存并重启后台
+              </Button>
+            </Form>
+          </SectionCard>
+
+          <div style={{ height: 16 }} />
+        </>
+      )}
 
       <SectionCard title="外观">
         <div style={{ color: "#8595a4", fontSize: 13, marginBottom: 14 }}>主题色（信号色）。</div>
