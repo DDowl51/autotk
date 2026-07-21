@@ -155,8 +155,9 @@ def main():
     ap.add_argument("--attn", default="sdpa")
     # 640 = 2026-07-20 拍板的生产分辨率(决策记录 D6);精度实测仅覆盖 768/512,不稳回 768。
     ap.add_argument("--max-side", type=int, default=640)
-    # 0.8 = 拍板「稍调高」(P1/P2);bench 全部精度数据在 0.7 下测得,真机对比后再锁定。
-    ap.add_argument("--temperature", type=float, default=0.8)
+    # 0.7 = bench 精度数据的温度;真机曾观测到高温度下 grounding 对不存在目标幻觉出框(2026-07-21),
+    # 故从 0.8 退回 0.7 降幻觉频率(根治靠引擎的 OCR 二次确认)。要更稳可再降或试 do_sample=False。
+    ap.add_argument("--temperature", type=float, default=0.7)
     ap.add_argument("--fp8", action="store_true")
     ap.add_argument("--host", default="0.0.0.0")
     ap.add_argument("--port", type=int, default=8000)

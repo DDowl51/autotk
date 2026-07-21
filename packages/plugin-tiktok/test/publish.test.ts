@@ -44,8 +44,9 @@ describe("publish", () => {
 
   it("权限窗(相机)挡路 → allow 处理后继续", async () => {
     const app = publishWorld();
-    // 点上传后先弹相机权限(sys.camera-perm,handler=allow),点掉后再出相册
-    app.on("publish.upload", (a) => a.hide("publish.upload").show("sys.camera-perm"));
+    // 点上传后先弹相机权限(sys.camera-perm,handler=allow),点掉后再出相册。
+    // showWithText:框内放 "好"(匹配其 ocr)让引擎 OCR 二次确认过关(模拟真弹窗有文字)。
+    app.on("publish.upload", (a) => a.hide("publish.upload").showWithText("sys.camera-perm", "好"));
     app.on("sys.camera-perm", (a) => a.hide("sys.camera-perm").show("publish.album-first"));
     const { ctx } = makeCtx(app, {});
     const r = await publish(ctx, { caption: "y" }, pageHazards("publish"), pageHazards("feed"));

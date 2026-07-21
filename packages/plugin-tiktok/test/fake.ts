@@ -45,6 +45,13 @@ export class FakeApp {
     this.present.set(id, this.boxFor(id));
     return this;
   }
+  /** 显示一个带 ocr 的危险 + 在它框内放一行匹配文字(供引擎 OCR 二次确认过关,模拟真弹窗有文字)。 */
+  showWithText(id: string, text: string): this {
+    this.show(id);
+    const b = this.present.get(id)!;
+    this.lines.push({ text, box: [b[0], b[1], b[2], b[3]] });
+    return this;
+  }
   hide(id: string): this {
     this.present.delete(id);
     return this;

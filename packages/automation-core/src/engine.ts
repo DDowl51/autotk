@@ -51,11 +51,46 @@ export async function locateTargets(deps: EngineDeps, ids: string[]): Promise<Ma
   return new Map(hits.map((h) => [h.id, h]));
 }
 
-/** 危险按 class 优先级(system>overlay>category)取第一个命中的。 */
-function firstHazard(deps: EngineDeps, hazardIds: string[], hitMap: Map<string, Hit>): string | undefined {
-  return hazardIds
+/**
+ * 幻觉治理(P2):VLM 定位到的危险框,若该 Target 带 `ocr`,用 OCR 核对框内**真有对应文字**才算数。
+ * 框内读不到匹配文字 = 屏上其实没这个危险(grounding 对不存在目标幻觉出框)→ 判未命中,不处理。
+ * 无 `ocr` 的危险(如浮层弹窗的 × 无文字可核)→ 信 VLM。OCR 出错/正则坏 → 不拦(避免漏掉真危险)。
+ */
+async function hazardConfirmed(deps: EngineDeps, id: string, hit: Hit): Promise<boolean> {
+  const ocr = target(deps, id).ocr;
+  if (!ocr) return true;
+  let re: RegExp;
+  try {
+    re = new RegExp(ocr, "i");
+  } catch {
+    return true; // 正则坏 → 不拦
+  }
+  try {
+    const [x1, y1, x2, y2] = hit.box;
+    // 稍扩框,容纳按钮文字(VLM 框常贴边)。
+    const region: Hit["box"] = [Math.max(0, x1 - 0.03), Math.max(0, y1 - 0.015), Math.min(1, x2 + 0.03), Math.min(1, y2 + 0.015)];
+    const lines = await deps.perceptor.readText(await deps.driver.screenshot(), region);
+    return lines.some((l) => re.test(l.text));
+  } catch {
+    return true; // OCR 故障 → 不拦
+  }
+}
+
+/** 危险按 class 优先级取第一个「命中且 OCR 二次确认通过」的(降幻觉)。 */
+async function firstConfirmedHazard(
+  deps: EngineDeps,
+  hazardIds: string[],
+  hitMap: Map<string, Hit>,
+): Promise<{ id: string; hit: Hit } | undefined> {
+  const cands = hazardIds
     .filter((id) => hitMap.has(id))
-    .sort((a, b) => HAZARD_ORDER[target(deps, a).hazardClass ?? "overlay"] - HAZARD_ORDER[target(deps, b).hazardClass ?? "overlay"])[0];
+    .sort((a, b) => HAZARD_ORDER[target(deps, a).hazardClass ?? "overlay"] - HAZARD_ORDER[target(deps, b).hazardClass ?? "overlay"]);
+  for (const id of cands) {
+    const hit = hitMap.get(id)!;
+    if (await hazardConfirmed(deps, id, hit)) return { id, hit };
+    deps.log?.(`危险(${id}) OCR 二次确认未过 → 判幻觉,跳过`);
+  }
+  return undefined;
 }
 
 // —— 手势 ——
@@ -126,9 +161,9 @@ async function awaitTargets(deps: EngineDeps, verifyIds: string[], hazardIds: st
   while (deps.now() < deadline) {
     if (deps.shouldStop()) return false;
     const hitMap = await locateTargets(deps, queryIds);
-    const hz = firstHazard(deps, hazardIds, hitMap);
+    const hz = await firstConfirmedHazard(deps, hazardIds, hitMap);
     if (hz) {
-      await handleHazard(deps, hz, hitMap.get(hz)!); // 关掉弹窗后继续等 verify
+      await handleHazard(deps, hz.id, hz.hit); // 关掉弹窗后继续等 verify
       await deps.sleep(pollMs); // 让时钟前进 + 给 UI 更新时间(防危险短暂 persist 时忙循环)
       continue;
     }
@@ -159,11 +194,11 @@ export async function decide(step: Step, deps: EngineDeps): Promise<DecideOutcom
     if (deps.shouldStop()) return { status: "stopped" };
     const hitMap = await locateTargets(deps, queryIds);
 
-    // ① 危险优先
-    const hz = firstHazard(deps, step.hazards, hitMap);
+    // ① 危险优先(OCR 二次确认降幻觉)
+    const hz = await firstConfirmedHazard(deps, step.hazards, hitMap);
     if (hz) {
-      await handleHazard(deps, hz, hitMap.get(hz)!);
-      return { status: "hazard", id: hz };
+      await handleHazard(deps, hz.id, hz.hit);
+      return { status: "hazard", id: hz.id };
     }
     // ② 期望在 →(要点的目标也在)执行 act,再验证。要点的目标还没出现 = 加载中,继续轮询。
     const exp = step.expected.find((id) => hitMap.has(id));

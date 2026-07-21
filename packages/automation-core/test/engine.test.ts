@@ -10,6 +10,7 @@ const TARGETS: Target[] = [
   { id: "feed.like", phrase: "like button", kind: "expected" },
   { id: "search.input", phrase: "search box", kind: "expected" },
   { id: "sys.perm", phrase: "Don't Allow", kind: "hazard", hazardClass: "system", handler: "deny" },
+  { id: "sys.deny-ocr", phrase: "Don't Allow", kind: "hazard", hazardClass: "system", handler: "deny", ocr: "don'?t\\s*allow|不允许" },
   { id: "ad.popup", phrase: "close X", kind: "hazard", hazardClass: "overlay", handler: "tapBox" },
   { id: "feed.live", phrase: "LIVE badge", kind: "hazard", hazardClass: "category", handler: "swipeAway" },
   { id: "sheet.share", phrase: "share sheet", kind: "hazard", hazardClass: "overlay", handler: "back" },
@@ -83,6 +84,32 @@ describe("decide", () => {
     const s = step({ intent: "step", expected: ["feed.rail"], hazards: ["ad.popup", "sys.perm"] });
     const o = await decide(s, mkDeps(w));
     expect(o).toMatchObject({ status: "hazard", id: "sys.perm" });
+  });
+
+  it("危险带 ocr:框内 OCR 有对应文字 → 确认真危险,处理", async () => {
+    const w = new FakeWorld().show("sys.deny-ocr", [0.2, 0.6, 0.5, 0.65]).show("feed.like", [0.8, 0.4, 0.9, 0.5]).show("feed.rail");
+    w.lines = [{ text: "Don't Allow", box: [0.25, 0.61, 0.45, 0.63] }]; // 框内真有文字
+    const s = step({ intent: "x", act: { kind: "tapTarget", target: "feed.like" }, expected: ["feed.like"], hazards: ["sys.deny-ocr"], verify: ["feed.rail"] });
+    const o = await decide(s, mkDeps(w));
+    expect(o).toMatchObject({ status: "hazard", id: "sys.deny-ocr" });
+  });
+
+  it("危险带 ocr:框内无对应文字(VLM 幻觉)→ 判非危险,跳过,继续正常流程", async () => {
+    const w = new FakeWorld().show("sys.deny-ocr", [0.2, 0.6, 0.5, 0.65]).show("feed.like", [0.8, 0.4, 0.9, 0.5]).show("feed.rail");
+    w.lines = [{ text: "为你推荐", box: [0.1, 0.05, 0.4, 0.08] }]; // 框内读不到 Don't Allow
+    const s = step({ intent: "x", act: { kind: "tapTarget", target: "feed.like" }, expected: ["feed.like"], hazards: ["sys.deny-ocr"], verify: ["feed.rail"] });
+    const o = await decide(s, mkDeps(w));
+    expect(o.status).toBe("ok"); // 危险被判幻觉跳过 → 正常点 feed.like → 验证 → ok
+    expect(w.taps).toHaveLength(1); // 点的是 feed.like(0.85,0.45),不是危险框
+    expect(w.taps[0].x).toBeCloseTo(0.85 * 750, 6);
+    expect(w.taps[0].y).toBeCloseTo(0.45 * 1334, 6);
+  });
+
+  it("危险无 ocr 字段 → 信 VLM 不二次确认(原行为)", async () => {
+    const w = new FakeWorld().show("sys.perm", [0.2, 0.6, 0.5, 0.65]).show("feed.like");
+    const s = step({ intent: "x", expected: ["feed.like"], hazards: ["sys.perm"], verify: ["feed.rail"] });
+    const o = await decide(s, mkDeps(w));
+    expect(o).toMatchObject({ status: "hazard", id: "sys.perm" }); // 无 ocr → 直接处理
   });
 
   it("category 直播卡 swipeAway:盲滑而非点击", async () => {

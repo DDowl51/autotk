@@ -15,6 +15,8 @@ export class FakeWorld {
   swipes: { from: Point; to: Point; durMs: number }[] = [];
   typed: string[] = [];
   screenshots = 0;
+  /** OCR 读到的文本行(危险 OCR 二次确认用);默认空。 */
+  lines: TextLine[] = [];
   /** 事件时间线:到点(sleep 推进时钟触发)改变屏上目标。 */
   private events: { at: number; fn: () => void; done: boolean }[] = [];
   /** 动作钩子:模拟「点了某处/滑了一下 → 界面变化」。 */
@@ -79,6 +81,14 @@ export class FakeWorld {
       }
       return out;
     },
-    readText: async (): Promise<TextLine[]> => [],
+    readText: async (_img: ImageBytes, region?: Box): Promise<TextLine[]> => {
+      if (!region) return this.lines;
+      const [x1, y1, x2, y2] = region;
+      return this.lines.filter((l) => {
+        const cx = (l.box[0] + l.box[2]) / 2;
+        const cy = (l.box[1] + l.box[3]) / 2;
+        return cx >= x1 && cx <= x2 && cy >= y1 && cy <= y2;
+      });
+    },
   };
 }
