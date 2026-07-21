@@ -188,7 +188,9 @@ export async function decide(step: Step, deps: EngineDeps): Promise<DecideOutcom
   const pollMs = deps.pollMs ?? POLL_MS;
   const deadline = deps.now() + step.timeout;
   const actId = actTargetId(step.act);
-  const queryIds = [...new Set([...step.hazards, ...step.expected, ...(actId ? [actId] : [])])];
+  // 组合查询把 expected + 要点目标排最前(模型对靠前的目标更可靠;hazards 靠后)。
+  // 危险处理优先级由 firstConfirmedHazard 的 class 排序决定,与查询顺序无关。
+  const queryIds = [...new Set([...step.expected, ...(actId ? [actId] : []), ...step.hazards])];
 
   while (deps.now() < deadline) {
     if (deps.shouldStop()) return { status: "stopped" };

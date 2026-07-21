@@ -5,16 +5,8 @@
     "globalHazards": [
       "sys.perm-deny",
       "sys.tracking",
-      "sys.fb-login",
-      "popup.login",
-      "popup.notif",
-      "popup.addyours",
-      "popup.passkey",
       "ad.shop-promo",
-      "browser.inapp",
-      "popup.not-now",
-      "popup.not-interested",
-      "popup.generic-close"
+      "browser.inapp"
     ],
     "pageHazards": {
       "feed": [
@@ -390,15 +382,15 @@
     {
       "id": "nav.foryou-tab",
       "kind": "expected",
-      "phrase": "the For You (推荐) tab at the top center",
+      "phrase": "the For You (推荐) tab at the top right",
       "region": [
         0.46,
         0.02,
-        0.24,
-        0.07
+        0.54,
+        0.2
       ],
       "stable": true,
-      "notes": "在关注流互动完切回推荐流用;也用于纠正误入关注流"
+      "notes": "在关注流互动完切回推荐流用;也用于纠正误入关注流。phrase/region 真机校准(2026-07-21)"
     },
     {
       "id": "nav.search-icon",
