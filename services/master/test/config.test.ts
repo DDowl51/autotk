@@ -119,10 +119,15 @@ describe("parseConfig", () => {
     expect(() => parse({ ...minimal, devices: [{ id: "d1", udid: "U1", host: "1.1.1.1", size: { width: 0, height: 667 } }] })).toThrow(/size/);
   });
 
-  it("缺 vlm.url / 空 devices / 非对象根 → 各自抛错", () => {
+  it("缺 vlm.url / devices 非数组 / 非对象根 → 各自抛错", () => {
     expect(() => parse({ devices: minimal.devices })).toThrow(/vlm\.url/);
-    expect(() => parse({ vlm: { url: "http://g:8000" }, devices: [] })).toThrow(/至少 1 台/);
+    expect(() => parse({ vlm: { url: "http://g:8000" }, devices: "x" })).toThrow(/devices 必须是数组/);
     expect(() => parse(null)).toThrow(/对象/);
+  });
+
+  it("空 devices 合法(自动发现从 0 台起,靠持续重扫填)", () => {
+    const cfg = parse({ vlm: { url: "http://g:8000" }, devices: [] });
+    expect(cfg.devices).toEqual([]);
   });
 
   it("缺 udid / 缺 host / 非法 port → 各自抛错(带 id)", () => {

@@ -118,7 +118,8 @@ export function parseConfig(raw: unknown, hooks: ConfigPluginHooks): ResolvedCon
 
   const url = c.vlm?.url;
   if (!url || typeof url !== "string") throw new Error("vlm.url 缺失(GPU 感知服务地址)");
-  if (!Array.isArray(c.devices) || c.devices.length === 0) throw new Error("devices 至少 1 台");
+  // devices 可空:自动发现模式(MASTER_DISCOVER=1)从 0 台起、靠持续重扫填(run.ts)。非发现模式 0 台=空跑。
+  if (!Array.isArray(c.devices)) throw new Error("devices 必须是数组");
   if (c.staggerMs !== undefined && (!Number.isFinite(c.staggerMs) || c.staggerMs < 0)) {
     throw new Error("staggerMs 必须 ≥ 0");
   }

@@ -10,21 +10,12 @@
 // ⚠️ 尚未接:Postgres StateStore(DM 去重跨重启,剩余工作)、License(D4 MVP 不接)。
 import { existsSync, readFileSync } from "node:fs";
 import { networkInterfaces } from "node:os";
-import {
-  createFleet,
-  createMemoryStateStore,
-  defaultTodayKey,
-  type Driver,
-  type FleetDeps,
-  type Perceptor,
-} from "@auto/core";
+import { createFleet, createMemoryStateStore, defaultTodayKey, type FleetDeps, type Perceptor } from "@auto/core";
 import { createIosWdaDriver } from "@auto/driver-ios-wda";
 import { createOpenAiBackend, createVlmPerceptor } from "@auto/perceptor-vlm";
 import { ONCE_PER_DAY, pageHazards, pickWorkflow, publish, tiktokPlugin } from "@auto/plugin-tiktok";
-import { mergeDiscoveredEntries, parseConfig, type MasterConfigFile, type ResolvedConfig } from "./config";
-import { scanForWda, subnet24Hosts, subnetOf, type WdaProbe } from "./discovery";
-import { probeAll, summarize, type ProbeOne } from "./probe";
-import { buildPhoneConfigs } from "./assemble";
+import { mergeDiscoveredEntries, parseConfig, type MasterConfigFile, type ResolvedConfig, type ResolvedDevice } from "./config";
+import { scanForWda, subnet24Hosts, subnetOf, type Discovered, type WdaProbe } from "./discovery";
 import { createHubClient, type HubClient } from "./hub/hubClient";
 import { toDeviceStatus } from "./hub/statusReporter";
 import { applyConfigPatch } from "./hub/configInbox";
@@ -59,31 +50,24 @@ function localIPv4(): string | null {
 }
 const hostOf = (url: string): string => url.match(/\/\/([^:/]+)/)?.[1] ?? "";
 
-/**
- * 局域网自动发现(MASTER_DISCOVER=1):扫子网每个 host 的 :8100(WDA)→ 命中的手机合进 raw.devices。
- * 免手填每台 IP。子网:MASTER_SUBNET 优先,否则本机 LAN IP,再否则 VLM 地址所在段。就地改 raw。
- */
-async function autoDiscover(raw: MasterConfigFile): Promise<void> {
-  const subnet = process.env.MASTER_SUBNET ?? subnetOf(localIPv4() ?? "") ?? subnetOf(hostOf(raw.vlm?.url ?? ""));
-  if (!subnet) {
-    console.error("自动发现:无法确定子网,请设 MASTER_SUBNET=192.168.x 重试");
-    process.exit(1);
+/** 要扫的子网:MASTER_SUBNET 优先,否则本机 LAN IP 段,再否则 VLM 地址段。 */
+function resolveSubnet(raw: MasterConfigFile): string | null {
+  return process.env.MASTER_SUBNET ?? subnetOf(localIPv4() ?? "") ?? subnetOf(hostOf(raw.vlm?.url ?? ""));
+}
+/** WDA 探针:连得上并能读到分辨率=手机,否则 null。 */
+const discoverProbe: WdaProbe = async (host, port) => {
+  try {
+    return await createIosWdaDriver(`http://${host}:${port}`, { timeoutMs: 1200 }).windowSize();
+  } catch {
+    return null;
   }
-  console.log(`自动发现:扫 ${subnet}.1-254 的 :8100(WDA)…`);
-  const probe: WdaProbe = async (host, port) => {
-    try {
-      return await createIosWdaDriver(`http://${host}:${port}`, { timeoutMs: 1200 }).windowSize();
-    } catch {
-      return null; // 连不上/非手机
-    }
-  };
-  const found = await scanForWda(subnet24Hosts(subnet), probe, { concurrency: 48, log: (m) => console.log("  " + m) });
-  raw.devices = mergeDiscoveredEntries(raw.devices ?? [], found);
-  console.log(`自动发现:命中 ${found.length} 台;合并配置后共 ${raw.devices.length} 台`);
-  if (raw.devices.length === 0) {
-    console.error(`自动发现:未找到任何手机(确认手机 WDA 在 :8100 跑着、且与 master 同子网 ${subnet}.x)`);
-    process.exit(1);
-  }
+};
+/** 扫一遍子网 :8100,返回发现的手机(初扫与持续重扫共用)。 */
+function scanSubnet(subnet: string, quiet = false): Promise<Discovered[]> {
+  return scanForWda(subnet24Hosts(subnet), discoverProbe, {
+    concurrency: 48,
+    log: quiet ? undefined : (m) => console.log("  " + m),
+  });
 }
 
 function buildPerceptor(vlm: ResolvedConfig["vlm"]): Perceptor {
@@ -102,37 +86,21 @@ const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, Ma
 async function main(): Promise<void> {
   const path = process.argv[2] ?? process.env.MASTER_CONFIG ?? "devices.json";
   const raw = readRawConfig(path);
-  if (process.env.MASTER_DISCOVER === "1") await autoDiscover(raw);
+  const discover = process.env.MASTER_DISCOVER === "1";
+  const subnet = discover ? resolveSubnet(raw) : null;
+  if (discover && !subnet) {
+    console.error("自动发现:无法确定子网,请设 MASTER_SUBNET=192.168.x 重试");
+    process.exit(1);
+  }
+  if (discover && subnet) {
+    console.log(`自动发现:扫 ${subnet}.1-254 的 :8100(WDA)…`);
+    raw.devices = mergeDiscoveredEntries(raw.devices ?? [], await scanSubnet(subnet));
+    console.log(`自动发现:合并配置后共 ${raw.devices.length} 台`);
+  }
   const config = parseConfig(raw, configHooks);
   console.log(`配置 ${path}:${config.devices.length} 台;VLM ${config.vlm.url} (${config.vlm.model})`);
 
-  // 一台一 driver(探活与运行共用同一 session,避免重复建会话)。
-  // 包一层日志:每个原子操作(点/滑/输入)打印到 [id] 日志,真机调试看得见在做什么。
-  const drivers = new Map<string, Driver>();
-  for (const d of config.devices) {
-    const raw = createIosWdaDriver(d.wdaUrl, { timeoutMs: config.wdaTimeoutMs });
-    drivers.set(d.id, loggingDriver(raw, (m) => console.log(`[${d.id}] ${m}`)));
-  }
-
-  // 启动探活:建会话 + 读分辨率;不可达即报,不静默。
-  const probeOne: ProbeOne = async (d) => {
-    const drv = drivers.get(d.id)!;
-    await drv.ensureHealthy();
-    const size = await drv.windowSize();
-    return { ok: true, size, detail: `${size.width}x${size.height}` };
-  };
-  console.log("启动探活…");
-  const outcomes = await probeAll(config.devices, probeOne, { log: (m) => console.log("  " + m) });
-  const { reachable, unreachable } = summarize(outcomes);
-  console.log(`探活:${reachable} 可达 / ${unreachable} 不可达`);
-
-  const { configs, skipped } = buildPhoneConfigs(config, outcomes, (id) => drivers.get(id)!);
-  if (skipped.length) console.log(`跳过 ${skipped.length} 台:${skipped.map((s) => `${s.id}(${s.reason})`).join(", ")}`);
-  if (configs.length === 0) {
-    console.error("没有可用手机,退出。");
-    process.exit(1);
-  }
-
+  // —— 感知 + Fleet(设备集**动态**:先建空壳,再逐台 addDevice 上线;持续发现新机自动加入)——
   const deps: FleetDeps = {
     plugin: tiktokPlugin,
     pickWorkflow,
@@ -148,10 +116,12 @@ async function main(): Promise<void> {
     onEvent: (id, evt, data) => console.log(`[${id}] «${evt}»`, data ?? ""),
   };
   const fleet = createFleet(deps);
-  for (const c of configs) fleet.add(c);
-  console.log(`已启动 ${configs.length} 台(错峰 ${config.staggerMs}ms/台)。`);
 
   let stopping = false;
+  const activeIds = new Set<string>(); // 已上线设备 id
+  const activeHosts = new Set<string>(); // 已上线设备 host(防重扫重复加同一台)
+  const deviceState = new Map<string, { params: unknown; schedule: ResolvedDevice["schedule"] }>();
+  let reachableIdx = 0;
 
   // ——— 管理中心对接 + 发布链路(设 HUB_URL 才启用)———
   const hubUrl = process.env.HUB_URL;
@@ -161,8 +131,6 @@ async function main(): Promise<void> {
   if (hubUrl) {
     const receiverPort = Number(process.env.RECEIVER_PORT ?? 4610);
     receiver = createReceiverHub({ port: receiverPort, log: (m) => console.log(m) });
-    // 每台当前 params/schedule(config:apply 深合并的基线,热更后更新)。
-    const deviceState = new Map(configs.map((c) => [c.id, { params: c.params, schedule: c.schedule }]));
     const orch = createPublishOrchestrator({
       receiver,
       getHandle: (id) => fleet.get(id),
@@ -201,18 +169,70 @@ async function main(): Promise<void> {
       },
       log: (m) => console.log(m),
     });
-    const nameOf = new Map(config.devices.map((d) => [d.id, d.name]));
-    for (const c of configs) hub.registerDevice({ deviceId: c.id, deviceName: nameOf.get(c.id) ?? c.id });
     statusTimer = setInterval(() => {
-      for (const c of configs) {
-        const h = fleet.get(c.id);
-        if (h) hub!.reportStatus(c.id, toDeviceStatus(h, { running: !stopping && !h.isPaused(), ts: Date.now() }));
+      for (const id of activeIds) {
+        const h = fleet.get(id);
+        if (h) hub!.reportStatus(id, toDeviceStatus(h, { running: !stopping && !h.isPaused(), ts: Date.now() }));
       }
     }, 5000);
     console.log(`已接管理中心 Hub ${hubUrl};收视频通道 :${receiverPort}`);
   } else {
     console.log("未设 HUB_URL —— 纯养号模式,不接管理中心/发布。");
   }
+
+  // 上线一台:建 driver → 探活(建会话 + 分辨率)→ 装进 Fleet + 注册 Hub。现在不可达 → 返回 false(下轮重扫再试)。
+  async function addDevice(rd: ResolvedDevice): Promise<boolean> {
+    const host = hostOf(rd.wdaUrl);
+    if (activeIds.has(rd.id) || activeHosts.has(host)) return false;
+    const drv = loggingDriver(createIosWdaDriver(rd.wdaUrl, { timeoutMs: config.wdaTimeoutMs }), (m) => console.log(`[${rd.id}] ${m}`));
+    let size = rd.size;
+    try {
+      await drv.ensureHealthy();
+      if (!size) size = await drv.windowSize();
+    } catch {
+      return false; // 现在连不上(WDA 没起/网络)→ 交给持续重扫下轮再试
+    }
+    fleet.add({ id: rd.id, driver: drv, size, params: rd.params, schedule: rd.schedule, phaseOffsetMs: reachableIdx * config.staggerMs });
+    reachableIdx++;
+    activeIds.add(rd.id);
+    activeHosts.add(host);
+    deviceState.set(rd.id, { params: rd.params, schedule: rd.schedule });
+    hub?.registerDevice({ deviceId: rd.id, deviceName: rd.name });
+    console.log(`+ 上线 ${rd.id}(${rd.name}) ${size.width}x${size.height}`);
+    return true;
+  }
+
+  // 初次上线已知/初扫到的手机
+  console.log("上线手机…");
+  for (const d of config.devices) await addDevice(d);
+  console.log(`已上线 ${activeIds.size} 台(错峰 ${config.staggerMs}ms/台)。`);
+  if (activeIds.size === 0 && !discover) {
+    console.log("⚠️ 无设备且未开自动发现:设 MASTER_DISCOVER=1,或在配置里填 devices。");
+  }
+
+  // 持续发现:定时重扫子网,新上线的手机**即时**加入 Fleet + 注册 Hub(常驻,进程不因 0 台而退)。
+  if (discover && subnet) {
+    const rescanMs = Math.max(5000, Number(process.env.MASTER_RESCAN_MS ?? 20000));
+    const rescan = async (): Promise<void> => {
+      if (stopping) return;
+      try {
+        for (const f of await scanSubnet(subnet, true)) {
+          if (activeHosts.has(f.host)) continue;
+          try {
+            const rd = parseConfig({ ...raw, devices: mergeDiscoveredEntries([], [f]) }, configHooks).devices[0];
+            if (await addDevice(rd)) console.log(`🔎 新手机上线并加入:${f.host}`);
+          } catch (e) {
+            console.log(`发现 ${f.host} 装配失败:${e instanceof Error ? e.message : e}`);
+          }
+        }
+      } catch (e) {
+        console.log(`重扫失败:${e instanceof Error ? e.message : e}`);
+      }
+    };
+    setInterval(() => void rescan(), rescanMs);
+    console.log(`持续发现:每 ${Math.round(rescanMs / 1000)}s 重扫 ${subnet}.x,新手机自动加入。`);
+  }
+
   console.log("Ctrl-C 优雅停止。");
 
   const shutdown = async (sig: string): Promise<void> => {
