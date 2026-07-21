@@ -30,8 +30,10 @@ export async function recoverToFeed(ctx: RunContext, maxSteps = 6): Promise<bool
     if (i < maxSteps) {
       // 评论面板在场 → 竖直下滑关(浮层,边缘右滑无效);否则当 pushed 页 → 边缘右滑退。
       if ((await ctx.locate(["comments.panel"])).has("comments.panel")) {
+        ctx.log("回基地:评论面板 → 竖直下滑关");
         await ctx.swipe({ x: 0.5 * w, y: 0.35 * h }, { x: 0.5 * w, y: 0.96 * h }, 250);
       } else {
+        ctx.log("回基地:pushed 页 → 边缘右滑退一级");
         await ctx.swipe({ x: 0.02 * w, y: 0.5 * h }, { x: 0.78 * w, y: 0.5 * h }, 200);
       }
       await ctx.sleepSeconds(ctx.jitter(1));

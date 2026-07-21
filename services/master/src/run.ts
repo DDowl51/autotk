@@ -28,6 +28,7 @@ import { toDeviceStatus } from "./hub/statusReporter";
 import { applyConfigPatch } from "./hub/configInbox";
 import { createReceiverHub, type ReceiverHub } from "./receiver/receiverServer";
 import { createPublishOrchestrator } from "./publish/orchestrator";
+import { loggingDriver } from "./loggingDriver";
 
 function loadConfig(path: string): ResolvedConfig {
   let raw: unknown;
@@ -61,8 +62,12 @@ async function main(): Promise<void> {
   console.log(`配置 ${path}:${config.devices.length} 台;VLM ${config.vlm.url} (${config.vlm.model})`);
 
   // 一台一 driver(探活与运行共用同一 session,避免重复建会话)。
+  // 包一层日志:每个原子操作(点/滑/输入)打印到 [id] 日志,真机调试看得见在做什么。
   const drivers = new Map<string, Driver>();
-  for (const d of config.devices) drivers.set(d.id, createIosWdaDriver(d.wdaUrl, { timeoutMs: config.wdaTimeoutMs }));
+  for (const d of config.devices) {
+    const raw = createIosWdaDriver(d.wdaUrl, { timeoutMs: config.wdaTimeoutMs });
+    drivers.set(d.id, loggingDriver(raw, (m) => console.log(`[${d.id}] ${m}`)));
+  }
 
   // 启动探活:建会话 + 读分辨率;不可达即报,不静默。
   const probeOne: ProbeOne = async (d) => {

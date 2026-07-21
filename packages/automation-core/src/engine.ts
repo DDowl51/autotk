@@ -193,6 +193,7 @@ export async function decide(step: Step, deps: EngineDeps): Promise<DecideOutcom
   while (deps.now() < deadline) {
     if (deps.shouldStop()) return { status: "stopped" };
     const hitMap = await locateTargets(deps, queryIds);
+    deps.log?.(`👁 观测 → 命中 [${[...hitMap.keys()].join(", ") || "无"}]`); // 真机看 VLM 每帧找到了什么
 
     // ① 危险优先(OCR 二次确认降幻觉)
     const hz = await firstConfirmedHazard(deps, step.hazards, hitMap);
@@ -234,6 +235,8 @@ export async function runStep(step: Step, deps: EngineDeps): Promise<StepResult>
   let variants: BasicOp[] | null = null;
   let variantIdx = 0;
   let cur: Step = step;
+
+  deps.log?.(`▶ ${step.intent}`); // 步骤意图:真机看当前在做哪一步
 
   while (true) {
     if (deps.shouldStop()) return { status: "stopped" };
