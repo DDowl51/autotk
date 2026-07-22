@@ -15,7 +15,7 @@ import { createIosWdaDriver } from "@auto/driver-ios-wda";
 import { createOpenAiBackend, createVlmPerceptor } from "@auto/perceptor-vlm";
 import { ONCE_PER_DAY, pageHazards, pickWorkflow, publish, tiktokPlugin } from "@auto/plugin-tiktok";
 import { mergeDiscoveredEntries, parseConfig, type MasterConfigFile, type ResolvedConfig, type ResolvedDevice } from "./config";
-import { isPrivateSubnet, scanForWda, subnet24Hosts, subnetOf, type Discovered, type WdaProbe } from "./discovery";
+import { isPrivateSubnet, parseSubnetList, scanForWda, subnet24Hosts, subnetOf, type Discovered, type WdaProbe } from "./discovery";
 import { createHubClient, type HubClient } from "./hub/hubClient";
 import { toDeviceStatus } from "./hub/statusReporter";
 import { applyConfigPatch } from "./hub/configInbox";
@@ -56,7 +56,10 @@ const hostOf = (url: string): string => url.match(/\/\/([^:/]+)/)?.[1] ?? "";
  * (排除 198.18 等 VPN 虚拟网卡段——真机踩过误扫 198.18.0.x)。多张真 LAN 网卡就都扫,谁也不漏。
  */
 function resolveSubnets(raw: MasterConfigFile): string[] {
-  if (process.env.MASTER_SUBNET) return [process.env.MASTER_SUBNET];
+  if (process.env.MASTER_SUBNET) {
+    const list = parseSubnetList(process.env.MASTER_SUBNET); // 支持多段(逗号/空格分隔)
+    if (list.length) return list;
+  }
   const subs = new Set<string>();
   for (const ip of allLanIPv4()) {
     const s = subnetOf(ip);

@@ -111,8 +111,8 @@ export function Settings() {
               <Form.Item label="GPU 识别服务地址（VLM）" extra="perception 服务地址；与桌面端同机时留空即用本机 :8000。">
                 <Input value={vlmUrl} onChange={(e) => setVlmUrl(e.target.value)} placeholder="http://192.168.11.191:8000（留空=本机 :8000）" />
               </Form.Item>
-              <Form.Item label="扫描网段" extra="手机所在的 /24 段，如 192.168.11（会扫 .1–254）。留空=自动挑本机私网卡。">
-                <Input value={subnet} onChange={(e) => setSubnet(e.target.value)} placeholder="192.168.11（留空=自动）" />
+              <Form.Item label="扫描网段" extra="手机所在的 /24 段，如 192.168.11（会扫 .1–254）。多个段用逗号分隔，如 192.168.1, 192.168.11。留空=自动挑本机私网卡（覆盖多数网络）。">
+                <Input value={subnet} onChange={(e) => setSubnet(e.target.value)} placeholder="留空=自动；或 192.168.11，多个用逗号分隔" />
               </Form.Item>
               <Button type="primary" loading={savingMaster} onClick={saveMaster}>
                 保存并重启后台

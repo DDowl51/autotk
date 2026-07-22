@@ -40,6 +40,22 @@ export function isPrivateSubnet(base: string): boolean {
   return false;
 }
 
+/**
+ * 解析用户填/传的网段串(逗号或空格分隔)→ 合法 /24 前缀列表。
+ * 手动指定=信任用户(不强制私网,买家网络五花八门);只做格式过滤(x.y.z)+去重。
+ * 供分发场景:买家手机分布在多个段(如 192.168.1 与 192.168.11)时,填 "192.168.1, 192.168.11" 全扫。
+ */
+export function parseSubnetList(s: string): string[] {
+  const out: string[] = [];
+  for (const raw of s.split(/[\s,;]+/)) {
+    const x = raw.trim();
+    if (/^\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(x) && x.split(".").every((n) => Number(n) >= 0 && Number(n) <= 255) && !out.includes(x)) {
+      out.push(x);
+    }
+  }
+  return out;
+}
+
 /** 并发扫描候选 host 的 :port(默认 8100),返回可达手机(带分辨率+URL),按 IP 数字序。 */
 export async function scanForWda(
   hosts: string[],

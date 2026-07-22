@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Size } from "@auto/core";
-import { isPrivateSubnet, scanForWda, subnet24Hosts, subnetOf, type WdaProbe } from "../src/discovery";
+import { isPrivateSubnet, parseSubnetList, scanForWda, subnet24Hosts, subnetOf, type WdaProbe } from "../src/discovery";
 
 const S: Size = { width: 375, height: 667 };
 
@@ -26,6 +26,14 @@ describe("subnetOf / subnet24Hosts", () => {
     expect(isPrivateSubnet("100.64.0")).toBe(false); // CGNAT
     expect(isPrivateSubnet("8.8.8")).toBe(false); // 公网
     expect(isPrivateSubnet("bogus")).toBe(false);
+  });
+  it("parseSubnetList:逗号/空格分隔,过滤非法,去重", () => {
+    expect(parseSubnetList("192.168.11")).toEqual(["192.168.11"]);
+    expect(parseSubnetList("192.168.1, 192.168.11")).toEqual(["192.168.1", "192.168.11"]);
+    expect(parseSubnetList("192.168.1  10.0.0;172.16.5")).toEqual(["192.168.1", "10.0.0", "172.16.5"]);
+    expect(parseSubnetList("192.168.1, 192.168.1")).toEqual(["192.168.1"]); // 去重
+    expect(parseSubnetList("bogus, 192.168.11, 1.2.3.4")).toEqual(["192.168.11"]); // 过滤非法/非 /24 前缀
+    expect(parseSubnetList("")).toEqual([]);
   });
 });
 
