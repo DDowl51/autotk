@@ -210,7 +210,7 @@ Sideloadly 顶部能看到插着的 iPhone 8。在「Apple account」里填**你
 ### 5. 确认真正的 bundle id(免费签名常被改名,关键!)
 Sideloadly 给免费账号签时**可能把 bundle id 改掉**(比如加前缀)。后面 `runwda` 必须用**改后的真实 id**,否则起不来。在 Linux 上查:
 ```bash
-go-ios apps --udid eb0c563dca21a2f9c20c14eda73b42453c75b4e7 | grep -i webdriver
+go-ios apps --udid <你的iPhone-UDID> | grep -i webdriver
 ```
 记下它实际显示的那个 bundle id(下一步用 `<真实BUNDLEID>` 代替)。
 
@@ -234,7 +234,7 @@ curl http://<手机IP>:8100/status                   # 返回 ready 就成了
 
 > 适用:**付费开发者账号已激活** + 已有云编译产物 `WebDriverAgent.ipa`
 > (bundle id `com.ddowl.WebDriverAgentRunner.xctrunner`) + iPhone 8 的 UDID
-> `eb0c563dca21a2f9c20c14eda73b42453c75b4e7` + Linux 上有 `openssl`、`go-ios`。
+> `<你的iPhone-UDID>` + Linux 上有 `openssl`、`go-ios`。
 >
 > 新 Xcode 编不出兼容 iOS16 的 WDA,所以「编译」走云(`.github/workflows/build-wda.yml`,Xcode 14.3.1);「签名 + 安装」走 Linux。
 
@@ -256,7 +256,7 @@ openssl pkcs12 -export -inkey ios.key -in development.pem -out cert.p12 -passout
 
 ### 4. 注册设备
 **Devices → ＋** → Platform iOS,名字随便,UDID 填:
-`eb0c563dca21a2f9c20c14eda73b42453c75b4e7`
+`<你的iPhone-UDID>`
 
 ### 5. 建标识符(用通配符,省去 bundle id 对不上的麻烦)
 **Identifiers → ＋ → App IDs → App → Wildcard** → Bundle ID 填 `com.ddowl.*` → 注册。
@@ -282,7 +282,7 @@ zsign -k cert.p12 -p "你设的密码" -m dev.mobileprovision \
 ### 9. 安装(go-ios,Linux)
 ```bash
 go-ios install --path=WebDriverAgent-signed.ipa \
-  --udid eb0c563dca21a2f9c20c14eda73b42453c75b4e7
+  --udid <你的iPhone-UDID>
 ```
 
 ### 10. 挂镜像 + 跑(iOS16 别用 tunnel)

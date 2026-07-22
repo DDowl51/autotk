@@ -24,6 +24,8 @@ export interface StartHubOptions {
   maxPortTries?: number;
   /** 监听成功回调（拿到实际端口）。替代原本的 console.log。 */
   onListening?: (port: number) => void;
+  /** 某台设备某条视频发布成功回调：内嵌桌面据此权威登记已发去重（不依赖发布页是否开着）。 */
+  onPublished?: (deviceId: string, videoName: string) => void;
 }
 
 /** 可控的 Hub 句柄，供内嵌方（Electron）读取端口与优雅关闭。 */
@@ -121,7 +123,7 @@ export async function startHub(opts: StartHubOptions = {}): Promise<HubHandle> {
   // 先加载别名/设备/待补发/定时，再 attach + 监听：
   // 确保首个快照已带持久化数据、补发不漏、定时任务在 attach 时被重新排程。
   await Promise.all([aliases.load(), deviceStore.load(), pending.load(), scheduled.load()]);
-  attachGateway(io, registry, logHub, pending, scheduled);
+  attachGateway(io, registry, logHub, pending, scheduled, opts.onPublished);
   const port =
     opts.ports && opts.ports.length > 0
       ? await listenList(httpServer, opts.ports)

@@ -13,17 +13,21 @@ export interface PopupSignature {
   strong?: boolean;
   /** 关闭计划（按序尝试）。 */
   dismiss: DismissKind[];
+  /** ✕ 在非标准位置（如卡片下方居中、sheet 左上）时，指定归一化关闭坐标 [rx, ry]；planDismiss 优先点它。 */
+  closeAt?: readonly [number, number];
 }
 
 export interface PopupHit {
   id: string;
   dismiss: DismissKind[];
   matched: string;
+  /** 见 PopupSignature.closeAt。 */
+  closeAt?: readonly [number, number];
 }
 
 /** 关闭控件文字（整串精确匹配，避免把正文里的词当按钮）。复用 #4 否定词思路。 */
 export const DISMISS_TEXT =
-  /^\s*(✕|×|x|close|not now|no thanks|maybe later|skip|cancel|dismiss|done|not interested|got it|i see|取消|关闭|暂不|以后再说|跳过|不允许|不感兴趣|知道了|我知道了)\s*$/i;
+  /^\s*(✕|×|x|close|not now|no thanks|maybe later|skip|cancel|dismiss|done|not interested|got it|i see|取消|关闭|暂不|暂时不要|以后再说|稍后再说|跳过|不允许|不感兴趣|知道了|我知道了)\s*$/i;
 
 /** 右侧动作栏（点赞/评论计数等），其文字永远不算浮层标记。 */
 export function inActionRail(b: OcrBox): boolean {
@@ -101,17 +105,92 @@ export const SIGNATURES: PopupSignature[] = [
     markers: [/通行密钥/, /iCloud\s*钥匙串/, /钥匙串/, /passkey/i, /icloud\s*keychain/i],
     dismiss: ["closeIcon", "tapOutside", "back"],
   },
+  // TikTok 位置权限推广弹窗（两种版式，都别点「打开设置」——会跳出 TikTok 进系统设置）：
+  //   版式一：底部 sheet「允许访问位置，解锁本地瑰宝」，灰「暂时不要」(安全) + 卡片右上黑 ✕；
+  //   版式二：搜索结果后弹的居中模态「查看附近的相关内容和场所」，底部「取消」(安全)/「打开设置」，**无 ✕**。
+  // 两版都优先点安全文字按钮（取消/暂时不要）；版式一的 ✕ 由 escapeAppPopup 的 detectCardClose 视觉定位处理，
+  // 故不再放固定坐标 closeIcon（版式二无 ✕，固定坐标会点空/误触）。markers 中英文 + 两版共有正文措辞。
+  {
+    id: "location",
+    strong: true,
+    markers: [
+      // 版式一
+      /允许访问位置/,
+      /解锁本地瑰宝/,
+      /本地瑰宝/,
+      /allow location access/i,
+      /unlock local (gems|treasures?)/i,
+      /local gems/i,
+      // 版式二
+      /查看附近的相关内容/,
+      /相关内容和场所/,
+      /附近的相关内容/,
+      /nearby (relevant )?content/i,
+      /nearby content and places/i,
+      /relevant content and places/i,
+      // 两版共有正文（iOS 位置权限专有措辞，正常页不会出现，误识别风险低）
+      /使用应用期间/,
+      /打开设备设置.*位置/,
+      /while using the app/i,
+    ],
+    dismiss: ["closeText", "tapOutside", "back"],
+  },
   {
     id: "follow",
     markers: [/log\s*in to follow/i, /follow back/i, /登录.*关注/],
     dismiss: ["closeText", "closeIcon", "tapOutside"],
   },
   { id: "sheet", markers: [/send to/i, /share to/i, /分享到|发送给/], dismiss: ["swipeDown", "tapOutside"] },
+  // TikTok Shop 促销弹窗（Congrats! choose up to N products / Pick now），✕ 在卡片下方居中、非右上角。
+  {
+    id: "shop-promo",
+    strong: true,
+    markers: [
+      /choose up to this many products/i,
+      /free shipping on all your picks/i,
+      /pick now/i,
+      /恭喜.*可(选|挑|领)/,
+      /立即(挑选|领取|领)/,
+      /全部.*免(邮|运)/,
+    ],
+    closeAt: [0.5, 0.785], // ✕ 在卡片下方居中
+    dismiss: ["back"],
+  },
+  // 误点广告后弹出的内嵌网页 sheet（Scroll up for fullscreen / Sign in to continue / 某域名）。
+  // ⚠️ 绝不能上滑（会进外部页）——只点左上 ✕。
+  {
+    id: "inapp-browser",
+    strong: true,
+    markers: [
+      /scroll up for full\s?screen/i,
+      /full\s?screen view/i, // OCR 可能把「Scroll up for fullscreen view」拆行，单独兜一句
+      /上滑查看全屏/,
+      /查看全屏/,
+      /sign in to continue/i,
+      /sign in is required/i,
+      /登录后.*继续/,
+    ],
+    closeAt: [0.07, 0.755], // 左上 ✕
+    dismiss: [], // 只点左上 ✕，不加任何 swipe/back 兜底（防上滑进外部页）
+  },
 ];
 
 /** 是否存在可点的关闭控件。 */
 export function hasDismissControl(boxes: OcrBox[]): boolean {
   return boxes.some((b) => !inActionRail(b) && DISMISS_TEXT.test(b.text.trim()));
+}
+
+// iOS 系统权限弹窗的「拒绝」按钮整串（Don't Allow / 不允许）。don.?t 容忍直/弯撇号或无撇号。
+const PERMISSION_DENY = /^\s*(don.?t\s*allow|不允许)\s*$/i;
+
+/**
+ * 找系统权限弹窗的「拒绝」按钮框（Don't Allow / 不允许），OCR 兜底用。
+ * WDA /alert 读不到某些系统弹窗（如带地图的定位权限，由 springboard 渲染、会话读不到），
+ * 此时靠整屏 OCR 找到这个按钮直接点。养号期一律拒绝权限是安全的（不发布），见到即可点。
+ * 整串精确匹配 + 避开右侧动作栏，避免把正文里的词误当按钮。
+ */
+export function findPermissionDenyBox(boxes: OcrBox[]): OcrBox | null {
+  return boxes.find((b) => !inActionRail(b) && PERMISSION_DENY.test(b.text.trim())) ?? null;
 }
 
 /** 检测应用内浮层；命中返回 PopupHit，否则 null。 */
@@ -122,7 +201,7 @@ export function detectAppPopup(boxes: OcrBox[], signatures: PopupSignature[] = S
       if (inActionRail(b)) continue;
       const t = b.text.trim();
       if (sig.markers.some((re) => re.test(t)) && (sig.strong || dismissPresent)) {
-        return { id: sig.id, dismiss: sig.dismiss, matched: t };
+        return { id: sig.id, dismiss: sig.dismiss, matched: t, closeAt: sig.closeAt };
       }
     }
   }

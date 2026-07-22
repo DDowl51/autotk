@@ -18,7 +18,6 @@ import type { TikTokUI, VideoInfo, CommentInfo } from "../src/engine/tiktok-ui";
 import { chooseAlertButton } from "../src/engine/alertIntent";
 import { deviceKey, loadProfile, type DeviceProfile } from "./deviceProfile";
 import {
-  detectRail,
   detectFollow,
   detectCommentCloseButton,
   detectCommentHearts,
@@ -30,7 +29,7 @@ import { readCaption, recognizeBoxes } from "./ocr";
 import { resolveAnchor, type AnchorName } from "../src/engine/anchors";
 import { railOffsetY } from "../src/engine/railCheck";
 import { isLivePage } from "../src/engine/livePage";
-import { detectAppPopup } from "../src/engine/popupDetect";
+import { detectAppPopup, findPermissionDenyBox } from "../src/engine/popupDetect";
 import { planDismiss } from "../src/engine/popupDismiss";
 
 type Log = (msg: string) => void;
@@ -107,21 +106,18 @@ export function createCalibratedUI(log: Log): TikTokUI {
     await sleep(900); // 等评论面板上滑动画完成
   };
   const rawCloseComments = async () => {
-    // 循环：检测 ✕ → 点 → 再检测。最多 3 次。
-    // 空评论区会自动聚焦输入框弹键盘，此时第一次点 ✕ 只收起键盘、面板没关，
-    // 需再点一次才真正关闭；正常情况一次就关、第二次检测无 ✕ 直接返回。
-    for (let i = 0; i < 3; i++) {
-      const x = await detectCommentCloseButton(size.width, size.height);
-      if (!x) return; // 已无面板 = 已关闭
-      await tap(x);
-      await sleep(400);
+    // 关评论面板：循环从面板顶部往下拖，直到**回到视频流（右栏≥2 白带）**为止。用"回到视频流"作成功标志、
+    // 而非"检测不到评论 ✕"——空评论区自动弹键盘时 ✕ 检测不到，会误以为已离开面板而提前退出、其实还卡着。
+    // 每次下拖先收键盘、再关面板；纯竖直下滑不误触链接/进商店/地点页。
+    for (let i = 0; i < 4; i++) {
+      if ((await railBandCenters(size.width, size.height)).length >= 2) return; // 已回视频流
+      await swipe(
+        { x: size.width * 0.5, y: size.height * 0.35 },
+        { x: size.width * 0.5, y: size.height * 0.96 },
+        0.25,
+      );
+      await sleep(500);
     }
-    // 仍未关：下滑兜底。
-    await swipe(
-      { x: size.width * 0.5, y: size.height * 0.3 },
-      { x: size.width * 0.5, y: size.height * 0.95 },
-      0.3,
-    );
   };
 
   /** 页面状态机：转到目标页（必要时执行转换）。 */
@@ -137,6 +133,58 @@ export function createCalibratedUI(log: Log): TikTokUI {
       page = "comments";
       log("→ 评论区");
     }
+  };
+
+  // 上划前安全闸（与 src/engine/onDeviceUI 同一套）：绝不带遮挡浮层上划。
+  // ① WDA 系统弹窗；② WDA 读不到的权限弹窗(定位带地图)靠 OCR 点「不允许」；③ 应用内浮层(07 靠 closeAt
+  // 点左上✕，绝不 swipe up)。处理了任一 → true，本轮别上划。
+  const guardBeforeSwipe = async (): Promise<boolean> => {
+    const text = await alertText();
+    if (text !== null) {
+      const choice = chooseAlertButton(text, await alertButtons());
+      try {
+        if ("label" in choice) await alertClickButton(choice.label);
+        else await alertDismiss();
+      } catch {
+        await alertDismiss().catch(() => {});
+      }
+      log(`关闭系统弹窗（${"label" in choice ? choice.label : "dismiss"}）`);
+      await sleep(500);
+      return true;
+    }
+    let boxes;
+    try {
+      boxes = await recognizeBoxes();
+    } catch {
+      return false; // OCR 不可用 → 不拦
+    }
+    const deny = findPermissionDenyBox(boxes);
+    if (deny) {
+      await tap({ x: (deny.x + deny.w / 2) * size.width, y: (deny.y + deny.h / 2) * size.height });
+      await sleep(600);
+      log("OCR 兜底：点系统权限「Don't Allow / 不允许」（WDA 读不到，如带地图的定位弹窗）");
+      return true;
+    }
+    const hit = detectAppPopup(boxes);
+    if (hit) {
+      log(`上划前安全闸：应用内浮层(${hit.id}) → 关闭，不上划`);
+      // 有 closeAt（07 左上✕等非标准位）优先点；否则再猜右上角 ✕。绝不 swipe up。
+      if (!hit.closeAt) {
+        const cx = await detectCardClose(size.width, size.height).catch(() => null);
+        if (cx) {
+          await tap(cx);
+          await sleep(700);
+          return true;
+        }
+      }
+      for (const s of planDismiss(hit, boxes, { width: size.width, height: size.height })) {
+        if (s.kind === "tap") await tap(s.point);
+        else if (s.kind === "swipe") await swipe(s.from, s.to, 0.3);
+      }
+      await sleep(700);
+      return true;
+    }
+    return false;
   };
 
   return {
@@ -160,8 +208,13 @@ export function createCalibratedUI(log: Log): TikTokUI {
     async swipeToNextVideo() {
       await ensure();
       await goTo("feed");
+      // 上划前安全闸：有系统弹窗(定位)/内嵌网页(07)先关掉，绝不带浮层上划（07 上划=进外部页）。
+      if (await guardBeforeSwipe()) {
+        railCache = null;
+        return;
+      }
       const { width: w, height: h } = size;
-      await swipe({ x: w * 0.5, y: h * 0.72 }, { x: w * 0.5, y: h * 0.26 }, 0.25);
+      await swipe({ x: w * 0.5, y: h * 0.66 }, { x: w * 0.5, y: h * 0.26 }, 0.25); // 起点上移一点
       railCache = null; // 换视频 → 右栏可能整体上下移，下次动作重测
       log("上滑切换视频");
     },
@@ -254,16 +307,18 @@ export function createCalibratedUI(log: Log): TikTokUI {
 
     // —— 搜索：桥接到「结果是可上滑视频流」的现实 ——
     async search(keyword: string) {
+      // 慢网络易出错：搜索每步操作后固定停 2s，给页面切换/网络请求留足时间，避免在半加载的页面上误点。
       await ensure();
       await goTo("feed");
+      await sleep(2000);
       await tap(A("searchIcon")); // 放大镜
-      await sleep(1000);
+      await sleep(2000);
       await typeText(keyword);
-      await sleep(700);
+      await sleep(2000);
       await tap(A("searchSubmit")); // 红色 Search 提交
       await sleep(10000); // 等结果加载
-      await tap(A("searchFirstResult")); // 打开第一个结果，进入结果视频流
-      await sleep(1500);
+      await tap(A("searchSecondResult")); // 打开第二个结果（第一个大概率广告，跳过），进入结果视频流
+      await sleep(2000);
       page = "feed"; // 结果视频流与推荐页操作相同，视作 feed
       railCache = null;
       log(`已搜索「${keyword}」并进入结果视频流`);
@@ -275,11 +330,13 @@ export function createCalibratedUI(log: Log): TikTokUI {
       await goTo("feed");
       // 第一个结果在 search() 里已打开；之后靠上滑切到下一个。
       if (index > 0) {
+        if (await guardBeforeSwipe()) return; // 上划前安全闸：有系统弹窗/内嵌网页(07)先关，绝不带浮层上划
         await swipe(
           { x: size.width * 0.5, y: size.height * 0.72 },
           { x: size.width * 0.5, y: size.height * 0.26 },
           0.25,
         );
+        await sleep(2000); // 慢网络：等下一个结果视频加载再读
         railCache = null;
       }
     },
@@ -297,69 +354,22 @@ export function createCalibratedUI(log: Log): TikTokUI {
     },
 
     async recoverIfLost() {
-      // 先处理 iOS 系统权限弹窗（WDA alert 接口，按意图表点）。
-      const text = await alertText();
-      if (text !== null) {
-        const choice = chooseAlertButton(text, await alertButtons());
-        try {
-          if ("label" in choice) await alertClickButton(choice.label);
-          else await alertDismiss();
-        } catch {
-          await alertDismiss().catch(() => {});
-        }
-        log(`关闭系统弹窗（${"label" in choice ? choice.label : "dismiss"}）`);
-        await sleep(500);
+      // 系统弹窗 / WDA 读不到的权限弹窗(定位)OCR 兜底 / 应用内浮层(07 等)——与上划前安全闸同一套。
+      if (await guardBeforeSwipe()) {
         lostStreak = 0;
         return;
-      }
-      // 应用内浮层（登录/通知/头像/政策等）：OCR 检测 → 视觉 ✕ 或安全脱困计划关掉。
-      try {
-        const boxes = await recognizeBoxes();
-        const hit = detectAppPopup(boxes);
-        if (hit) {
-          log(`应用内浮层(${hit.id})：${hit.matched}`);
-          const cx = await detectCardClose(size.width, size.height);
-          if (cx) {
-            await tap(cx);
-            await sleep(700);
-          } else {
-            for (const s of planDismiss(hit, boxes, { width: size.width, height: size.height })) {
-              if (s.kind === "tap") await tap(s.point);
-              else if (s.kind === "swipe") await swipe(s.from, s.to, 0.3);
-              else
-                await swipe(
-                  { x: 3, y: size.height * 0.5 },
-                  { x: size.width * 0.78, y: size.height * 0.5 },
-                  0.2,
-                );
-              await sleep(600);
-            }
-          }
-          lostStreak = 0;
-          return;
-        }
-      } catch {
-        /* OCR 不可用 → 跳过浮层处理 */
       }
       // 已知页面：评论区（关闭✕）或视频流（动作栏）。
       const known = async (): Promise<boolean> => {
         if (await detectCommentCloseButton(size.width, size.height)) return true;
+        // 视频流：右栏 ≥2 个白色图标带即算「像视频流」——不要求满 4 个（点赞变红/已收藏会少带，
+        // 用严格 4 带的 detectRail 会把正常视频页误判为异常）。与坐标吸附同一套 railBandCenters。
         try {
-          await detectRail(size.width, size.height); // 仅作布尔判断
-          return true;
+          return (await railBandCenters(size.width, size.height)).length >= 2;
         } catch {
           return false;
         }
       };
-      const back = async () => {
-        await swipe(
-          { x: 3, y: size.height * 0.5 },
-          { x: size.width * 0.78, y: size.height * 0.5 },
-          0.2,
-        );
-        await sleep(800);
-      };
-
       if (await known()) {
         lostStreak = 0;
         return;
@@ -370,14 +380,10 @@ export function createCalibratedUI(log: Log): TikTokUI {
         log("可能离开正常页面（观察中，暂不返回）");
         return;
       }
-      // 连续 ≥2 次 → 确实卡住 → 左滑返回脱困（回到已知页即停，最多 3 下）。
-      for (let i = 0; i < 3; i++) {
-        log("⚠ 连续多次未在正常页面，左滑返回脱困");
-        await back();
-        if (await known()) {
-          lostStreak = 0;
-          return;
-        }
+      // 连续 ≥2 次 → **不再自动左滑脱困**（known() 有时把正常页误判为异常，盲目左滑反而误跳别的页）。
+      // 只记日志（REPL 无管理中心；产品端 onDeviceUI 会 onEvent 通知管理中心）。不做任何触控、不改 page。
+      if (lostStreak === 2) {
+        log("⚠ 疑似卡在未知页面（连续多次未在正常页面）；不自动左滑，等待人工处理");
       }
     },
 
@@ -421,6 +427,7 @@ export function createCalibratedUI(log: Log): TikTokUI {
         page = "feed";
       } else {
         await goTo("feed");
+        if (await guardBeforeSwipe()) return; // 上划前安全闸：防中途弹权限/浮层被带上划
         await swipe(
           { x: size.width * 0.5, y: size.height * 0.72 },
           { x: size.width * 0.5, y: size.height * 0.26 },

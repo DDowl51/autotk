@@ -9,3 +9,18 @@ export {
   type DeviceBinding,
 } from "./rules";
 export { isProductAllowed, visibleCodes, type Role } from "./whitelist";
+export {
+  decideQuotaAllocation,
+  selfIssuableQuota,
+  type QuotaAllocDecision,
+  type QuotaAllocError,
+} from "./account-quota";
+export {
+  createThrottleState,
+  lockedSeconds,
+  recordFailure,
+  recordSuccess,
+  DEFAULT_THROTTLE,
+  type ThrottleState,
+  type ThrottleOpts,
+} from "./login-throttle";

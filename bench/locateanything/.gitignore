@@ -1,0 +1,8 @@
+# 运行产物（勿提交）
+__pycache__/
+out/
+out_*/
+mi_*.log
+# 下好的模型 / venv（体积大，各机自备）
+LocateAnything-3B/
+la3b/

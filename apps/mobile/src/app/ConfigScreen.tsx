@@ -1,5 +1,6 @@
 import { useState } from "react";
 import {
+  Alert,
   SafeAreaView,
   ScrollView,
   StyleSheet,
@@ -21,6 +22,7 @@ import { LogsTab } from "./tabs/LogsTab";
 import { InspectorTab } from "./tabs/InspectorTab";
 import { HubConnectScreen } from "./HubConnectScreen";
 import { HelpScreen } from "./HelpScreen";
+import { calibrateNow } from "./realUI";
 import { isDeveloperMode } from "./devtools";
 
 type TabKey =
@@ -54,6 +56,29 @@ export default function ConfigScreen({ initialParams }: { initialParams?: Automa
   // 发行版隐藏「调试」Tab（非技术买家看不到）；dev 或 EXPO_PUBLIC_DEV_TOOLS=1 才显示。
   const showDev = isDeveloperMode(__DEV__, process.env.EXPO_PUBLIC_DEV_TOOLS);
   const visibleTabs = showDev ? TABS : TABS.filter((t) => t.key !== "debug");
+
+  // 标定本机：换机型/点不准时买家自助重标（发行版也要能点——「标定本机」按钮原来只在调试Tab里，
+  // 发行版看不到，买家换机就没法重标。这里放到常显头部）。
+  const [calibrating, setCalibrating] = useState(false);
+  const onCalibrate = () => {
+    if (calibrating) return;
+    setCalibrating(true);
+    void (async () => {
+      try {
+        const r = await calibrateNow(() => {});
+        Alert.alert(
+          "标定本机",
+          r.ok
+            ? `✅ 已标定本机 ${r.key}，下次直接用`
+            : "标定未成功：请先让 TikTok 停在一条干净的推荐视频页（右栏点赞/评论/收藏/分享四个图标都清晰可见、无广告无弹窗），再点一次「标定本机」。",
+        );
+      } catch (e) {
+        Alert.alert("标定本机", `标定出错：${e instanceof Error ? e.message : String(e)}`);
+      } finally {
+        setCalibrating(false);
+      }
+    })();
+  };
 
   // 关键词三个字段用本地文本，保证输入流畅；存入 params 时按逗号/换行拆分。
   const [kwText, setKwText] = useState(params.searchKeywords.join(", "));
@@ -151,9 +176,14 @@ export default function ConfigScreen({ initialParams }: { initialParams?: Automa
                 {hubConnected ? "已连接控制中心" : "未连接控制中心 · 点此连接"}
               </Text>
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => setShowHelp(true)} activeOpacity={0.7}>
-              <Text style={styles.helpLink}>使用说明</Text>
-            </TouchableOpacity>
+            <View style={{ flexDirection: "row", gap: 16 }}>
+              <TouchableOpacity onPress={() => setShowHelp(true)} activeOpacity={0.7}>
+                <Text style={styles.helpLink}>使用说明</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={onCalibrate} disabled={calibrating} activeOpacity={0.7}>
+                <Text style={styles.helpLink}>{calibrating ? "标定中…" : "标定本机"}</Text>
+              </TouchableOpacity>
+            </View>
           </View>
           <TouchableOpacity
             style={[styles.runBtn, running ? styles.stopBtn : styles.startBtn, stopping ? { opacity: 0.6 } : null]}

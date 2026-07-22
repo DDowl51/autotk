@@ -7,9 +7,29 @@
   "scripts": {
     "dev:renderer": "vite",
     "build": "tsc && vite build",
+    "build:main": "node scripts/build-main.mjs",
     "electron": "electron .",
+    "pack": "npm run build && npm run build:main && electron-builder --dir",
+    "dist": "npm run build && npm run build:main && electron-builder --win",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
+  },
+  "build": {
+    "appId": "com.ddowl.mc.desktop",
+    "productName": "TK管理中心",
+    "directories": { "output": "release" },
+    "files": ["build/**/*", "dist/**/*", "package.json"],
+    "extraMetadata": { "main": "build/main.cjs" },
+    "win": {
+      "target": ["nsis"],
+      "artifactName": "TKManager-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "shortcutName": "TK管理中心"
+    }
   },
   "dependencies": {
     "@ant-design/icons": "^5.5.1",
@@ -37,6 +57,8 @@
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.2",
     "electron": "^33.0.2",
+    "electron-builder": "^25.1.8",
+    "esbuild": "^0.21.5",
     "typescript": "^5.6.2",
     "vite": "^5.4.8",
     "vitest": "^2.1.2"

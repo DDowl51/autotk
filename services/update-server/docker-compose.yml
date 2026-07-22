@@ -1,0 +1,37 @@
+services:
+  update-server:
+    build: .
+    restart: unless-stopped
+    environment:
+      PORT: 4200
+      UPDATES_DIR: /data/updates
+      BASE_URL: ${BASE_URL:?请设为 https://autotk-ota.ddowl.tech}
+      # 代码签名私钥路径。留空 = 不签名（靠 HTTPS 传输安全，app.json 未配 codeSigning 时即走这条）。
+      # 要开签名：把私钥放 ./data/secrets/private-key.pem，并在 .env 里设
+      #   CODE_SIGNING_PRIVATE_KEY=/data/secrets/private-key.pem
+      CODE_SIGNING_PRIVATE_KEY: ${CODE_SIGNING_PRIVATE_KEY:-}
+      KEYID: main
+    volumes:
+      - ./data/updates:/data/updates # 把 expo export 产物放这里的 <runtimeVersion>/<文件夹>/
+      - ./data/secrets:/data/secrets:ro # private-key.pem（代码签名，勿提交）
+    # 只 bind 本机，由 Caddy 反代 + TLS 对外（itms/expo 客户端要 HTTPS）
+    ports:
+      - "127.0.0.1:4200:4200"
+
+  caddy:
+    image: caddy:2
+    # 仅「独立部署(自带 Caddy 做 TLS)」时用：docker compose --profile caddy up -d
+    # 用 1Panel/宝塔等已有反代面板时，默认 `docker compose up -d` 不会起它，避免抢 80/443。
+    profiles: ["caddy"]
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

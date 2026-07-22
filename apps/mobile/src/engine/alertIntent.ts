@@ -38,6 +38,10 @@ const ALLOW_HINT = /photo|photos|library|相册|照片|camera|相机|摄像|micr
 
 export type AlertChoice = { label: string } | { dismiss: true };
 
+// iOS 系统按钮用弯引号「Don't Allow」(U+2019)，而 DENY 表用直引号「don't allow」(U+0027)——
+// 不归一化就匹配不上、漏点「不允许」。统一把各种撇号/引号折成直引号再比。
+const deapos = (s: string): string => s.replace(/[‘’ʼ`´]/g, "'");
+
 const isDeny = (l: string): boolean => DENY.some((d) => l === d || l.includes(d));
 
 /**
@@ -47,7 +51,7 @@ const isDeny = (l: string): boolean => DENY.some((d) => l === d || l.includes(d)
  * - 都没匹配到 → {dismiss:true}，调用方走 /alert/dismiss（通常= 取消/拒绝）。
  */
 export function chooseAlertButton(text: string, buttons: string[]): AlertChoice {
-  const norm = buttons.map((b) => ({ raw: b, l: b.toLowerCase().trim() }));
+  const norm = buttons.map((b) => ({ raw: b, l: deapos(b.toLowerCase().trim()) }));
   if (ALLOW_HINT.test(text)) {
     for (const w of ALLOW) {
       const wl = w.toLowerCase();

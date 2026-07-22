@@ -12,8 +12,12 @@ const APPS: Record<string, AppConfig> = {
 
 class FakeAsc implements AscPort {
   registered: string[] = [];
+  constructor(private readonly enabled = true) {}
   async registerDevice(_a: string, udid: string): Promise<void> {
     this.registered.push(udid);
+  }
+  async deviceEnabled(): Promise<boolean> {
+    return this.enabled;
   }
   async regenerateProfile(account: string): Promise<ProfileRef> {
     return { path: `/p/${account}`, version: `${account}@${this.registered.length}` };
@@ -109,6 +113,36 @@ describe("OTA HTTP 全链路", () => {
     });
     expect((await app.inject({ method: "GET", url: `/ota/wda/status?s=${s}` })).json()).toMatchObject({
       state: "pool-full",
+    });
+  });
+
+  it("设备 PROCESSING（未 ENABLED）→ session 状态 processing（落地页据此提示稍后重扫）", async () => {
+    const store = new OtaStore([{ name: "a", capacity: 100, devices: [] }]);
+    const orchestrator = new SigningOrchestrator(
+      { baseUrl: "https://install.example.com", apps: APPS },
+      { asc: new FakeAsc(false), resign: new FakeResign(), state: store },
+    );
+    const app = buildOtaApp({
+      orchestrator,
+      store,
+      config: {
+        baseUrl: "https://install.example.com",
+        organization: "ddowl",
+        enrollIdentifier: "com.ddowl.signing-station.enroll",
+        apps: { wda: { title: "WDA" } },
+      },
+      uuid: () => "11111111-2222-3333-4444-555555555555",
+    });
+    const landing = await app.inject({ method: "GET", url: "/ota/wda" });
+    const s = landing.body.match(/data-session="([0-9a-f]+)"/)![1];
+    await app.inject({
+      method: "POST",
+      url: `/ota/enroll-callback?s=${s}&app=wda`,
+      headers: { "content-type": "application/x-apple-aspen-config" },
+      payload: devicePlist("EB0C563DCA21A2F9C20C14EDA73B42453C75B4E7"),
+    });
+    expect((await app.inject({ method: "GET", url: `/ota/wda/status?s=${s}` })).json()).toMatchObject({
+      state: "processing",
     });
   });
 

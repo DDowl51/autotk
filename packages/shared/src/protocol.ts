@@ -16,6 +16,8 @@ export interface DeviceStatus {
     follows: number;
     comments: number;
     videos: number;
+    dmSent?: number; // 私信发出数（2.0 新增；旧设备省略）
+    dmFailed?: number; // 私信失败数（P3；旧设备省略）
   };
   alert?: string | null; // 告警文字（脱困失败/卡死等），null=无
   battery?: DeviceBattery; // 当前电量，读不到则省略
@@ -114,6 +116,8 @@ export interface ConfigPatch {
   kwSearchExecRatio?: number;
   clickWaitTime?: number;
   postReplies?: boolean;
+  /** 显式选定工作流(管理中心下拉框):search/followMonitor/profileAndDM/off。 */
+  activeWorkflow?: "search" | "followMonitor" | "profileAndDM" | "off";
   allDay?: boolean;
   forYou?: ModuleParamsPatch;
   kwSearch?: ModuleParamsPatch;
@@ -226,6 +230,7 @@ export const EVT = {
   // Hub → 手机
   configApply: "config:apply", // 下发配置补丁 { jobId, patch }
   publishTask: "publish:task", // 发布任务 { taskId, videoName, caption, source }
+  deviceControl: "device:control", // 远程启停 { action: "pause"|"resume" }
   // 手机 → Hub
   configResult: "config:result", // 应用结果 { jobId, ok, error? }
   publishResult: "publish:result", // 发布状态回报 { taskId, status, error? }
@@ -233,10 +238,23 @@ export const EVT = {
   operatorHello: "operator:hello",
   watchLogs: "logs:watch", // 订阅/取消订阅某台日志 { deviceId, on }
   configPush: "config:push", // 批量下发配置 { jobId, deviceIds, patch }
+  controlPush: "control:push", // 批量远程启停 { deviceIds, action }
   publishEnqueue: "publish:enqueue", // 发起发布任务 { taskId, deviceId, videoName, caption, source }
   deviceRename: "device:rename", // 给设备改名（别名） { deviceId, alias }
   deviceRemove: "device:remove", // 删除设备（从列表移除） { deviceId }
 } as const;
+
+/** 远程启停(启停控制)。pause=挂起批循环停在原地;resume=恢复(下批先 recover)。 */
+export type ControlAction = "pause" | "resume";
+/** 操作员 → Hub:批量启停一组设备。 */
+export interface ControlPushMsg {
+  deviceIds: string[];
+  action: ControlAction;
+}
+/** Hub → 手机:启停本机。 */
+export interface DeviceControlMsg {
+  action: ControlAction;
+}
 
 /** 操作员给设备改名。alias 为空串=清除别名、恢复上报名。 */
 export interface DeviceRenameMsg {

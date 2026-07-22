@@ -369,7 +369,7 @@ async function dispatch(
       // 判断当前页面是不是"已知/正常"页（视频流/评论区），用于验证脱困判定。
       await ensureTikTok();
       const { width, height } = await windowSize();
-      let where = "未知页面（recoverIfLost 会左滑返回）";
+      let where = "未知页面（recoverIfLost 只记日志+通知管理中心，不左滑）";
       if (await detectCommentCloseButton(width, height)) {
         where = "评论区（有关闭✕）";
       } else {

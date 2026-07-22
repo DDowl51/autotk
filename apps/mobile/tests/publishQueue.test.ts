@@ -54,6 +54,27 @@ test("runPublish：下载失败 → failed，不进入发布", async () => {
   assert.equal(published, false);
 });
 
+test("runPublish：下载永久卡住 → 超时后 failed，不进入发布（不再永久停在 downloading）", async () => {
+  const seq: PublishStatus[] = [];
+  let lastErr = "";
+  let published = false;
+  const end = await runPublish(task("t1"), {
+    download: () => new Promise(() => {}), // 永不兑现（模拟写相册卡住 / JS 后台冻结）
+    publishVideo: async () => {
+      published = true;
+    },
+    onStatus: (s, e) => {
+      seq.push(s);
+      if (e) lastErr = e;
+    },
+    downloadTimeoutMs: 30, // 小超时便于测试
+  });
+  assert.deepEqual(seq, ["downloading", "failed"]);
+  assert.equal(end, "failed");
+  assert.equal(published, false);
+  assert.match(lastErr, /下载超时/);
+});
+
 test("runPublish：发布抛错 → failed 带原因", async () => {
   const seq: PublishStatus[] = [];
   let lastErr = "";

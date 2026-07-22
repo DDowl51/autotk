@@ -1,0 +1,765 @@
+{
+  "version": "0.1.0-G0",
+  "note": "autotk 2.0 目标初始注册表。数据来自旧 popupDetect/alertIntent + 本会话真机实测。ocr 为字符串正则(加载时 new RegExp(pattern,'i'))。region/box 为归一化[0..1]。handler 仅 hazard。见 target-registry-说明.md。",
+  "activation": {
+    "globalHazards": [
+      "sys.perm-deny",
+      "sys.tracking",
+      "ad.shop-promo",
+      "browser.inapp"
+    ],
+    "pageHazards": {
+      "feed": [
+        "popup.notif-friend"
+      ],
+      "comments": [
+        "popup.notif-comment"
+      ],
+      "search": [
+        "popup.location-inapp"
+      ],
+      "profile": [
+        "popup.avatar",
+        "popup.security-check"
+      ],
+      "live": [
+        "popup.policy"
+      ],
+      "publish": [
+        "sys.camera-perm",
+        "sys.mic-perm",
+        "sys.photo-perm",
+        "publish.post-confirm"
+      ]
+    },
+    "pageExpected": {
+      "feed": [
+        "feed.rail"
+      ],
+      "comments": [
+        "comments.panel"
+      ],
+      "search": [
+        "search.results"
+      ],
+      "profile": [
+        "profile.grid"
+      ],
+      "publish": [
+        "publish.plus"
+      ]
+    }
+  },
+  "targets": [
+    {
+      "id": "sys.perm-deny",
+      "kind": "hazard",
+      "hazardClass": "system",
+      "handler": "deny",
+      "phrase": "the Don't Allow button",
+      "ocr": "don'?t\\s*allow|不允许",
+      "verified": true,
+      "source": "通用 iOS 权限窗拒绝(联系人/通知/位置…);实测:通讯录窗 Don't Allow 居中左按钮(通用DontAllow-hazard.png)、IMG_0008 带地图定位窗按钮更靠下;VLM 定位 Don't Allow→tap(系统窗 /alert 对带地图窗读不到,已弃)",
+      "notes": "通用,替代原 sys.location-perm/sys.notif-perm。标准居中弹窗 Don't Allow 在左按钮(约 y0.61);带地图定位窗 3 按钮更靠下(约 y0.81)——VLM 按 phrase 定位不依赖固定坐标,故不设 box。绝不点 OK/Allow/Allow Once/Allow While Using App(弯引号 U+2019 已并入正则)"
+    },
+    {
+      "id": "sys.tracking",
+      "kind": "hazard",
+      "hazardClass": "system",
+      "handler": "deny",
+      "phrase": "the Ask App Not to Track button",
+      "ocr": "ask app not to track|不允许跟踪",
+      "source": "alertIntent"
+    },
+    {
+      "id": "sys.fb-login",
+      "kind": "hazard",
+      "hazardClass": "system",
+      "handler": "deny",
+      "phrase": "the Cancel button",
+      "ocr": "^\\s*(cancel|取消)\\s*$",
+      "source": "alertIntent;facebook.com 登录窗→取消"
+    },
+    {
+      "id": "sys.camera-perm",
+      "kind": "hazard",
+      "hazardClass": "system",
+      "handler": "allow",
+      "phrase": "the OK or Allow button",
+      "ocr": "^\\s*(ok|好|allow|允许)\\s*$",
+      "source": "alertIntent;仅 publish 页允许(发视频需要);养号页不激活",
+      "notes": "allow=WDA alert 点 好/OK/Allow,排除不允许"
+    },
+    {
+      "id": "sys.mic-perm",
+      "kind": "hazard",
+      "hazardClass": "system",
+      "handler": "allow",
+      "phrase": "the OK or Allow button",
+      "ocr": "^\\s*(ok|好|allow|允许)\\s*$",
+      "source": "alertIntent;仅 publish"
+    },
+    {
+      "id": "sys.photo-perm",
+      "kind": "hazard",
+      "hazardClass": "system",
+      "handler": "allow",
+      "phrase": "the Allow Access to All Photos button",
+      "ocr": "allow access to all photos|允许访问所有照片",
+      "source": "alertIntent;仅 publish;优先全部照片,绝不点含允许子串的不允许"
+    },
+    {
+      "id": "ad.shop-promo",
+      "kind": "hazard",
+      "hazardClass": "overlay",
+      "handler": "tapBox",
+      "phrase": "the close button X below the card",
+      "ocr": "choose up to this many products|free shipping on all your picks|恭喜.*可(选|挑|领)|立即(挑选|领取)",
+      "verified": true,
+      "box": [
+        0.5,
+        0.785
+      ],
+      "source": "IMG_0002 实测;Shop 促销弹窗,✕ 在卡片下方居中(非右上)"
+    },
+    {
+      "id": "browser.inapp",
+      "kind": "hazard",
+      "hazardClass": "overlay",
+      "handler": "tapBox",
+      "phrase": "the close button X at the top-left of the bottom sheet",
+      "ocr": "scroll up for full\\s?screen|full\\s?screen view|上滑查看全屏|sign in to continue|登录后.*继续",
+      "verified": true,
+      "box": [
+        0.07,
+        0.755
+      ],
+      "source": "IMG_0007 实测;误点广告开的内嵌网页 sheet,✕ 在左上",
+      "notes": "⚠️ 绝不能上滑(会进外部页);只点左上 ✕"
+    },
+    {
+      "id": "popup.login",
+      "kind": "hazard",
+      "hazardClass": "overlay",
+      "handler": "tapBox",
+      "phrase": "the close X of the login popup",
+      "ocr": "log\\s*in to tiktok|sign\\s*up for tiktok|登录后(即可|才能)?",
+      "source": "popupDetect login"
+    },
+    {
+      "id": "popup.notif",
+      "kind": "hazard",
+      "hazardClass": "overlay",
+      "handler": "tapBox",
+      "phrase": "the Not Now button or close X",
+      "ocr": "turn on notifications|开启(推送|通知)|don'?t miss out",
+      "source": "popupDetect notif"
+    },
+    {
+      "id": "popup.addyours",
+      "kind": "hazard",
+      "hazardClass": "overlay",
+      "handler": "tapBox",
+      "phrase": "the close X",
+      "ocr": "add yours|添加你的",
+      "source": "popupDetect addyours"
+    },
+    {
+      "id": "popup.notif-friend",
+      "kind": "hazard",
+      "hazardClass": "overlay",
+      "handler": "tapBox",
+      "phrase": "the close X at the top-right of the card",
+      "ocr": "接收好友新作品通知|好友新作品通知|friends'?\\s*new\\s*posts?",
+      "source": "popupDetect notif-friend",
+      "notes": "红「接收通知」勿点,只点 ✕"
+    },
+    {
+      "id": "popup.avatar",
+      "kind": "hazard",
+      "hazardClass": "overlay",
+      "handler": "tapBox",
+      "phrase": "the close X at the top-right of the card",
+      "ocr": "虚拟头像|你的专属风格|开始创建|create your tiktok avatar",
+      "source": "popupDetect avatar",
+      "notes": "「开始创建」勿点"
+    },
+    {
+      "id": "popup.policy",
+      "kind": "hazard",
+      "hazardClass": "overlay",
+      "handler": "tapBox",
+      "phrase": "the Got it or 知道了 button",
+      "ocr": "虚拟物品和奖励政策|奖励政策更新|virtual\\s*items?.*(policy|reward)",
+      "source": "popupDetect policy",
+      "notes": "底部「知道了/Got it」可安全点掉"
+    },
+    {
+      "id": "popup.notif-comment",
+      "kind": "hazard",
+      "hazardClass": "overlay",
+      "handler": "tapBox",
+      "phrase": "the close X at the top-right of the card",
+      "ocr": "评论互动时收到通知|与你的评论互动|interact.*with your comment",
+      "source": "popupDetect notif-comment",
+      "notes": "红「接收通知」勿点"
+    },
+    {
+      "id": "popup.security-check",
+      "kind": "hazard",
+      "hazardClass": "overlay",
+      "handler": "tapBox",
+      "phrase": "the close X at the top-right of the card",
+      "ocr": "安全检查|做个安全检查|security\\s*check",
+      "source": "popupDetect security-check",
+      "notes": "红「继续」勿点"
+    },
+    {
+      "id": "popup.passkey",
+      "kind": "hazard",
+      "hazardClass": "overlay",
+      "handler": "tapBox",
+      "phrase": "the close X at the top-right of the card",
+      "ocr": "通行密钥|iCloud\\s*钥匙串|钥匙串|passkey|icloud\\s*keychain",
+      "source": "popupDetect passkey",
+      "notes": "系统 passkey 但呈卡片带 ✕;蓝「设置」勿点"
+    },
+    {
+      "id": "popup.location-inapp",
+      "kind": "hazard",
+      "hazardClass": "overlay",
+      "handler": "tapBox",
+      "phrase": "the Cancel or 暂时不要 button (not 打开设置)",
+      "ocr": "允许访问位置|解锁本地瑰宝|查看附近的相关内容|nearby (relevant )?content|allow location access",
+      "source": "popupDetect location(两版式)",
+      "notes": "TikTok 应用内位置推广,非系统窗;点取消/暂时不要,绝不点「打开设置」(会跳出 App)"
+    },
+    {
+      "id": "popup.sheet",
+      "kind": "hazard",
+      "hazardClass": "overlay",
+      "handler": "back",
+      "phrase": "the share sheet",
+      "ocr": "send to|share to|分享到|发送给",
+      "source": "popupDetect sheet",
+      "notes": "误开的分享面板;下滑或点外部关"
+    },
+    {
+      "id": "popup.not-now",
+      "kind": "hazard",
+      "hazardClass": "overlay",
+      "handler": "tapBox",
+      "phrase": "the Not Now button (暂不 / 以后再说 / 稍后)",
+      "ocr": "not now|暂不|暂时不|以后再说|稍后再说|下次(再说)?",
+      "source": "通用:各类提示弹窗的「暂不 / Not Now」软拒绝出口",
+      "notes": "通用软拒绝;绝不点「开启 / 允许 / 立即」等确认按钮"
+    },
+    {
+      "id": "popup.not-interested",
+      "kind": "hazard",
+      "hazardClass": "overlay",
+      "handler": "tapBox",
+      "phrase": "the Not interested (不感兴趣) button in a menu or feedback card",
+      "ocr": "not interested|不感兴趣",
+      "source": "通用:长按菜单 / 推广卡出现「不感兴趣」时点它关闭",
+      "notes": "⚠️假设:出现「不感兴趣」= 误触长按菜单或推广卡,点它可关闭。会给算法负反馈,但仅在该按钮真实在屏时触发(正常浏览不出现)。若不想给负反馈,把 handler 改为 back"
+    },
+    {
+      "id": "popup.generic-close",
+      "kind": "hazard",
+      "hazardClass": "overlay",
+      "handler": "tapBox",
+      "phrase": "the small close (X) button at a corner of a modal popup card or bottom sheet overlaying the screen (not the main video UI)",
+      "source": "通用兜底:未被专门识别的弹窗,点其角落 × 关闭",
+      "notes": "兜底项,列在 globalHazards 末位——专门弹窗各自先匹配,剩下不认识的才由它关。⚠️位置不定故不设 region;可能误命中持久小组件的 ×(如 Free Gifts),需收敛再加 region 或从 globalHazards 去激活"
+    },
+    {
+      "id": "feed.live-tag",
+      "kind": "hazard",
+      "hazardClass": "category",
+      "handler": "swipeAway",
+      "phrase": "the LIVE (直播中) badge label",
+      "ocr": "直播中|\\bLIVE\\b",
+      "source": "isLivePage;stream-video 用例",
+      "notes": "识别到=直播卡,直接盲滑走,不互动"
+    },
+    {
+      "id": "comment.ad-first",
+      "kind": "hazard",
+      "hazardClass": "category",
+      "handler": "skip",
+      "phrase": "the sponsored first comment with a Learn more blue button",
+      "ocr": "sponsored|promoted|赞助|推广|learn more|了解更多|shop now|立即购买",
+      "source": "isAdComment",
+      "notes": "评论区置顶广告条;不点赞不回复,跳过它"
+    },
+    {
+      "id": "feed.rail",
+      "kind": "expected",
+      "phrase": "the heart-shaped like button on the right side of the screen (red if liked, white if not)",
+      "region": [
+        0.82,
+        0.3,
+        0.18,
+        0.55
+      ],
+      "source": "证明在信息流。锚点改具体图标(心形)——抽象「action rail」grounding 抓不住,真机 command[无](2026-07-21)"
+    },
+    {
+      "id": "feed.like",
+      "kind": "expected",
+      "phrase": "the like heart button on the right rail",
+      "region": [
+        0.82,
+        0.4,
+        0.18,
+        0.2
+      ],
+      "source": "标定 like"
+    },
+    {
+      "id": "feed.comment",
+      "kind": "expected",
+      "phrase": "the comment (speech bubble) button on the right rail",
+      "region": [
+        0.82,
+        0.5,
+        0.18,
+        0.2
+      ]
+    },
+    {
+      "id": "feed.save",
+      "kind": "expected",
+      "phrase": "the save/bookmark button on the right rail",
+      "region": [
+        0.82,
+        0.55,
+        0.18,
+        0.2
+      ]
+    },
+    {
+      "id": "feed.share",
+      "kind": "expected",
+      "phrase": "the share (arrow) button on the right rail",
+      "region": [
+        0.82,
+        0.6,
+        0.18,
+        0.2
+      ]
+    },
+    {
+      "id": "feed.follow",
+      "kind": "expected",
+      "phrase": "the red follow plus button below the avatar on the right rail",
+      "region": [
+        0.82,
+        0.35,
+        0.18,
+        0.15
+      ],
+      "notes": "已关注则无+,VLM 返回空即跳过"
+    },
+    {
+      "id": "nav.following-tab",
+      "kind": "expected",
+      "phrase": "the Following (关注) tab at the top center",
+      "region": [
+        0.26,
+        0.02,
+        0.24,
+        0.07
+      ],
+      "stable": true,
+      "source": "旧 openFollowingFeed 的 followTab(rx 0.38)",
+      "notes": "「关注监控」功能:点它从推荐流跳到关注流。关注流右栏与推荐流一致,靠哪个 Tab 高亮区分"
+    },
+    {
+      "id": "nav.foryou-tab",
+      "kind": "expected",
+      "phrase": "the For You (推荐) tab at the top right",
+      "region": [
+        0.46,
+        0.02,
+        0.54,
+        0.2
+      ],
+      "stable": true,
+      "notes": "在关注流互动完切回推荐流用;也用于纠正误入关注流。phrase/region 真机校准(2026-07-21)"
+    },
+    {
+      "id": "nav.search-icon",
+      "kind": "expected",
+      "phrase": "the magnifying glass (search) icon at the top-right corner of the screen",
+      "region": [
+        0.8,
+        0,
+        0.2,
+        0.14
+      ],
+      "stable": true,
+      "notes": "phrase 真机校准(2026-07-21):放大镜在右上角"
+    },
+    {
+      "id": "search.input",
+      "kind": "expected",
+      "phrase": "the search text input at the top after the magnifier icon",
+      "region": [
+        0,
+        0,
+        0.85,
+        0.12
+      ]
+    },
+    {
+      "id": "search.submit",
+      "kind": "expected",
+      "phrase": "the Search submit button",
+      "region": [
+        0.8,
+        0,
+        0.2,
+        0.12
+      ]
+    },
+    {
+      "id": "search.results",
+      "kind": "expected",
+      "phrase": "the search results grid of videos",
+      "source": "证明结果已加载"
+    },
+    {
+      "id": "search.result-2",
+      "kind": "expected",
+      "phrase": "the second video in the search results (skip the first which is often an ad)",
+      "region": [
+        0.5,
+        0.15,
+        0.5,
+        0.25
+      ],
+      "verified": true,
+      "notes": "点第二个,跳过第一个广告位"
+    },
+    {
+      "id": "comments.panel",
+      "kind": "expected",
+      "phrase": "the comments panel sliding up from the bottom",
+      "region": [
+        0,
+        0.25,
+        1,
+        0.75
+      ]
+    },
+    {
+      "id": "comments.close",
+      "kind": "expected",
+      "phrase": "the close X in the comments tab bar",
+      "region": [
+        0.85,
+        0.25,
+        0.15,
+        0.1
+      ],
+      "notes": "在「评论N|评价M|✕」栏,非顶端地点横幅"
+    },
+    {
+      "id": "comments.input",
+      "kind": "expected",
+      "phrase": "the comment input box at the bottom",
+      "region": [
+        0,
+        0.9,
+        0.7,
+        0.1
+      ]
+    },
+    {
+      "id": "comments.reply",
+      "kind": "expected",
+      "phrase": "the Reply link under a comment",
+      "notes": "y 随具体评论行"
+    },
+    {
+      "id": "comments.heart",
+      "kind": "expected",
+      "phrase": "the like heart of a comment on the right",
+      "region": [
+        0.85,
+        0.27,
+        0.15,
+        0.6
+      ]
+    },
+    {
+      "id": "comments.send",
+      "kind": "expected",
+      "phrase": "the send button after typing a reply",
+      "region": [
+        0.8,
+        0.85,
+        0.2,
+        0.12
+      ]
+    },
+    {
+      "id": "comments.commenter-avatar",
+      "kind": "expected",
+      "phrase": "the avatar (profile picture) of a specific comment's author on the left",
+      "region": [
+        0,
+        0.27,
+        0.15,
+        0.6
+      ],
+      "notes": "私信流:点它进该评论者主页。y 随具体评论行"
+    },
+    {
+      "id": "comments.more",
+      "kind": "expected",
+      "phrase": "the comments area (to scroll up for more comments)",
+      "region": [
+        0,
+        0.3,
+        1,
+        0.55
+      ],
+      "notes": "评论下滑:在面板内向上滑一屏加载更多;到底检测靠连续两屏无新评论"
+    },
+    {
+      "id": "dm.message-button",
+      "kind": "expected",
+      "phrase": "the Message (私信/发消息) button on this user's profile",
+      "region": [
+        0.3,
+        0.35,
+        0.7,
+        0.15
+      ],
+      "notes": "🆕 私信:对方主页上的私信按钮。**不存在=对方隐私不可私信→跳过该人**"
+    },
+    {
+      "id": "dm.input",
+      "kind": "expected",
+      "phrase": "the message text input box at the bottom of the chat",
+      "region": [
+        0,
+        0.88,
+        0.75,
+        0.12
+      ],
+      "notes": "🆕 私信对话页的输入框"
+    },
+    {
+      "id": "dm.send",
+      "kind": "expected",
+      "phrase": "the send button in the chat after typing a message",
+      "region": [
+        0.8,
+        0.86,
+        0.2,
+        0.12
+      ],
+      "notes": "🆕 私信发送"
+    },
+    {
+      "id": "dm.username",
+      "kind": "expected",
+      "phrase": "the username/handle at the top of this user's profile",
+      "region": [
+        0,
+        0.1,
+        1,
+        0.15
+      ],
+      "notes": "🆕 读用户名用于去重(StateStore);经 /ocr 读文本"
+    },
+    {
+      "id": "profile.tab",
+      "kind": "expected",
+      "phrase": "the Me/我 tab at the bottom right",
+      "region": [
+        0.8,
+        0.92,
+        0.2,
+        0.08
+      ],
+      "stable": true
+    },
+    {
+      "id": "profile.grid",
+      "kind": "expected",
+      "phrase": "the profile video grid"
+    },
+    {
+      "id": "profile.grid-first",
+      "kind": "expected",
+      "phrase": "the first (top-left) video thumbnail in the profile posts grid (leftmost cell of the top row)",
+      "region": [
+        0,
+        0.55,
+        0.5,
+        0.45
+      ]
+    },
+    {
+      "id": "nav.back",
+      "kind": "expected",
+      "phrase": "the back arrow at the top-left",
+      "region": [
+        0,
+        0,
+        0.15,
+        0.12
+      ],
+      "stable": true
+    },
+    {
+      "id": "nav.home-tab",
+      "kind": "expected",
+      "phrase": "the Home tab at the bottom left",
+      "region": [
+        0,
+        0.92,
+        0.2,
+        0.08
+      ],
+      "stable": true
+    },
+    {
+      "id": "publish.plus",
+      "kind": "expected",
+      "phrase": "the plus (+) create button at the bottom center",
+      "region": [
+        0.4,
+        0.9,
+        0.2,
+        0.1
+      ],
+      "stable": true
+    },
+    {
+      "id": "publish.upload",
+      "kind": "expected",
+      "phrase": "the photo/album thumbnail button at the bottom-left of the camera page — it shows a live preview of your most recent gallery photo, so its picture is not fixed",
+      "region": [
+        0,
+        0.84,
+        0.24,
+        0.16
+      ],
+      "notes": "左下角相册入口:显示相册第一张图的缩略,样子不固定;靠位置+缩略图形态定位,不靠固定图案"
+    },
+    {
+      "id": "publish.album-first",
+      "kind": "expected",
+      "phrase": "the first (newest) video in the album",
+      "region": [
+        0,
+        0.2,
+        0.4,
+        0.3
+      ]
+    },
+    {
+      "id": "publish.next",
+      "kind": "expected",
+      "phrase": "the red Next (下一步) button at the bottom-right",
+      "region": [
+        0.5,
+        0.88,
+        0.5,
+        0.12
+      ],
+      "notes": "红色按钮,底部偏右;中心约 x0.73(Next识别不准.png 实测),故 region 左界放宽到 0.5 才含得住,原 0.75 会把中心排除掉"
+    },
+    {
+      "id": "publish.caption",
+      "kind": "expected",
+      "phrase": "the caption text input area",
+      "region": [
+        0,
+        0.1,
+        1,
+        0.3
+      ]
+    },
+    {
+      "id": "publish.post",
+      "kind": "expected",
+      "phrase": "the red Post (发布) button at the bottom-right",
+      "region": [
+        0.5,
+        0.88,
+        0.5,
+        0.12
+      ],
+      "notes": "红色按钮,底部偏右;中心约 x0.74(添加Post-now.png 实测),region 左界同 publish.next 放宽到 0.5"
+    },
+    {
+      "id": "publish.post-confirm",
+      "kind": "hazard",
+      "hazardClass": "overlay",
+      "handler": "tapBox",
+      "phrase": "the Post Now (立即发布) button in the 'Post video publicly?' confirmation dialog",
+      "ocr": "post now|立即发布|post publicly|公开发布|发布视频",
+      "region": [
+        0.5,
+        0.57,
+        0.37,
+        0.11
+      ],
+      "verified": true,
+      "source": "添加Post-now.png 实测;点 Post 后弹「Post video publicly?」确认窗,须点右侧 Post Now 才真正发布",
+      "notes": "发布确认弹窗(公开账号/首发时出现);作 publish 页 hazard——post 步验证 feed.rail 期间由 awaitTargets 自动点掉,弹窗不出现则无妨。绝不点左侧 Cancel"
+    },
+    {
+      "id": "feed.like-off",
+      "kind": "expected",
+      "phrase": "the WHITE (not-yet-liked) heart like button on the right rail",
+      "region": [
+        0.82,
+        0.4,
+        0.18,
+        0.2
+      ],
+      "notes": "只有白色未点赞才存在;已点赞是红心→本目标缺席→跳过,避免再点=取消赞"
+    },
+    {
+      "id": "feed.save-off",
+      "kind": "expected",
+      "phrase": "the WHITE (not-yet-saved) bookmark/save button on the right rail",
+      "region": [
+        0.82,
+        0.55,
+        0.18,
+        0.2
+      ],
+      "notes": "白色未收藏才存在;已收藏是黄色→缺席→跳过,避免取消收藏"
+    },
+    {
+      "id": "feed.ad-marker",
+      "kind": "hazard",
+      "hazardClass": "category",
+      "handler": "swipeAway",
+      "phrase": "the Sponsored/Ad label on this full-screen feed video (promoted content)",
+      "ocr": "sponsored|promoted|广告|赞助|learn more|了解更多",
+      "notes": "进流后兼验:整条视频是广告→划走不互动"
+    },
+    {
+      "id": "search.first-clean-result",
+      "kind": "expected",
+      "phrase": "the first search-result video thumbnail that is NOT a live stream and NOT a sponsored ad (no LIVE badge, no Ad/Sponsored label)",
+      "region": [
+        0,
+        0.15,
+        1,
+        0.5
+      ],
+      "notes": "结果页优先选它;找不到退回 search.result-2"
+    }
+  ]
+}

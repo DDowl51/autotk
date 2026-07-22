@@ -5,6 +5,7 @@ import {
   type DeviceLogBatch,
   type WatchLogsMsg,
   type ConfigPushMsg,
+  type ControlPushMsg,
   type ConfigResultMsg,
   type PublishEnqueueMsg,
   type PublishResultMsg,
@@ -42,6 +43,8 @@ export function attachGateway(
   logHub: LogHub,
   pending: PendingStore = new PendingStore(),
   scheduled?: ScheduledStore,
+  /** 发布成功回调（deviceId, videoName）：内嵌桌面据此权威登记已发去重，不依赖发布页是否开着。 */
+  onPublished?: (deviceId: string, videoName: string) => void,
 ): void {
   // 批量配置下发协调器：在线才下发，逐台进度广播给所有操作员；
   // 离线台入「待补发」队列（重连时补发），而非静默丢弃。
@@ -72,6 +75,7 @@ export function attachGateway(
       // 未来定时任务落盘/到点出盘 → Hub 重启后能重新排程。
       persistScheduled: scheduled ? (t) => scheduled.add(t) : undefined,
       dropScheduled: scheduled ? (id) => scheduled.remove(id) : undefined,
+      onPublished, // 发布成功 → 服务端权威登记已发去重
     },
   );
 
@@ -126,6 +130,12 @@ export function attachGateway(
         if (m?.jobId && Array.isArray(m.deviceIds)) dispatcher.start(m.jobId, m.deviceIds, m.patch);
       });
 
+      // 远程启停:转发给各设备房间(在线才收;离线台不排队——启停是实时控制,重连后由 master 决定初态)。
+      socket.on(EVT.controlPush, (m: ControlPushMsg) => {
+        if (!Array.isArray(m?.deviceIds) || (m.action !== "pause" && m.action !== "resume")) return;
+        for (const id of m.deviceIds) io.to(deviceRoom(id)).emit(EVT.deviceControl, { action: m.action });
+      });
+
       socket.on(EVT.publishEnqueue, (m: PublishEnqueueMsg) => {
         if (m?.taskId && m.deviceId) publisher.start(m);
       });
@@ -133,8 +143,13 @@ export function attachGateway(
       socket.on(EVT.deviceRename, (m: DeviceRenameMsg) => {
         if (!m?.deviceId) return;
         void registry
-          .rename(m.deviceId, m.alias ?? "")
-          .then((info) => {
+          .renameChecked(m.deviceId, m.alias ?? "")
+          .then(({ info, conflict }) => {
+            // 冲突（重名）→ 已拒绝改名，info 是未改信息 → 广播回去让操作员看板上的乐观改名回退。
+            if (conflict) {
+              // eslint-disable-next-line no-console
+              console.warn(`[gateway] 设备改名冲突已拒绝：${m.deviceId} → 「${m.alias}」`);
+            }
             if (info) io.to(OPERATORS).emit(EVT.deviceUpdate, info);
           })
           .catch(logErr("rename"));

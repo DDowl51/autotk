@@ -90,6 +90,9 @@ export interface TikTokUI {
   /** 当前页面标识（feed/comments/search/profile…），供管理中心上报。可选。 */
   getPage?(): string | undefined;
 
+  /** 当前「需人工处理」告警（如脱困卡在未知页），供管理中心设备列表醒目展示；无则 null。可选。 */
+  getAlert?(): string | null;
+
   // —— 发布（阶段3 文件夹工作流）——
   /**
    * 把相册里的视频发布到 TikTok。assetUri=已入相册的资源标识，caption=文案。

@@ -46,4 +46,7 @@ else
   npx -y -p typescript@5.9.2 tsc -p _tsconfig.test.json
 fi
 
-node --test "$OUT/tests/"
+# glob 结尾：Node ≥22 移除了 `node --test <目录>` 的目录扫描（会报 MODULE_NOT_FOUND）。
+# NODE_PATH 指回项目 node_modules：OUT 在仓库树外，vision 运行时测试经 detect→png 需 require('pako')，
+# 靠 NODE_PATH 才解析得到（否则只有纯逻辑测试能跑）。
+NODE_PATH="$PWD/node_modules" node --test "$OUT/tests/"*.js

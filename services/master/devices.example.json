@@ -1,0 +1,22 @@
+{
+  "vlm": { "url": "http://192.168.1.9:8000", "model": "locateanything-3b" },
+  "staggerMs": 3000,
+  "schedule": {
+    "allDay": false,
+    "windows": [
+      { "start": "07:00:00", "end": "11:00:00" },
+      { "start": "12:00:00", "end": "16:00:00" },
+      { "start": "17:00:00", "end": "22:00:00" }
+    ]
+  },
+  "params": {
+    "searchKeywords": ["fitness tips"],
+    "kwSearchExecRatio": 0.45,
+    "dm": { "dmEnable": true, "dmKeywords": ["coach", "program"], "dmTemplates": ["hey {user}, saw your comment 🙌"], "dmDailyCap": 20 }
+  },
+  "devices": [
+    { "id": "01", "udid": "00008030-000A1B2C3D4E5F6G", "host": "192.168.1.51", "name": "iPhone8-A" },
+    { "id": "02", "udid": "00008030-000H7I8J9K0L1M2N", "host": "192.168.1.52", "name": "iPhone8-B", "params": { "dm": { "dmDailyCap": 10 } } },
+    { "id": "03", "udid": "00008030-000O3P4Q5R6S7T8U", "host": "192.168.1.53", "name": "iPhone8-C", "size": { "width": 375, "height": 667 } }
+  ]
+}

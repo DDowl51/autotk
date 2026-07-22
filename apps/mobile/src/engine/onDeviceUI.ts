@@ -6,32 +6,34 @@ import {
   alertText,
   applyFastSettings,
   createSession,
+  resetSession,
   getSessionId,
   screenshot,
-  swipe,
-  tap,
-  typeText,
+  swipe as wdaSwipe,
+  tap as wdaTap,
+  typeText as wdaTypeText,
   windowSize,
   TIKTOK_BUNDLE_ID,
   type Point,
 } from "../wda";
 import { chooseAlertButton } from "./alertIntent";
-import { parseComments, type ParsedComment } from "./commentParse";
+import { parseComments, isAdComment, type ParsedComment } from "./commentParse";
 import type { TikTokUI, VideoInfo, CommentInfo } from "./tiktok-ui";
 import {
   decode,
   detectCardClose,
-  detectCommentCloseButton,
   detectCommentHearts,
+  detectCommentPanel,
   detectFollow,
-  detectRail,
+  detectModalCard,
   detectSendButton,
   railBandCenters,
 } from "../vision/detect";
 import { railOffsetY } from "./railCheck";
 import { isLivePage } from "./livePage";
 import { captionFromBoxes, type OcrBox } from "../vision/caption";
-import { detectAppPopup } from "./popupDetect";
+import { looksSameCaption, isCaptionComparable } from "./captionSimilarity";
+import { detectAppPopup, findPermissionDenyBox } from "./popupDetect";
 import { planDismiss } from "./popupDismiss";
 import { resolveAnchor, type AnchorName } from "./anchors";
 
@@ -69,6 +71,21 @@ export function createOnDeviceUI(deps: {
   isStopping?: () => boolean;
 }): TikTokUI {
   const { profile: prof, ocr, log, onEvent, isStopping } = deps;
+  // 停止请求后，所有**触控**动作整体变 no-op：ensure() 那时已不再把 TikTok 切前台，
+  // 若继续 tap/type，会落在前台的 autotk 自己身上（最坏把评论话术敲进配置输入框）。
+  // 读操作（截图/检测/OCR）无副作用，不拦。发布流程另有守卫（停止时抛错而非静默空走）。
+  const tap = async (p: Point) => {
+    if (isStopping?.()) return;
+    await wdaTap(p);
+  };
+  const swipe = async (from: Point, to: Point, duration?: number) => {
+    if (isStopping?.()) return;
+    await wdaSwipe(from, to, duration);
+  };
+  const typeText = async (text: string) => {
+    if (isStopping?.()) return;
+    await wdaTypeText(text);
+  };
   let size = { width: prof.screen.w, height: prof.screen.h };
   // 解析某页面锚点：优先标定档覆盖值，否则用比例默认（anchors.ts 单一真源）。
   const A = (name: AnchorName): Point => resolveAnchor(prof, size.width, size.height, name);
@@ -81,6 +98,11 @@ export function createOnDeviceUI(deps: {
   let commentCache: ParsedComment[] = [];
   // 连续"不在正常页面"的次数；用于避免横屏/图文帖偶发漏检导致在正常视频上误返回。
   let lostStreak = 0;
+  // 上一条视频的文案（由 readCurrentVideo 记录）；swipeToNextVideo 用它判断「上划后是否仍是同一条」。
+  let lastCaption = "";
+  // 「需人工处理」告警（脱困卡住等）→ 由 getAlert() 上报到管理中心 DeviceStatus.alert（设备列表醒目红点）；
+  // 一旦 recoverIfLost 判回到已知页/成功处理（lostStreak=0）就自动清空。
+  let stuckAlert: string | null = null;
 
   const ensure = async () => {
     if (!getSessionId()) {
@@ -89,7 +111,19 @@ export function createOnDeviceUI(deps: {
     }
     // 停止请求后不再把 TikTok 切前台——否则用户切回 autotk 想停，引擎的下一个动作又把 TikTok 顶上来。
     if (isStopping?.()) return;
-    await activateApp(TIKTOK_BUNDLE_ID);
+    try {
+      await activateApp(TIKTOK_BUNDLE_ID);
+    } catch (e) {
+      // WDA 进程可能已重启 → 旧 session 在设备侧失效（404 invalid session），但本地 sessionId 仍非空，
+      // 上面的 getSessionId() 判空就不会重建 → 后续请求全 404 → 整夜熔断死循环、无法自愈。
+      // 这里清掉本地 session 重建一次再试；若 WDA 真宕机则 createSession 也抛错，退化成原来的批次退避。
+      log(`WDA 会话失效，重建后重试：${e instanceof Error ? e.message : String(e)}`);
+      resetSession();
+      await createSession();
+      await applyFastSettings();
+      if (isStopping?.()) return;
+      await activateApp(TIKTOK_BUNDLE_ID);
+    }
     if (!sized) {
       try {
         size = await windowSize();
@@ -154,11 +188,28 @@ export function createOnDeviceUI(deps: {
 
   // 应用内浮层（TikTok 自有弹窗/底部单，/alert 看不到）：检测→按计划脱困→重检，最多 3 轮。
   const escapeAppPopup = async (): Promise<"none" | "escaped" | "stuck"> => {
+    // 停止后触控全是 no-op，脱困尝试注定失败——直接返回，别空转 3 轮截图+OCR（约 20-30s）。
+    if (isStopping?.()) return "none";
     let detected = false;
     for (let attempt = 0; attempt < 3; attempt++) {
-      const boxes = await ocr(await screenshot());
+      const png = await screenshot();
+      const boxes = await ocr(png);
       const hit = detectAppPopup(boxes);
       if (!hit) {
+        // OCR 无签名命中 → 再用「通用模态卡」纯视觉兜底：TikTok 层出不穷的推广浮层未必有已知词，
+        // 但结构一致（顶部变暗 + 白卡 + 卡片右上黑 ✕）。只在**非评论页**试——评论面板同为白卡+右上✕，
+        // 不能被当浮层关掉。找到 ✕ 就点、回到循环顶重检。
+        if (page !== "comments") {
+          const mc = detectModalCard(decode(png), size.width, size.height);
+          if (mc) {
+            detected = true;
+            log("应用内浮层(模态卡·视觉)：点卡片右上 ✕");
+            onEvent?.("popup_detected", { id: "modal-card" });
+            await tap(mc);
+            await sleep(700);
+            continue;
+          }
+        }
         if (detected) onEvent?.("popup_escaped", { ok: true });
         return detected ? "escaped" : "none";
       }
@@ -166,36 +217,61 @@ export function createOnDeviceUI(deps: {
       log(`应用内浮层(${hit.id})：${hit.matched}`);
       onEvent?.("popup_detected", { id: hit.id });
       // 优先视觉定位卡片右上 ✕（比固定坐标可靠）；关掉了就跳过通用计划，避免已关闭后误点信息流。
+      // 但签名若已给精确 closeAt（✕ 在卡片下方/左上等非标准位），就别再猜右上角——右上误点可能触发
+      // shop「Pick now」/商品或误触，直接走 planDismiss 的 closeAt。
       let closedByIcon = false;
-      try {
-        const cx = detectCardClose(decode(await screenshot()), size.width, size.height);
-        if (cx) {
-          await tap(cx);
-          await sleep(700);
-          closedByIcon = !detectAppPopup(await ocr(await screenshot()));
+      if (!hit.closeAt) {
+        try {
+          const cx = detectCardClose(decode(await screenshot()), size.width, size.height);
+          if (cx) {
+            await tap(cx);
+            await sleep(700);
+            closedByIcon = !detectAppPopup(await ocr(await screenshot()));
+          }
+        } catch {
+          /* 视觉定位失败 → 走通用脱困计划 */
         }
-      } catch {
-        /* 视觉定位失败 → 走通用脱困计划 */
       }
       if (!closedByIcon) {
         for (const s of planDismiss(hit, boxes, size)) {
+          // s.kind==="back" 的左滑不再执行（避免把正常页误判后误跳）——浮层靠点 ✕/文字按钮/点外部/下滑关。
           if (s.kind === "tap") await tap(s.point);
           else if (s.kind === "swipe") await swipe(s.from, s.to, 0.3);
-          else await doSwipeBack();
+          else continue;
           await sleep(600);
         }
       }
     }
-    const still = !!detectAppPopup(await ocr(await screenshot()));
+    const finalPng = await screenshot();
+    const still =
+      !!detectAppPopup(await ocr(finalPng)) ||
+      (page !== "comments" && !!detectModalCard(decode(finalPng), size.width, size.height));
     onEvent?.("popup_escaped", { ok: !still });
     if (still) log("⚠ 应用内浮层多次未能自动关闭");
     return still ? "stuck" : "escaped";
   };
 
+  // OCR 兜底点系统权限弹窗的「拒绝」按钮（Don't Allow / 不允许）。
+  // 用于 WDA /alert **读不到**的系统弹窗——最典型是带地图预览的**定位权限**（由 springboard 渲染，
+  // 会话绑在 TikTok 上读不到 alert 文本/按钮）。养号期一律拒绝权限是安全的（不发布），见到即点。
+  const tapDenyBoxFromOcr = async (boxes: OcrBox[]): Promise<boolean> => {
+    const deny = findPermissionDenyBox(boxes);
+    if (!deny) return false;
+    await tap({ x: (deny.x + deny.w / 2) * size.width, y: (deny.y + deny.h / 2) * size.height });
+    await sleep(600);
+    log("OCR 兜底：点系统权限弹窗「Don't Allow / 不允许」（WDA 读不到，如带地图的定位弹窗）");
+    onEvent?.("popup_detected", { id: "sys-perm-ocr" });
+    return true;
+  };
+
   // iOS 系统权限弹窗：用 WDA alert 接口读按钮、按意图表点（发布需要的相机/麦克风/相册 → 允许，其余拒绝）。
   // 关掉了返回 true。比 OCR 可靠（系统 alert 走 springboard）。
   // **循环清栈**：相机+麦克风等会连续弹两三个，一次调用把当前堆叠的都清掉（最多 4 个防死循环）。
-  const handleSystemAlert = async (): Promise<boolean> => {
+  // opts.ocrDenyFallback：WDA 一个弹窗都没读到时，再用 OCR 找「Don't Allow/不允许」兜底点一次
+  //   （治定位权限这类 WDA 读不到的弹窗）。仅养号脱困路径开启；发布流程不开（相机/麦克风要「允许」，走 WDA）。
+  const handleSystemAlert = async (opts?: { ocrDenyFallback?: boolean }): Promise<boolean> => {
+    // 停止后不再碰系统弹窗（WDA /alert 不分 app——用户此刻可能正看着 autotk 自己的权限对话框）。
+    if (isStopping?.()) return false;
     let any = false;
     for (let i = 0; i < 4; i++) {
       const text = await alertText();
@@ -216,7 +292,43 @@ export function createOnDeviceUI(deps: {
       any = true;
       await sleep(500);
     }
+    // WDA 一个都没读到 → 可能是它读不到的系统弹窗（定位权限带地图）→ OCR 兜底拒绝。
+    if (!any && opts?.ocrDenyFallback) {
+      try {
+        if (await tapDenyBoxFromOcr(await ocr(await screenshot()))) any = true;
+      } catch {
+        /* OCR 不可用 → 放弃兜底 */
+      }
+    }
     return any;
+  };
+
+  // 上划前安全闸：绝不能带着遮挡浮层上划。最凶的是误点广告开的内嵌网页(07)——其「Scroll up for
+  // fullscreen view」手势会把「上划切下一条」直接变成「进外部页面」，一旦进去就更难回来。
+  // 一次截图+OCR 兼查：① WDA 系统弹窗；② WDA 读不到的权限弹窗(定位)靠 OCR 点「不允许」；③ 应用内浮层
+  // (07 靠 closeAt 点左上✕；**绝不 swipe up**)。处理了任一 → 返回 true，本轮就不上划，交下一轮重读。
+  const guardBeforeSwipe = async (): Promise<boolean> => {
+    if (await handleSystemAlert()) return true; // WDA 能读的系统弹窗
+    let boxes: OcrBox[];
+    try {
+      boxes = await ocr(await screenshot());
+    } catch {
+      return false; // OCR 不可用 → 不拦（退回原始上划行为）
+    }
+    if (await tapDenyBoxFromOcr(boxes)) return true; // 定位等 WDA 读不到的权限弹窗
+    const hit = detectAppPopup(boxes);
+    if (hit) {
+      log(`上划前安全闸：应用内浮层(${hit.id}) → 关闭，不上划`);
+      onEvent?.("popup_detected", { id: hit.id });
+      // 有 closeAt（07 左上✕等非标准位）优先点；否则走通用计划。planDismiss 里没有 swipe up。
+      for (const s of planDismiss(hit, boxes, size)) {
+        if (s.kind === "tap") await tap(s.point);
+        else if (s.kind === "swipe") await swipe(s.from, s.to, 0.3);
+      }
+      await sleep(700);
+      return true;
+    }
+    return false;
   };
 
   // 轮询清系统权限弹窗最多 maxSeconds 秒：出现就清（含堆叠），连续两次没有就提前返回。
@@ -224,6 +336,7 @@ export function createOnDeviceUI(deps: {
   const settleAlerts = async (maxSeconds: number): Promise<void> => {
     let idle = 0;
     for (let i = 0; i < maxSeconds * 2; i++) {
+      if (isStopping?.()) return; // 停止后立即退出轮询（handleSystemAlert 也已不再点弹窗）
       if (await handleSystemAlert()) {
         idle = 0;
         continue;
@@ -238,12 +351,9 @@ export function createOnDeviceUI(deps: {
   const backToFeedBase = async (): Promise<void> => {
     await ensure();
     await handleSystemAlert();
-    for (let i = 0; i < 3; i++) {
-      const x = detectCommentCloseButton(await shot(), size.width, size.height);
-      if (!x) break;
-      await tap(x);
-      await sleep(450);
-    }
+    // 关残留评论区并确认回到已知页；旧版这里直接连点 detectCommentCloseButton 3 次、无「误进地点页则脱困」
+    // 兜底（比 rawCloseComments 还危险，且被发布前复位复用），统一改走安全闭环。
+    await closeCommentPanelSafely();
     await dismissPopup();
     page = "feed";
   };
@@ -258,15 +368,45 @@ export function createOnDeviceUI(deps: {
     await sleep(800);
   };
 
-  // 当前是否在"已知/正常"页面：视频流（有动作栏）或评论区（有关闭✕）。
+  // 当前是否在"已知/正常"页面：视频流（有动作栏）或评论/底部面板（含空评论弹键盘态）。
   const onKnownPage = (img: ReturnType<typeof decode>): boolean => {
-    if (detectCommentCloseButton(img, size.width, size.height)) return true;
+    // 评论/底部面板：找到白色面板顶横边即算——**不要求找到 ✕**（空评论区自动弹键盘时 ✕ 检测不到，
+    // 但面板顶横边仍在；旧版用「有 ✕」判会把这态误判为「不在正常界面」）。
+    if (detectCommentPanel(img, size.width, size.height)) return true;
+    // 视频流：右栏 **≥2 个白色图标带** 即算「像视频流」——不要求满 4 个。
+    // 旧版用 detectRail（严格 4 带）判定：点赞变红/已收藏/一点噪声少一带，正常视频页就被误判为异常
+    // → 误告警率高。改用 railBandCenters（本就容忍带数≠4，与运行时坐标吸附同一套）+ 放宽到 ≥2。
     try {
-      detectRail(img, size.width, size.height); // 仅作布尔判断（有没有动作栏）
-      return true;
+      return railBandCenters(img, size.width, size.height).length >= 2;
     } catch {
       return false;
     }
+  };
+
+  // 关评论面板并**确认真回到已知页**：每轮找到关闭 ✕ 就点；找不到 ✕ 时——在已知页(视频流/评论)才算
+  // 关成功返回，否则说明关的过程中被误点进了 pushed 页（最典型：评论顶端地点横幅 → 地点页），立即左滑
+  // 返回脱困。最多 3 轮，仍未回则从面板中部下滑 dismiss 兜底 + 最后再校验一次。
+  // 这补上了旧版的致命缺口：旧版「detectCommentCloseButton 返回 null 就当已回 feed」——但地点页同样没有
+  // 白 ✕，两者被混为一谈，于是误进地点页却把 page 置成 'feed'，状态机自信卡死。
+  const closeCommentPanelSafely = async (): Promise<void> => {
+    // 关评论面板：**循环从面板顶部往下拖，直到回到视频流（右栏≥2 白带）为止**。
+    // 用"回到视频流"作成功标志、而非"检测不到评论 ✕"——空评论区会自动聚焦输入框弹键盘，此时 ✕ 检测不到，
+    // 用"没✕"会误以为已离开面板而提前退出、其实还卡在评论区。每次下拖：先收键盘、再关面板（拖到底）。
+    // 纯竖直下滑，不会误触链接/进商店/地点页。
+    for (let i = 0; i < 4; i++) {
+      const img = await shot();
+      if (railBandCenters(img, size.width, size.height).length >= 2) return; // 已回视频流
+      await swipe(
+        { x: size.width * 0.5, y: size.height * 0.35 },
+        { x: size.width * 0.5, y: size.height * 0.96 },
+        0.25,
+      );
+      await sleep(500);
+    }
+    // 拖了几次仍没回视频流 → 可能误入别的页；只告警、不左滑。
+    stuckAlert = "关评论后疑似未回到视频流，需人工处理";
+    log("⚠ 关评论多次下滑仍未回到视频流；不自动脱困，已通知管理中心");
+    onEvent?.("stuck_after_close_comments", {});
   };
 
   const rawOpenComments = async () => {
@@ -274,21 +414,10 @@ export function createOnDeviceUI(deps: {
     await sleep(900);
   };
   const rawCloseComments = async () => {
-    // 空评论区会自动聚焦输入框、弹键盘挡住关闭。先点面板标题区（在输入框与列表之上，安全）收起键盘，
-    // 再走关闭流程——否则 ✕ 会被键盘干扰，得手动先关键盘再关面板。
-    await tap({ x: size.width * 0.5, y: size.height * 0.3 });
-    await sleep(350);
-    for (let i = 0; i < 3; i++) {
-      const x = detectCommentCloseButton(await shot(), size.width, size.height);
-      if (!x) return;
-      await tap(x);
-      await sleep(400);
-    }
-    await swipe(
-      { x: size.width * 0.5, y: size.height * 0.3 },
-      { x: size.width * 0.5, y: size.height * 0.95 },
-      0.3,
-    );
+    // 关闭 ✕ 在「评论 N | 评价 M | ✕」tab 栏（detectCommentCloseButton 已下探到那儿并跳过顶端地点横幅）。
+    // 直接点真 ✕ 即关面板并收键盘（✕ 在 tab 栏、在键盘之上，不被遮挡）；关后校验真回到已知页，误进地点页
+    // 即时脱困——不再像旧版那样「找不到 ✕ 就当已回 feed」，也不再先盲点 0.3H（实测落在面板外的蒙层上）。
+    await closeCommentPanelSafely();
   };
 
   const goTo = async (target: Page) => {
@@ -307,11 +436,13 @@ export function createOnDeviceUI(deps: {
 
   return {
     getPage: () => page,
+    getAlert: () => stuckAlert,
 
     async openForYou() {
       await ensure();
       page = "feed";
       railCache = null;
+      lastCaption = ""; // 进新流 → 上一条文案作废，首次上划不做「同一条」判定
       log("已确保 TikTok 在前台（推荐页）");
     },
 
@@ -323,16 +454,61 @@ export function createOnDeviceUI(deps: {
       await dismissPopup(); // 切流概率弹登录/passkey 窗
       page = "feed"; // 关注流与推荐流操作一致，视作 feed
       railCache = null;
+      lastCaption = "";
       log("已切到「关注」视频流");
     },
 
+    // 上划切下一条，并**验证真的划动了**：
+    //  上划后读新文案，若与上一条**高度相似**（looksSameCaption），说明多半没划动（被弹窗/可交互元素
+    //  拦截了手势）→ 换个位置/加长再划，最多试 3 个位置；全试完仍是同一条 → 大概率不是上划问题，而是
+    //  困在某个弹窗里 → 启动脱困（关系统弹窗 + 应用内浮层）。
+    //  ⚠️ 判定依赖 OCR：上一条文案为空/过短（如未接 VisionOcr、或该视频无文案）时**无法判定**，
+    //  自动退回旧的「单次上划」行为，绝不会陷入「永远判同一条 → 每次都脱困」。
     async swipeToNextVideo() {
       await ensure();
       await goTo("feed");
+      // 上划前安全闸：有系统弹窗(定位)/内嵌网页(07)等遮挡浮层先关掉，绝不带浮层上划——
+      // 尤其 07 上划=进外部页。关掉了本轮就不上划，交下一轮重读。
+      if (await guardBeforeSwipe()) {
+        lastCaption = ""; // 页面态已不确定 → 清空，下次 readCurrentVideo 重新同步
+        return;
+      }
       const { width: w, height: h } = size;
-      await swipe({ x: w * 0.5, y: h * 0.72 }, { x: w * 0.5, y: h * 0.26 }, 0.25);
-      railCache = null; // 换视频 → 右栏可能整体上下移，下次动作重测
-      log("上滑切换视频");
+      // 上划位置变体：验证疑似没划动时依次换位置/加长重试。
+      const variants = [
+        { x1: 0.5, y1: 0.66, x2: 0.5, y2: 0.26 }, // 标准（中列，起点上移一点，避开底部导航/输入区）
+        { x1: 0.7, y1: 0.74, x2: 0.7, y2: 0.2 }, // 右列、加长
+        { x1: 0.3, y1: 0.74, x2: 0.3, y2: 0.2 }, // 左列、加长
+      ];
+      const before = lastCaption;
+      // 上一条文案够长才谈得上「是否同一条」；停止请求时不做验证（触控已 no-op，验证注定失败还白读 OCR）。
+      const canVerify = isCaptionComparable(before) && !isStopping?.();
+
+      for (let attempt = 0; attempt < variants.length; attempt++) {
+        const v = variants[attempt];
+        await swipe({ x: w * v.x1, y: h * v.y1 }, { x: w * v.x2, y: h * v.y2 }, 0.25);
+        railCache = null; // 换视频 → 右栏可能整体上下移，下次动作重测
+
+        if (!canVerify) {
+          log("上滑切换视频");
+          return; // 无法验证 → 旧行为，单次上划即返回
+        }
+        await sleep(500); // 等新页文案渲染再读（真机可调）
+        const after = captionFromBoxes(await ocr(await screenshot()));
+        if (!looksSameCaption(before, after)) {
+          lastCaption = after; // 确实换了一条
+          log(attempt === 0 ? "上滑切换视频" : `上滑切换视频（换第 ${attempt + 1} 个位置后成功）`);
+          return;
+        }
+        log(`上划疑似未生效（文案高度相似），换位置重试 ${attempt + 1}/${variants.length}`);
+      }
+
+      // 多次换位置仍是同一条 → 大概率困在弹窗里 → 脱困。
+      log("⚠ 多次上划文案仍相似，疑似困在弹窗，尝试脱困");
+      onEvent?.("swipe_stuck_escape", {});
+      await handleSystemAlert();
+      await escapeAppPopup();
+      lastCaption = ""; // 状态已不确定 → 清空，下次 readCurrentVideo 重新同步
     },
 
     async readCurrentVideo(): Promise<VideoInfo> {
@@ -340,6 +516,7 @@ export function createOnDeviceUI(deps: {
       await goTo("feed");
       const boxes = await ocr(await screenshot());
       const caption = captionFromBoxes(boxes);
+      lastCaption = caption; // 记录当前条文案，供下次 swipeToNextVideo 判「是否划动」
       const tags = caption
         .split(/\s+/)
         .map((t) => t.replace(/^#/, ""))
@@ -391,18 +568,29 @@ export function createOnDeviceUI(deps: {
       await ensure();
       await goTo("comments");
       const png = await screenshot();
-      heartCache = detectCommentHearts(decode(png), size.width, size.height); // 点赞位置（已验证）
-      commentCache = parseComments(await ocr(png)); // 评论文字+作者（#3，阈值待真机调）
+      const hearts = detectCommentHearts(decode(png), size.width, size.height); // 点赞位置（已验证）
+      const parsed = parseComments(await ocr(png)); // 评论文字+作者（#3，阈值待真机调）
+      // 近似对齐：第 i 个爱心 ↔ 第 i 条解析评论（都按从上到下）。广告条（置顶蓝字「Learn more」等，
+      // 见 isAdComment）绝不能互动——把它对应的爱心与评论「成对」丢掉，保持后续索引对齐。
+      const n = Math.max(hearts.length, parsed.length);
+      const rows = Array.from({ length: n }, (_, i) => ({
+        heart: hearts[i],
+        pc: parsed[i],
+        isAd: parsed[i] ? isAdComment(parsed[i], i) : false, // i = 从上到下原始位置，判置顶
+      }));
+      const kept = rows.filter((r) => !r.isAd);
+      const droppedAds = n - kept.length;
+      heartCache = kept.map((r) => r.heart);
+      commentCache = kept.map((r) => r.pc).filter(Boolean) as ParsedComment[];
       log(
-        `评论解析：${commentCache.length} 条` +
+        `评论解析：${kept.length} 条` +
+          (droppedAds > 0 ? `（跳过 ${droppedAds} 条广告）` : "") +
           (commentCache[0] ? `（例：${commentCache[0].author} - ${commentCache[0].text.slice(0, 24)}）` : ""),
       );
-      // 近似对齐：第 i 个爱心 ↔ 第 i 条解析评论（都按从上到下）。
-      const n = Math.max(heartCache.length, commentCache.length);
-      return Array.from({ length: n }, (_, i) => ({
+      return kept.map((r, i) => ({
         index: i,
-        text: commentCache[i]?.text ?? "",
-        author: commentCache[i]?.author,
+        text: r.pc?.text ?? "",
+        author: r.pc?.author,
       }));
     },
 
@@ -434,19 +622,21 @@ export function createOnDeviceUI(deps: {
     },
 
     async search(keyword: string) {
+      // 慢网络易出错：搜索每步操作后固定停 2s，给页面切换/网络请求留足时间，避免在半加载的页面上误点。
       await ensure();
       await goTo("feed");
+      await sleep(2000);
       await tap(A("searchIcon"));
-      await sleep(1000);
+      await sleep(2000);
       await typeText(keyword);
-      await sleep(700);
+      await sleep(2000);
       await tap(A("searchSubmit"));
-      await sleep(10000);
-      await tap(A("searchFirstResult"));
-      await sleep(1500);
+      await sleep(10000); // 等结果加载（本就 >2s）
+      await tap(A("searchSecondResult")); // 点第二个结果——第一个大概率是广告位，跳过
+      await sleep(2000);
       page = "feed";
       railCache = null;
-      log(`已搜索「${keyword}」并进入结果视频流`);
+      log(`已搜索「${keyword}」并进入结果视频流（跳过第一个广告位、从第二个进）`);
     },
     // 真机无法可靠数搜索结果数；返回大值，让调用方的 maxResults 决定遍历多少条。
     countSearchResults: async () => 999,
@@ -454,11 +644,13 @@ export function createOnDeviceUI(deps: {
       await ensure();
       await goTo("feed");
       if (index > 0) {
+        if (await guardBeforeSwipe()) return; // 上划前安全闸：有系统弹窗/内嵌网页(07)先关，绝不带浮层上划
         await swipe(
           { x: size.width * 0.5, y: size.height * 0.72 },
           { x: size.width * 0.5, y: size.height * 0.26 },
           0.25,
         );
+        await sleep(2000); // 慢网络：等下一个结果视频加载再读，避免读到半加载的帧
         railCache = null;
         log(`上滑到第 ${index + 1} 个结果`);
       }
@@ -485,6 +677,7 @@ export function createOnDeviceUI(deps: {
       } else {
         // 后续上滑切下一条作品（同搜索结果流）。
         await goTo("feed");
+        if (await guardBeforeSwipe()) return; // 上划前安全闸：防中途弹权限/浮层被带上划
         await swipe(
           { x: size.width * 0.5, y: size.height * 0.72 },
           { x: size.width * 0.5, y: size.height * 0.26 },
@@ -526,19 +719,23 @@ export function createOnDeviceUI(deps: {
 
     async recoverIfLost(): Promise<void> {
       // 先处理 iOS 系统权限弹窗（新号高发）——关掉后多半就回正常页了。
-      if (await handleSystemAlert()) {
+      // ocrDenyFallback：定位权限带地图、WDA 读不到 → 用 OCR 找「不允许」兜底点。
+      if (await handleSystemAlert({ ocrDenyFallback: true })) {
         lostStreak = 0;
+        stuckAlert = null; // 回到已知页/已处理 → 清管理中心告警
         return;
       }
       // 再处理应用内浮层（TikTok 自有弹窗/底部单）——能自动关就关掉继续。
       if ((await escapeAppPopup()) !== "none") {
         lostStreak = 0;
+        stuckAlert = null; // 回到已知页/已处理 → 清管理中心告警
         return;
       }
       const png = await screenshot();
       const img = decode(png);
       if (onKnownPage(img)) {
-        lostStreak = 0; // 视频流 / 评论区 → 正常
+        lostStreak = 0;
+        stuckAlert = null; // 回到已知页/已处理 → 清管理中心告警 // 视频流 / 评论区 → 正常
         return;
       }
       // 非视频流/评论区：先看是不是已知弹窗（登录/passkey）→ 关掉，算已处理。
@@ -548,6 +745,7 @@ export function createOnDeviceUI(deps: {
         await sleep(700);
         log("关闭登录/passkey 弹窗");
         lostStreak = 0;
+        stuckAlert = null; // 回到已知页/已处理 → 清管理中心告警
         return;
       }
       lostStreak++;
@@ -556,14 +754,13 @@ export function createOnDeviceUI(deps: {
         log("可能离开正常页面（观察中，暂不返回）");
         return;
       }
-      // 连续 ≥2 次都不在正常页面 → 确实卡住 → 左滑返回脱困（回到已知页即停，最多 3 下）。
-      for (let i = 0; i < 3; i++) {
-        log("⚠ 连续多次未在正常页面，左滑返回脱困");
-        await doSwipeBack();
-        if (onKnownPage(decode(await screenshot()))) {
-          lostStreak = 0;
-          return;
-        }
+      // 连续 ≥2 次仍不在正常页面 → **不再自动左滑脱困**：onKnownPage 有时把正常页误判为异常，盲目左滑
+      // 反而会跳到别的页面。改为**只记日志 + 通知管理中心**，交人工/上层处理；不做任何触控、不改 page。
+      // 只在「刚判定卡住」（lostStreak==2）时报一次，避免每批刷屏（lostStreak 会持续增长）。
+      if (lostStreak === 2) {
+        stuckAlert = "疑似卡在未知页面，需人工处理";
+        log("⚠ 疑似卡在未知页面（连续多次未在正常页面）；不自动左滑（避免误判正常页而误跳），已通知管理中心待处理");
+        onEvent?.("stuck_unknown_page", {});
       }
     },
 
@@ -590,10 +787,16 @@ export function createOnDeviceUI(deps: {
      * 必须真机 calibrate 覆盖后才可靠——否则会点偏（见 anchors.ts publish* 与收尾清单）。
      */
     async publishVideo(_assetUri: string, caption: string) {
+      // 停止守卫：发布期间用户点了停止 → 触控已全部变 no-op，若不检查会「八步空走」伪报发布成功。
+      // 每步开头查一次，命中就抛错中止，上层如实回报 failed（管理中心可重派）。
+      const st = (step: string) => {
+        if (isStopping?.()) throw new Error(`已请求停止，发布中止（${step}）`);
+      };
       // ⚠️ 关键：发布必须从「能看到底部导航 [+]」的干净基地开始。下发时引擎可能停在**任意页**——
       // 评论区/搜索结果/作品详情/个人主页/关注流……直接点 [+] 会点偏。先复位：
       //   1) 关系统权限弹窗 + 应用内浮层；2) 关残留评论区；3) 退出「搜索结果/作品详情」等看不到底部
       //   导航的 pushed 页（不在已知页就左滑返回，最多 4 次）。这样无论从哪儿发起，都先回到基地。
+      st("发布⓪");
       log("发布⓪：复位到基地（关评论/浮层、退出内层页）");
       await backToFeedBase(); // 与 recoverToFeed 共用：关系统弹窗 + 评论区 + 登录/passkey 浮层
       // backToFeedBase 不退 pushed 页；发布必须能看到底部 [+]，故补一步：不在已知页(视频流/评论)就左滑返回，最多 4 次。
@@ -604,31 +807,38 @@ export function createOnDeviceUI(deps: {
       }
       await settleAlerts(2);
       // 以下每步打日志（卡在哪一步一眼看出→调对应 publish 锚点）；权限用 settleAlerts 轮询清，有没有弹窗都不卡。
+      st("发布①");
       log("发布①：打开创作页（+）");
       await tap(A("publishCreate"));
       await sleep(1500);
       await settleAlerts(3); // 相机/麦克风权限（点「好」）
+      st("发布②");
       log("发布②：进相册上传（左下相册图标）");
       await tap(A("publishUpload"));
       await sleep(1200);
       await settleAlerts(3); // 相册权限（点「允许访问所有照片」）
+      st("发布③");
       log("发布③：选相册最新一条（= 刚下载的视频）");
       await tap(A("publishAlbumFirst"));
       await sleep(1200);
       await settleAlerts(2);
+      st("发布④");
       log("发布④：下一步（预览页）");
       await tap(A("publishNext"));
       await sleep(2500);
+      st("发布⑤");
       log("发布⑤：下一步（编辑页）");
       await tap(A("publishNext"));
       await sleep(1500);
       if (caption) {
+        st("发布⑥");
         log("发布⑥：填写描述");
         await tap(A("publishCaption"));
         await sleep(600);
         await typeText(caption);
         await sleep(500);
       }
+      st("发布⑦");
       log("发布⑦：点「发布」");
       await tap(A("publishPost"));
       await sleep(2500);

@@ -9,7 +9,8 @@ export type AnchorName =
   | "popupClose" // 登录/passkey 弹窗右上 ✕
   | "searchIcon" // 顶栏放大镜
   | "searchSubmit" // 搜索提交（红色 Search）
-  | "searchFirstResult" // 结果页第一个视频
+  | "searchFirstResult" // 结果页第一个视频（第一个大概率是广告位，实际改点第二个）
+  | "searchSecondResult" // 结果页第二个视频（跳过第一个广告位）
   | "replyEntry" // 某条评论的「Reply」入口（仅用 x，y 随评论行）
   | "commentInput" // 底部评论输入框
   | "profileTab" // 底部「我」Tab
@@ -31,6 +32,8 @@ const RATIOS: Record<AnchorName, { rx: number; ry: number }> = {
   searchIcon: { rx: (390 - 28) / 390, ry: 69 / 844 },
   searchSubmit: { rx: (390 - 43) / 390, ry: 69 / 844 },
   searchFirstResult: { rx: 0.25, ry: 0.255 },
+  searchSecondResult: { rx: 0.72, ry: 0.255 }, // 右上（双列结果第二个）；第一个常是广告，跳过。异形屏真机可在 devices.json 覆盖
+
   replyEntry: { rx: 0.25, ry: 0 }, // 仅用 x；y 由具体评论行给
   commentInput: { rx: 0.28, ry: 0.944 },
   profileTab: { rx: 0.9, ry: 0.96 },

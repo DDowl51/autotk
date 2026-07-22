@@ -9,6 +9,7 @@ export {
 export {
   createSession,
   deleteSession,
+  resetSession,
   getSessionId,
   applyFastSettings,
   TIKTOK_BUNDLE_ID,

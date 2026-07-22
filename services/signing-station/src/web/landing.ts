@@ -55,6 +55,7 @@ export function renderLanding(i: LandingInput): string {
         btn.disabled=false; statusEl.textContent='登记完成，点上面的按钮安装'; return;
       }
       if(j.state==='pool-full'){ statusEl.textContent='暂无可用名额，请联系管理员添加账号'; return; }
+      if(j.state==='processing'){ statusEl.textContent='本机已登记，但苹果正在处理中（新账号首次约需几小时~一天）。处理完成后，重新扫码打开本页即可安装。'; return; }
       if(j.state==='error'){ statusEl.textContent='登记失败：'+(j.error||'未知错误'); return; }
       statusEl.textContent='正在登记本机…'; setTimeout(poll,2000);
     }).catch(function(){ setTimeout(poll,2000) });

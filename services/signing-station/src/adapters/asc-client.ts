@@ -84,32 +84,47 @@ export interface AscClientOpts {
 }
 
 export class AscClient implements AscPort {
-  private readonly clients = new Map<string, Promise<AscClientFns>>();
-
   constructor(
     private readonly resolve: AscAccountResolver,
     private readonly opts: AscClientOpts,
   ) {}
 
+  // ⚠️ ASC 的 JWT 最长只活 20 分钟、此库不自动续期，所以【绝不能缓存 client】——
+  //    缓存 = 复用同一枚 token，20 分钟后所有 ASC 请求 401（表现：preflight/首台成功，
+  //    隔一会儿再登记就 401「bearer token expired」）。每次现造新 client、现签新 JWT；
+  //    一次登记内的多步 ASC 调用共用这枚新鲜 token（都在几秒内完成，够用）。
   private client(accountName: string): Promise<AscClientFns> {
-    let c = this.clients.get(accountName);
-    if (!c) {
-      const cfg = this.resolve(accountName);
-      c = api({ issuerId: cfg.issuerId, apiKey: cfg.keyId, privateKey: cfg.privateKey });
-      this.clients.set(accountName, c);
-    }
-    return c;
+    const cfg = this.resolve(accountName);
+    return api({ issuerId: cfg.issuerId, apiKey: cfg.keyId, privateKey: cfg.privateKey });
   }
 
   async registerDevice(accountName: string, udid: string, deviceName = "device"): Promise<void> {
     const c = await this.client(accountName);
     try {
       await c.create(buildRegisterDeviceArgs(deviceName, udid));
+      console.log(`[asc] 注册设备 ${udid} → 成功`);
     } catch (e) {
       // 已注册（409/重复）视为成功，幂等。其余错误抛出。
       const msg = e instanceof Error ? e.message : String(e);
-      if (!/already exists|409|duplicate|ENTITY_ERROR.*udid/i.test(msg)) throw e;
+      if (/already exists|409|duplicate|ENTITY_ERROR.*udid/i.test(msg)) {
+        console.log(`[asc] 注册设备 ${udid} → 已存在（幂等，跳过）`);
+      } else {
+        console.error(`[asc] 注册设备 ${udid} → 失败：${msg}`);
+        throw e;
+      }
     }
+  }
+
+  async deviceEnabled(accountName: string, udid: string): Promise<boolean> {
+    const c = await this.client(accountName);
+    const devices = (await c.fetchJson("devices?limit=200")) as AscResource[];
+    const target = udid.trim().toLowerCase();
+    const d = devices.find((x) => String(x.attributes?.["udid"] ?? "").toLowerCase() === target);
+    const status = String(d?.attributes?.["status"] ?? "未找到");
+    if (status !== "ENABLED") {
+      console.log(`[asc] 设备 ${udid} 状态=${status}（未 ENABLED，Apple 处理中，暂不出包）`);
+    }
+    return status === "ENABLED";
   }
 
   async regenerateProfile(accountName: string, app: AppConfig): Promise<ProfileRef> {
@@ -123,6 +138,12 @@ export class AscClient implements AscPort {
     // 该账号当前全部设备 → 描述文件应包含它们。
     const devices = (await c.fetchJson("devices?limit=200")) as AscResource[];
     const deviceIds = devices.map((d) => d.id);
+    const devStatus: Record<string, number> = {};
+    for (const d of devices) {
+      const s = String(d.attributes?.["status"] ?? "?");
+      devStatus[s] = (devStatus[s] ?? 0) + 1;
+    }
+    console.log(`[asc] ${app.key} 重生 profile：取到 ${devices.length} 台设备 ${JSON.stringify(devStatus)}`);
 
     const bundleIds = (await c.fetchJson("bundleIds?limit=200")) as AscResource[];
     const bundleRes = findBundleIdResource(bundleIds, identifier);
@@ -138,9 +159,16 @@ export class AscClient implements AscPort {
     const existing = profiles.find((p) => p.attributes?.["name"] === name);
     if (existing) await c.remove({ type: "profiles", id: existing.id });
 
-    const created = await c.create(
-      buildCreateProfileArgs({ name, profileType, bundleIdResourceId: bundleRes.id, certificateIds, deviceIds }),
-    );
+    let created;
+    try {
+      created = await c.create(
+        buildCreateProfileArgs({ name, profileType, bundleIdResourceId: bundleRes.id, certificateIds, deviceIds }),
+      );
+    } catch (e) {
+      console.error(`[asc] ${app.key} 建 profile 失败（${deviceIds.length} 台设备 / ${certificateIds.length} 证书）：${e instanceof Error ? e.message : String(e)}`);
+      throw e;
+    }
+    console.log(`[asc] ${app.key} profile 已建：请求含 ${deviceIds.length} 台设备、${certificateIds.length} 证书`);
     const content = created.attributes?.["profileContent"];
     if (typeof content !== "string") throw new Error("ASC 创建 profile 未返回 profileContent");
 

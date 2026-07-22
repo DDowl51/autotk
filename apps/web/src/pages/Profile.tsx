@@ -1,6 +1,6 @@
 import { Card, Descriptions, Form, Input, Button, Tag, App as AntApp } from "antd";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { api, getUsername, getRole } from "../api";
+import { api, getUsername, getRole, roleLabel } from "../api";
 import type { Me } from "../types";
 import { PageHeader } from "../ui";
 
@@ -25,11 +25,20 @@ export function Profile() {
         <Descriptions column={1} colon>
           <Descriptions.Item label="用户名">{username}</Descriptions.Item>
           <Descriptions.Item label="角色">
-            <Tag color={role === "ADMIN" ? "geekblue" : "default"}>{role === "ADMIN" ? "管理员" : "分销"}</Tag>
+            <Tag color={role === "ADMIN" ? "geekblue" : role === "OPERATOR" ? "purple" : "default"}>{roleLabel(role)}</Tag>
           </Descriptions.Item>
           {role === "USER" && (
             <Descriptions.Item label="发码配额">
               {me.data?.codeQuota == null ? "不限" : `${me.data.used ?? 0} / ${me.data.codeQuota}`}
+            </Descriptions.Item>
+          )}
+          {role === "OPERATOR" && (
+            <Descriptions.Item label="额度池">
+              {me.data?.codeQuota == null
+                ? "不限"
+                : `总额 ${me.data.codeQuota}｜自己已发 ${me.data.used ?? 0}｜已分配 ${me.data.allocated ?? 0}｜剩余可分配 ${
+                    me.data.codeQuota - (me.data.used ?? 0) - (me.data.allocated ?? 0)
+                  }`}
             </Descriptions.Item>
           )}
         </Descriptions>

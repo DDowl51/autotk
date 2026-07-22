@@ -5,6 +5,7 @@ build/
 .expo/
 tools/dist/
 *.tsbuildinfo
+__pycache__/
 
 # ---- native (RN/Expo) ----
 # 锚定到仓库根，避免误伤 apps/mobile/modules/*/ios|android/ 的原生模块源码（必须入库）。
@@ -15,6 +16,7 @@ tools/dist/
 # ---- env / local config ----
 .env
 .env.*
+!.env.example
 *.log
 # signing-station real config carries credential paths; only the example is tracked
 config.json
@@ -36,3 +38,39 @@ data/
 *.docx
 *.PNG
 *.pdf
+# 根目录零散图片(如 装机二维码.png)——媒体资料,不入库;子目录测试基准图不受影响
+/*.png
+
+# ---- runtime data / dev leftovers (contain real device IDs; never commit / never ship) ----
+hub-data/
+apps/mobile/chi_sim.traineddata
+apps/mobile/adaptation/screenshots/
+
+# ---- OTA update-server: code-signing private key + published update payloads (never commit) ----
+apps/mobile/code-signing/*private*
+apps/mobile/code-signing/*.key
+services/update-server/data/
+services/update-server/updates/
+
+# electron-builder 打包产物
+release/
+apps/desktop/release/
+apps/desktop/build/
+
+# PyInstaller / Python 打包产物（激活WDA 工具）
+apps/mobile/tools/build/
+apps/mobile/tools/dist/
+apps/mobile/tools/*.spec
+apps/mobile/tools/pip-build.log
+apps/mobile/tools/__pycache__/
+
+# 装机台母包/开发者镜像（二进制 dev 产物，勿提交）
+services/signing-station/apps/
+# 各包 node:test 垫片临时文件（run.sh 生成，异常退出会残留）
+_tsconfig.test.json
+**/test/_shims.d.ts
+
+# master 真实设备配置表（含真 UDID/IP，勿提交；示例是 devices.example.json）+ 冒烟截图
+services/master/devices.json
+services/master/*.local.json
+services/master/smoke-shot.png

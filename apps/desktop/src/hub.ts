@@ -1,6 +1,7 @@
 import { io, type Socket } from "socket.io-client";
 import {
   EVT,
+  type ControlAction,
   type DeviceInfo,
   type DeviceLogsMsg,
   type ConfigPatch,
@@ -66,4 +67,9 @@ export function pushConfig(
   patch: ConfigPatch,
 ): void {
   socket?.emit(EVT.configPush, { jobId, deviceIds, patch });
+}
+
+/** 批量远程启停一组设备(pause=停止/resume=启动)。 */
+export function pushControl(socket: Socket | null, deviceIds: string[], action: ControlAction): void {
+  if (deviceIds.length > 0) socket?.emit(EVT.controlPush, { deviceIds, action });
 }

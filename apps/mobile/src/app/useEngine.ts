@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DEFAULT_PARAMS, type AutomationParams } from "../params";
 import { createEngine, type Engine, type RunStats } from "../engine";
+import { versionBanner } from "./versionInfo";
 import { emptyStats } from "../engine/types";
 import { createMockUI } from "../engine/mockUI";
 import { createFixedReplyGenerator } from "../gen";
@@ -13,14 +14,14 @@ import { getStoredHubUrl, setStoredHubUrl } from "../hub/hubUrlStore";
 import { startHubDiscovery } from "../hub/discovery";
 import { candidateUrls, hostOf } from "../hub/hubUrl";
 import { probeHub } from "../hub/probe";
-import { resolveDeviceName } from "../hub/deviceName";
+import { resolveDeviceName, uniqueDeviceName } from "../hub/deviceName";
 import { buildStatus, mapBattery } from "../hub/reporter";
 import { applyConfigPatch } from "../hub/configInbox";
 import { batteryInfo } from "../wda";
 import type { PublishTaskMsg, DeviceBattery } from "../hub/protocol";
 import { PublishQueue, runPublish } from "../publish/publishQueue";
 import { downloadToAlbum } from "../publish/downloader";
-import { saveBytesToAlbum } from "../publish/album";
+import { saveUrlToAlbum } from "../publish/album";
 import { resolveDeviceId } from "../license/deviceId";
 import { saveParams } from "./paramsStorage";
 import { track } from "../telemetry";
@@ -117,27 +118,45 @@ export function useEngine(initialParams?: AutomationParams): EngineState {
     // 占用 WDA：养号暂停开新批次（isPaused），并等它当前批次跑完（isBusy）再发布，
     // 保证养号与发布对同一手机完全串行、绝不并发驱动。
     publishingRef.current = true;
-    // 发布是「主动驱动手机」的意图：若之前养号刚停（stoppingRef=true），必须清掉，
-    // 否则真机 UI 的 ensure() 会跳过 activateApp(TikTok)，发布卡在后台不动。
-    stoppingRef.current = false;
     try {
-      // 后台保活：发布常在没启动养号时由 Hub 直接触发，一旦切到 TikTok 前台，autotk 退后台会被
-      // iOS 挂起、发布中途卡死。与启动养号同理，先起保活（Expo Go/无原生模块时抛错→静默忽略）。
-      try {
-        await startKeepAlive();
-      } catch {
-        // 保活模块未编入（Expo Go/测试包）→ 忽略，dev build 才有此能力
-      }
+      // 先等养号当前批次收尾（isBusy）再动手。注意必须在清停止信号**之前**等：
+      // 用户刚点停止时引擎还在收尾，若这时清早了，收尾中的残余触控会重新落地、
+      // ensure() 又把 TikTok 顶回前台——正是停止守卫要杜绝的行为。
       while (engineRef.current?.isBusy()) await new Promise((r) => setTimeout(r, 400));
       let item = publishQueueRef.current.nextPending();
+      let kaLogged = false; // 保活状态每轮 drain 只记一次，避免逐条刷屏
       while (item) {
         const task = item.task;
+        // 每条任务都是操作员的新意图 → 清停止信号。只在 drain 入口清一次不够：用户点过停止后、
+        // 排空中途新到的任务会被残留信号误杀（下载白跑、发布⓪即抛「已请求停止」报 failed）。
+        stoppingRef.current = false;
+        // 每条任务发布前都确保保活开启（不能只在 drain 入口起一次：stop() 会杀保活）。
+        // 【关键】发布常在**未跑养号**时由 Hub 直接触发；若保活没真生效（只拿到「使用App时」/
+        // 原生模块未编入），autotk 一转后台就被 iOS 挂起 → 下载卡在 downloading、或发布⓪ 卡住，
+        // 且此前是**静默吞掉**导致买家/卖家无从排查（真机实见：必须手动切回 autotk 才继续）。
+        // 故这里**验证并打日志**（对齐养号 start() 的可见性），保活没生效就大声告警而非闷着卡死。
+        try {
+          const ka = await startKeepAlive();
+          if (!kaLogged) {
+            kaLogged = true;
+            pushLog(
+              ka.always
+                ? "发布：后台保活已确认（始终定位）"
+                : "⚠ 发布：后台保活未生效（定位仅「使用App时」）——autotk 转后台会被挂起、发布会卡。请到 设置→隐私与安全性→定位服务→autotk 改「始终」，或让养号保持运行。",
+              ka.always ? "info" : "warn",
+            );
+          }
+        } catch (e) {
+          if (!kaLogged) {
+            kaLogged = true;
+            pushLog(
+              `⚠ 发布：后台保活模块未编入（Expo Go/测试包）——发布会在后台被挂起卡死，需正式 dev build：${e instanceof Error ? e.message : String(e)}`,
+              "warn",
+            );
+          }
+        }
         await runPublish(task, {
-          download: (t) =>
-            downloadToAlbum(t.source, t.videoName, {
-              fetch: (u) => fetch(u),
-              saveToAlbum: saveBytesToAlbum,
-            }),
+          download: (t) => downloadToAlbum(t.source, t.videoName, { saveUrlToAlbum }),
           publishVideo: async (assetUri, caption) => {
             // 发布常在**未启动养号**时由 Hub 直接触发，而 uiRef 只在 start() 时建 → 这里按需懒建真机 UI，
             // 否则会误报「本机未适配发布功能」。有 vision-ocr 原生模块的 dev build 会得到真机 UI。
@@ -165,6 +184,10 @@ export function useEngine(initialParams?: AutomationParams): EngineState {
     } finally {
       drainingRef.current = false;
       publishingRef.current = false; // 发布队列清空 → 养号恢复
+      // ⚠️ 不再「发完即停保活」：脱离养号单独发视频时，若发完立刻停，autotk 会被 iOS 挂起，
+      // 下一条发布任务到来时 App 已处于挂起态 → 卡在 downloading（真机实见：必须手动切回 autotk 才动）。
+      // 发布可靠优先，保活保持常开（部署机常插电、可接受定位常亮的耗电）；养号在跑时保活本就归 stop() 管。
+      // 若日后要更省电，可改为「空闲 N 分钟无任务再 stopKeepAlive」。
     }
   }, [pushLog]);
 
@@ -197,6 +220,7 @@ export function useEngine(initialParams?: AutomationParams): EngineState {
 
     const launch = async () => {
       try {
+        pushLog(versionBanner()); // 启动即打印当前运行版本的发布日期，便于确认这台设备 OTA 到了哪一版
         // 后台保活必须在 **makeUI 之前** 起：makeUI 里的首跑标定会 activateApp(TikTok) 把 autotk
         // 顶到后台；若那之前没起保活，autotk 一退后台 JS 就被 iOS 挂起（~30s），引擎起不来/中断、
         // 日志停同步——正是真机所见「点启动跳 TikTok 后要手动切回等引擎起」。请求「始终」定位的弹窗
@@ -330,7 +354,7 @@ export function useEngine(initialParams?: AutomationParams): EngineState {
         client = new HubClient({
           url: hubUrl,
           deviceId,
-          deviceName: resolveDeviceName(),
+          deviceName: uniqueDeviceName(resolveDeviceName(), deviceId),
           version: "autotk",
           onConnectionChange: (c) => setHubConnected(c),
           onConfigApply: (m) => {
@@ -368,7 +392,7 @@ export function useEngine(initialParams?: AutomationParams): EngineState {
               stats: st
                 ? { likes: st.likes, follows: st.follows, comments: st.commentReplies, videos: st.videosWatched }
                 : undefined,
-              alert: null,
+              alert: uiRef.current?.getAlert?.() ?? null,
               battery: batteryRef.current,
             }),
           );

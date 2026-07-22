@@ -37,6 +37,11 @@ export interface ProfileRef {
 export interface AscPort {
   /** 把 UDID 注册到某账号下（已存在应幂等）。 */
   registerDevice(accountName: string, udid: string, deviceName?: string): Promise<void>;
+  /**
+   * 设备是否已 ENABLED。新开发者账号注册的设备会先 PROCESSING（Apple 处理中），
+   * 期间【不会】被收进描述文件——此时发包出去装了会 integrity 失败，需另行提示用户稍后重扫。
+   */
+  deviceEnabled(accountName: string, udid: string): Promise<boolean>;
   /** 重生成该账号该 App 的 ad-hoc 描述文件（含该账号当前全部设备）。 */
   regenerateProfile(accountName: string, app: AppConfig): Promise<ProfileRef>;
 }

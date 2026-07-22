@@ -12,7 +12,8 @@ export function statsProgressed(prev: Stats | undefined, next: Stats | undefined
     next.likes !== prev.likes ||
     next.follows !== prev.follows ||
     next.comments !== prev.comments ||
-    next.videos !== prev.videos
+    next.videos !== prev.videos ||
+    (next.dmSent ?? 0) !== (prev.dmSent ?? 0) // 发出私信=进展;dmFailed 故意不算(失败非进展)
   );
 }
 
@@ -44,11 +45,35 @@ export class DeviceRegistry {
     };
   }
 
-  /** 给设备改名（别名，空串=清除）。返回更新后的 DeviceInfo（设备未知则 null，但别名仍记下）。 */
+  /**
+   * 给设备改名（别名，空串=清除）。返回更新后的 DeviceInfo（设备未知则 null）。
+   * **唯一性校验**（第二道防线，桌面 UI 已先查一次）：新名不能与其它设备的当前生效名冲突——
+   * 否则发布按「名=文件夹」匹配会把视频只发一台、其余漏发。冲突则**不改名**、返回当前（未改）信息，
+   * 让操作员看板上乐观改动回退。改名结果与「是否冲突」由 renameChecked 精确返回。
+   */
   async rename(deviceId: string, alias: string): Promise<DeviceInfo | null> {
+    return (await this.renameChecked(deviceId, alias)).info;
+  }
+
+  /** 同 rename，但额外返回 conflict 标志，供 gateway 给操作员回一条可见提示。 */
+  async renameChecked(
+    deviceId: string,
+    alias: string,
+  ): Promise<{ info: DeviceInfo | null; conflict: boolean }> {
+    const name = alias.trim();
+    if (name) {
+      const all = await this.store.list();
+      const clash = all.some(
+        (r) => r.deviceId !== deviceId && (this.alias?.get(r.deviceId) ?? r.deviceName) === name,
+      );
+      if (clash) {
+        const cur = await this.store.get(deviceId);
+        return { info: cur ? this.toInfo(cur) : null, conflict: true };
+      }
+    }
     await this.alias?.set(deviceId, alias);
     const r = await this.store.get(deviceId);
-    return r ? this.toInfo(r) : null;
+    return { info: r ? this.toInfo(r) : null, conflict: false };
   }
 
   /** 删除设备（操作员手动移除）：清在线态 + 别名 + 存储。 */

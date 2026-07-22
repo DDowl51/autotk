@@ -21,7 +21,12 @@ async function main(): Promise<void> {
       const devices = (await client.fetchJson("devices?limit=200")) as AscResource[];
       const certs = (await client.fetchJson("certificates?limit=200")) as AscResource[];
       const bundleIds = (await client.fetchJson("bundleIds?limit=200")) as AscResource[];
-      console.log(`  ✓ ASC 连接成功：设备 ${devices.length} 台 · 证书 ${certs.length} · bundleId ${bundleIds.length}`);
+      const devStatus: Record<string, number> = {};
+      for (const dv of devices) {
+        const s = String(dv.attributes?.["status"] ?? "?");
+        devStatus[s] = (devStatus[s] ?? 0) + 1;
+      }
+      console.log(`  ✓ ASC 连接成功：设备 ${devices.length} 台 ${JSON.stringify(devStatus)} · 证书 ${certs.length} · bundleId ${bundleIds.length}`);
       console.log(`  额度：本地记账 ${acc.devices.length}/${acc.capacity}（Apple 实际已注册 ${devices.length} 台）`);
       const devCerts = certs.filter((c) => String(c.attributes?.["certificateType"] ?? "").includes("DEVELOPMENT"));
       console.log(`  ${devCerts.length > 0 ? "✓" : "✗"} 开发证书 ${devCerts.length} 张${devCerts.length === 0 ? "（ASC 里没有 DEVELOPMENT 证书）" : ""}`);
@@ -50,7 +55,7 @@ async function main(): Promise<void> {
     }
     if (!insp.exists) {
       ok = false;
-      console.log(`  ✗ ${key}: 母包不存在 ${app.motherIpaPath}`);
+      console.log(`  ✗ ${key}: 母包读不出（不存在 / 坏包 / 不是有效 IPA / 容器缺 unzip）：${app.motherIpaPath}`);
       continue;
     }
     if (!insp.appBundle) {

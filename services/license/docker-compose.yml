@@ -2,10 +2,11 @@ services:
   db:
     image: postgres:16
     environment:
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: license
     ports:
-      - "55432:5432"
+      # 只绑本机回环：本地开发/同机反代可连，公网连不到（生产别把库裸暴露）。
+      - "127.0.0.1:55432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -15,13 +16,25 @@ services:
       retries: 10
 
   api:
-    build: .
+    build:
+      context: .
+      # 构建加速开关（在 compose 同目录 .env 里设，或 export 到环境；不设=默认源，行为不变）：
+      #   DOCKER_HTTP_PROXY / DOCKER_HTTPS_PROXY  例：http://host.docker.internal:7890（Clash 需开「允许局域网」）
+      #   NPM_REGISTRY                            例：https://registry.npmmirror.com
+      #   PRISMA_ENGINES_MIRROR                   例：https://registry.npmmirror.com/-/binary/prisma
+      args:
+        HTTP_PROXY: ${DOCKER_HTTP_PROXY:-}
+        HTTPS_PROXY: ${DOCKER_HTTPS_PROXY:-}
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org/}
+        PRISMA_ENGINES_MIRROR: ${PRISMA_ENGINES_MIRROR:-https://binaries.prisma.sh}
     environment:
-      DATABASE_URL: postgresql://postgres:postgres@db:5432/license?schema=public
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@db:5432/license?schema=public
       JWT_SECRET: ${JWT_SECRET:-change-me-in-prod}
       PORT: "3001"
     ports:
-      - "3001:3001"
+      # 只绑本机回环：由同机的 1Panel OpenResty / Caddy 反代到 127.0.0.1:3001，公网不直连。
+      # 若你的 1Panel 反代够不到 127.0.0.1（OpenResty 在网桥而非 host 网络），见 1panel 手册的兜底方案。
+      - "127.0.0.1:3001:3001"
     depends_on:
       db:
         condition: service_healthy

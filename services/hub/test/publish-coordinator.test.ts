@@ -13,8 +13,10 @@ const task = (taskId: string, deviceId = "d"): PublishTask => ({
 
 function fakeTimers() {
   const fns: Array<() => void> = [];
+  let sets = 0; // 累计 set 次数（含重排）；用于断言「某任务被重新装了计时」
   const timers: Timers = {
     set(fn) {
+      sets++;
       fns.push(fn);
       return () => {
         const i = fns.indexOf(fn);
@@ -22,7 +24,7 @@ function fakeTimers() {
       };
     },
   };
-  return { timers, fireAll: () => [...fns].forEach((f) => f()), count: () => fns.length };
+  return { timers, fireAll: () => [...fns].forEach((f) => f()), count: () => fns.length, sets: () => sets };
 }
 
 function mk(online: Set<string>, timers?: Timers, now?: () => number) {
@@ -78,6 +80,57 @@ describe("PublishCoordinator", () => {
     ft.fireAll(); // 模拟之后仍卡住
     expect(statuses(progress, "t1")).toEqual(["sent", "downloading", "timeout"]);
     expect(c.pendingCount()).toBe(0);
+  });
+
+  it("发布成功触发 onPublished(deviceId, videoName)；中间态/失败不触发（服务端权威去重）", () => {
+    const published: Array<[string, string]> = [];
+    const c = new PublishCoordinator(() => true, () => {}, {
+      onPublished: (deviceId, videoName) => published.push([deviceId, videoName]),
+    });
+    c.start(task("t1", "d")); // videoName = "v.mp4"
+    c.onResult("t1", "downloading"); // 中间态不触发
+    expect(published).toEqual([]);
+    c.onResult("t1", "published"); // 终态 published → 触发
+    expect(published).toEqual([["d", "v.mp4"]]);
+
+    c.start(task("t2", "d"));
+    c.onResult("t2", "failed", "x"); // 失败终态不触发
+    expect(published).toEqual([["d", "v.mp4"]]);
+  });
+
+  it("批量同设备：任一任务有进展会重排同设备其余在途任务的超时（防误判 timeout）", () => {
+    const ft = fakeTimers();
+    const { c } = mk(new Set(["d"]), ft.timers);
+    c.start(task("t1", "d"));
+    c.start(task("t2", "d")); // 排 t1 后面，等待中
+    expect(ft.sets()).toBe(2); // 两条各装一个无进展计时
+    c.onResult("t1", "downloading"); // 设备活着：t1 重排(3) + t2 也被重排(4)
+    expect(ft.sets()).toBe(4); // 关键：t2 被重排（否则只有 3），等待期不会到点 timeout
+    expect(ft.count()).toBe(2); // 仍是两条在途
+  });
+
+  it("跨设备不误伤：A 设备任务进展不重排 B 设备任务", () => {
+    const ft = fakeTimers();
+    const { c } = mk(new Set(["a", "b"]), ft.timers);
+    c.start(task("t1", "a"));
+    c.start(task("t2", "b"));
+    expect(ft.sets()).toBe(2);
+    c.onResult("t1", "downloading"); // 仅 t1(a) 重排(3)；t2(b) 不动
+    expect(ft.sets()).toBe(3); // 不是 4
+  });
+
+  it("批量同设备：t1 收尾后 t2 仍在队列、能正常走到终态", () => {
+    const { c, progress } = mk(new Set(["d"]));
+    c.start(task("t1", "d"));
+    c.start(task("t2", "d"));
+    expect(c.pendingCount()).toBe(2);
+    c.onResult("t1", "downloading");
+    c.onResult("t1", "published"); // t1 收尾，t2 仍在
+    expect(c.pendingCount()).toBe(1);
+    c.onResult("t2", "downloading");
+    c.onResult("t2", "published");
+    expect(c.pendingCount()).toBe(0);
+    expect(statuses(progress, "t2")).toEqual(["sent", "downloading", "published"]);
   });
 
   it("终态后定时器不再触发", () => {
