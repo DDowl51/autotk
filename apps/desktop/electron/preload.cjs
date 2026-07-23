@@ -21,5 +21,13 @@ contextBridge.exposeInMainWorld("hub", {
 contextBridge.exposeInMainWorld("master", {
   available: true,
   getSettings: () => ipcRenderer.invoke("master:getSettings"),
+  getStatus: () => ipcRenderer.invoke("master:getStatus"),
   saveSettings: (s) => ipcRenderer.invoke("master:saveSettings", s),
+  restart: () => ipcRenderer.invoke("master:restart"),
+  openLogs: () => ipcRenderer.invoke("master:openLogs"),
+  onStatus: (listener) => {
+    const handler = (_event, status) => listener(status);
+    ipcRenderer.on("master:status", handler);
+    return () => ipcRenderer.removeListener("master:status", handler);
+  },
 });

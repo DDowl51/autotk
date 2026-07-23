@@ -22,23 +22,26 @@
 ```bash
 # 本机(未装本包 → 借已装 vitest 的包上下文):
 pnpm --filter @mc/master exec vitest run --root apps/receiver
-# Mac(装了本包后):
-cd apps/receiver && pnpm install && pnpm test
+# Mac（receiver 有独立 workspace/lock，不会安装 root 全仓）:
+cd apps/receiver
+pnpm install --frozen-lockfile
+pnpm test
+pnpm typecheck
 ```
 
 ## Mac 构建 + 装机
 
 ```bash
 cd apps/receiver
-pnpm install
-npx tsc --noEmit          # 类型检查
+pnpm install --frozen-lockfile
+pnpm typecheck
 npx expo prebuild --platform ios
 # 出未签名 ipa → 走装机台重签,或 EAS/Xcode 构建
 ```
 
 装机时每台配:
-- `EXPO_PUBLIC_MASTER_URL`(master 收视频通道,如 `http://<GPU机IP>:4610`)
-- `EXPO_PUBLIC_UDID`(本机 udid = Hub 编号,回报/握手用)
+- `EXPO_PUBLIC_MASTER_URL`（master 收视频通道；默认 desktop 拓扑填 `http://<Windows控制电脑IP>:4610`）
+- `EXPO_PUBLIC_UDID`（字段名是历史遗留，实际必须等于 master deviceId，并不一定是真实 UDID）
 - 授权:相册"全部照片" + 定位"始终"(app.json 已声明,系统弹窗需手点授予)
 
 ## 与 master 的接口
@@ -46,4 +49,4 @@ npx expo prebuild --platform ios
 - 端 → master:`receiver:hello {udid}`(上线)、`receiver:progress {taskId,status,assetId?,error?}`
 - master → 端:`receiver:download {taskId,url,videoName}`
 
-master 侧见 `services/master/src/receiver/`;完整链路见 `docs/设计-管理中心对接与发布链路.md`。
+master 侧见 `services/master/src/receiver/`；完整部署、测试与当前多机限制见 `docs/真机部署手册.md` 的“发布链路”章节。

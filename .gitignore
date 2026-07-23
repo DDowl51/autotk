@@ -74,3 +74,5 @@ _tsconfig.test.json
 services/master/devices.json
 services/master/*.local.json
 services/master/smoke-shot.png
+services/master/test-artifacts/
+/perception-environment.txt

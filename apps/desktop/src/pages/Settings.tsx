@@ -1,18 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
 import { Form, Input, InputNumber, Button, Space, ColorPicker, App as AntApp } from "antd";
-import { CheckOutlined, FolderOpenOutlined } from "@ant-design/icons";
+import { CheckOutlined, FolderOpenOutlined, ReloadOutlined } from "@ant-design/icons";
 import { useHub } from "../hubState";
 import { useAppTheme } from "../appTheme";
 import { loadSettings, saveSettings } from "../settings";
 import { getPublisherApi } from "../publish-ipc";
+import { getMasterApi, type MasterStatus } from "../master-ipc";
 import { PageHeader, SectionCard } from "../ui";
 import { C, ACCENTS } from "../theme";
 import { QrPanel } from "./QrPanel";
 
-// 后台（master）设置桥（桌面 app 内才有；浏览器预览为 undefined → 该节隐藏）。
-type MasterSettings = { vlmUrl: string; subnet: string };
-type MasterApi = { getSettings: () => Promise<MasterSettings>; saveSettings: (s: MasterSettings) => Promise<MasterSettings> };
-const getMasterApi = (): MasterApi | undefined => (window as unknown as { master?: MasterApi }).master;
+const formatScanTime = (timestamp: number | null): string =>
+  timestamp === null ? "尚未完成扫描" : new Date(timestamp).toLocaleString();
 
 export function Settings() {
   const { hubUrl, setHubUrl, reconnect, connected, embedded, stalledMinutes, setStalledMinutes } = useHub();
@@ -27,7 +26,9 @@ export function Settings() {
   const master = useMemo(() => getMasterApi(), []);
   const [vlmUrl, setVlmUrl] = useState("");
   const [subnet, setSubnet] = useState("");
+  const [masterStatus, setMasterStatus] = useState<MasterStatus | null>(null);
   const [savingMaster, setSavingMaster] = useState(false);
+  const [restartingMaster, setRestartingMaster] = useState(false);
   useEffect(() => {
     if (!master) return;
     master
@@ -38,16 +39,55 @@ export function Settings() {
       })
       .catch(() => {});
   }, [master]);
+  useEffect(() => {
+    if (!master) return;
+    let alive = true;
+    let receivedLiveStatus = false;
+    const unsubscribe = master.onStatus((status) => {
+      receivedLiveStatus = true;
+      if (alive) setMasterStatus(status);
+    });
+    void master
+      .getStatus()
+      .then((status) => {
+        if (alive && !receivedLiveStatus) setMasterStatus(status);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+      unsubscribe();
+    };
+  }, [master]);
   const saveMaster = async () => {
     if (!master) return;
     setSavingMaster(true);
     try {
       await master.saveSettings({ vlmUrl: vlmUrl.trim(), subnet: subnet.trim() });
-      message.success("已保存，正在用新设置重启后台识别（约几秒）…");
+      message.success("已保存；后台进程已重启，正在初始化扫描");
     } catch {
-      message.error("保存失败");
+      message.error("设置已保存，但后台重启失败；请查看上方错误");
     } finally {
       setSavingMaster(false);
+    }
+  };
+  const restartMaster = async () => {
+    if (!master) return;
+    setRestartingMaster(true);
+    try {
+      setMasterStatus(await master.restart());
+      message.success("后台进程已重启，正在初始化扫描");
+    } catch {
+      message.error("后台重启失败；请查看上方错误");
+    } finally {
+      setRestartingMaster(false);
+    }
+  };
+  const openMasterLogs = async () => {
+    if (!master) return;
+    try {
+      await master.openLogs();
+    } catch {
+      message.error("日志目录打开失败");
     }
   };
 
@@ -103,7 +143,73 @@ export function Settings() {
 
       {master && (
         <>
-          <SectionCard title="识别服务与设备发现（GPU / 网段）">
+          <SectionCard
+            title="后台识别与设备发现"
+            extra={
+              <Space>
+                <Button icon={<FolderOpenOutlined />} onClick={openMasterLogs}>
+                  打开日志目录
+                </Button>
+                <Button
+                  icon={<ReloadOutlined />}
+                  loading={restartingMaster || masterStatus?.restarting}
+                  disabled={savingMaster}
+                  onClick={restartMaster}
+                >
+                  重启后台
+                </Button>
+              </Space>
+            }
+          >
+            <div className="master-status-grid">
+              <div className="master-status-item">
+                <span>master</span>
+                <strong style={{ color: masterStatus?.running ? C.lime : masterStatus?.restarting ? C.amber : C.coral }}>
+                  <i className={`pulse ${masterStatus?.running ? "on" : "off"}`} />
+                  {masterStatus?.running
+                    ? `运行中${masterStatus.pid === null ? "" : ` · PID ${masterStatus.pid}`}`
+                    : masterStatus?.restarting
+                      ? "重启中…"
+                      : "未运行"}
+                </strong>
+              </div>
+              <div className="master-status-item">
+                <span>当前 VLM 地址</span>
+                <strong className="mono">{masterStatus?.vlmUrl || "等待 master 上报"}</strong>
+              </div>
+              <div className="master-status-item">
+                <span>正在扫描的网段</span>
+                <strong className="mono">
+                  {masterStatus?.subnets.length
+                    ? masterStatus.subnets.map((value) => `${value}.1–254`).join(" / ")
+                    : "等待扫描上报"}
+                </strong>
+              </div>
+              <div className="master-status-item">
+                <span>上次扫描时间</span>
+                <strong>{formatScanTime(masterStatus?.lastScanAt ?? null)}</strong>
+              </div>
+              <div className="master-status-item">
+                <span>发现手机</span>
+                <strong style={{ color: C.cyan }}>
+                  {masterStatus ? `${masterStatus.discoveredCount} 台` : "读取中…"}
+                </strong>
+              </div>
+              <div className="master-status-item">
+                <span>上线手机</span>
+                <strong style={{ color: C.lime }}>
+                  {masterStatus ? `${masterStatus.onlineCount} 台` : "读取中…"}
+                </strong>
+              </div>
+            </div>
+            <div className={`master-status-error${masterStatus?.lastError ? " has-error" : ""}`}>
+              <span>最近一次错误</span>
+              <strong>{masterStatus?.lastError || (masterStatus ? "无" : "读取中…")}</strong>
+            </div>
+            <div style={{ color: C.faint, fontSize: 12, margin: "10px 0 16px" }}>
+              “上线”表示已加入当前 master 进程；手机实时连通性以“设备”页的在线状态为准。
+            </div>
+
             <div style={{ color: "#8595a4", fontSize: 13, marginBottom: 12 }}>
               GPU 识别服务（perception）地址与要扫描的网段。都可留空：地址空=本机 :8000；网段空=自动挑本机私网卡（192.168/10/172.16-31，排除 VPN 段）。改完保存会用新设置重启后台识别（约几秒），手机会重新自动发现。
             </div>
@@ -114,7 +220,12 @@ export function Settings() {
               <Form.Item label="扫描网段" extra="手机所在的 /24 段，如 192.168.11（会扫 .1–254）。多个段用逗号分隔，如 192.168.1, 192.168.11。留空=自动挑本机私网卡（覆盖多数网络）。">
                 <Input value={subnet} onChange={(e) => setSubnet(e.target.value)} placeholder="留空=自动；或 192.168.11，多个用逗号分隔" />
               </Form.Item>
-              <Button type="primary" loading={savingMaster} onClick={saveMaster}>
+              <Button
+                type="primary"
+                loading={savingMaster}
+                disabled={restartingMaster || masterStatus?.restarting}
+                onClick={saveMaster}
+              >
                 保存并重启后台
               </Button>
             </Form>

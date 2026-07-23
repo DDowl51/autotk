@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
 
 ## 这是什么
 
@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **⚠️ 2026-07 起项目处于「autotk 2.0 重构」中**（见下方专节）：手机端引擎已推倒重来，重构为「内网 GPU 主机集中识别（LocateAnything-3B VLM）+ 手机哑执行器」的 core+plugin 框架。新代码在 `packages/automation-core|driver-ios-wda|perceptor-vlm|plugin-tiktok` + `services/master|perception`；旧 `apps/mobile` **已拍板彻底退役**（2026-07-20，纯 OCR/像素方案太脆弱）——不再投入任何开发/维护，仅作知识库。**当前进度与下一步的权威快照：`docs/项目进度报告.md`；全部待定决策已拍板：`docs/决策记录-2026-07-20.md`。**
 
-**这是一个 pnpm monorepo**（2026-07 由原本 5 个平级目录迁入），布局 `apps/* services/* packages/*`。各子项目仍是相互独立、可分别部署的单元，且大多有**自己的 CLAUDE.md / README**（最新事实源）——本文件只给全局地图与子项目间的连线，改具体子项目前先读它自己的文档。
+**这是一个 pnpm monorepo**（2026-07 由原本 5 个平级目录迁入），布局 `apps/* services/* packages/*`。各子项目仍是相互独立、可分别部署的单元，且大多有**自己的 AGENTS.md / README**（最新事实源）——本文件只给全局地图与子项目间的连线，改具体子项目前先读它自己的文档。
 
 ## 仓库布局与子项目地图
 
@@ -45,10 +45,10 @@ docs/specs/                       【2.0】G0 规格：L0-WDA 规格书 / 协议
 | 包 | 角色 | 必读文档 |
 |---|---|---|
 | `packages/automation-core` + `driver-ios-wda` + `perceptor-vlm` + `plugin-tiktok` + `services/master` + `services/perception` + `apps/receiver` | **【2.0 主线】新自动化框架**：core+plugin+依赖倒置，VLM 集中识别 | `docs/项目进度报告.md`（进度快照）、`docs/自动化框架-架构设计总纲.md`（权威总纲）、`docs/真机部署手册.md`（**命令级部署**）、`docs/真机联调-checklist.md`、`docs/specs/*` |
-| `apps/mobile` | **旧手机端（已退役 2026-07-20）**：仅作知识库，不再改动；WDA×TikTok 教训已提炼进 `docs/specs/` | `apps/mobile/CLAUDE.md`（考古时读） |
+| `apps/mobile` | **旧手机端（已退役 2026-07-20）**：仅作知识库，不再改动；WDA×TikTok 教训已提炼进 `docs/specs/` | `apps/mobile/AGENTS.md`（考古时读） |
 | `services/update-server` | **OTA 热更**：expo-updates 协议 v1 自建服务器（原服务旧 apps/mobile；旧端退役后暂无服务对象，去留待定） | `services/update-server/README.md` |
 | `services/hub` + `services/publisher` + `apps/desktop` + `packages/shared` | **管理中心**：Electron 内嵌 Hub/master，看设备、批量配置、文件夹发视频 | `docs/management-center/README.md` |
-| `services/license` + `packages/license-sdk` + `apps/web` | **通用激活码 / 授权 SaaS**（独立、多产品复用） | `services/license/CLAUDE.md`（必读） |
+| `services/license` + `packages/license-sdk` + `apps/web` | **通用激活码 / 授权 SaaS**（独立、多产品复用） | `services/license/AGENTS.md`（必读） |
 | `services/signing-station` | **装机台**：扫码安装/重签 WDA；旧 autotk 母包不再部署 | `services/signing-station/README.md` |
 | `services/telemetry-collector` + `packages/telemetry-sdk` | **自建第一方埋点**（匿名、无 PII） | `services/telemetry-collector/README.md` |
 
@@ -77,7 +77,7 @@ docs/specs/                       【2.0】G0 规格：L0-WDA 规格书 / 协议
 
 ## ⚠️ apps/mobile 已退役并排除出 root workspace（仅考古）
 
-> **2026-07-20 拍板 apps/mobile 彻底退役**（决策记录 D8）——「phase 4 收编」计划作废，涉及 mobile 的 vendored 同步纪律全部冻结；本节与 `apps/mobile/CLAUDE.md` 仅考古旧代码时参考。
+> **2026-07-20 拍板 apps/mobile 彻底退役**（决策记录 D8）——「phase 4 收编」计划作废，涉及 mobile 的 vendored 同步纪律全部冻结；本节与 `apps/mobile/AGENTS.md` 仅考古旧代码时参考。
 
 `apps/mobile`（旧 RN/Expo autotk）被 `pnpm-workspace.yaml` 显式排除，只保留独立 lock/workspace 供考古。正常开发、部署、测试都不要安装或修改它；除非需求方重新作出架构决策，否则不得恢复旧端或所谓 phase 4 收编。
 
@@ -157,6 +157,6 @@ WDA_URL=http://<手机IP>:8100 npm run wda:repl   # 电脑驱动调试台 REPL�
 
 ## 注意
 
-- autotk 的 WDA × TikTok 有一组硬约束（`snapshotMaxDepth:1`、不能靠元素树定位、只能 W3C `/actions` 点击等）——动真机交互前必读：旧端看 `apps/mobile/CLAUDE.md`，2.0 看 `docs/specs/L0-WDA-规格书.md` + `docs/specs/坑清单.md`，违反会卡死/超时。系统弹窗**不走 WDA `/alert`**（带地图的定位权限窗读不到），统一「截图→VLM 定位→tap」。
+- autotk 的 WDA × TikTok 有一组硬约束（`snapshotMaxDepth:1`、不能靠元素树定位、只能 W3C `/actions` 点击等）——动真机交互前必读：旧端看 `apps/mobile/AGENTS.md`，2.0 看 `docs/specs/L0-WDA-规格书.md` + `docs/specs/坑清单.md`，违反会卡死/超时。系统弹窗**不走 WDA `/alert`**（带地图的定位权限窗读不到），统一「截图→VLM 定位→tap」。
 - （旧端遗留，已随退役失效）真机坐标标定按机型存 `apps/mobile/adaptation/devices.json`——2.0 无标定，VLM 直接出坐标。
 - secrets / 凭据（`services/signing-station/data/secrets/*` 等）已被根 `.gitignore` 排除，**勿提交**。

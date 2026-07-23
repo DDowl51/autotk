@@ -1,10 +1,10 @@
 # telemetry —— 自建轻量第一方埋点
 
-给 **autotk / management-center / license-server** 三套系统加统一遥测。
+给 management-center 与 license-server 提供统一遥测；旧 autotk 手机端接入已随 `apps/mobile` 退役冻结。
 自建、国内可访问、数据自有、只收匿名数据（无 PII）。
 
 ## 结构
-- `packages/telemetry-sdk/` —— `@telemetry/sdk`：纯 TS 客户端，三端共用（RN / Node / 浏览器）。
+- `packages/telemetry-sdk/` —— `@telemetry/sdk`：纯 TS 客户端，当前活跃消费端为 desktop / license。
   `track(name, props)` → 批量上报 + 离线兜底 + 匿名 id + 失败重试。
 - `services/telemetry-collector/` —— `@telemetry/collector` 采集服务：`POST /v1/events` 入库（Postgres）。端口-适配器写法，核心逻辑可单测。
   - `GET /health`、`GET /v1/stats`（总条数，看板雏形）。
@@ -20,5 +20,6 @@
 ## 现状
 - ✅ SDK 完成（node:test 8）。
 - ✅ collector 完成（node:test 6：归一化/ingest + 真 HTTP）+ Docker/compose + 自动建表。SDK↔collector 真启动 smoke 过。
-- ✅ 三端接入：autotk（`apps/mobile`）/ 桌面端（`apps/desktop`）/ license（`services/license`）均已 vendored SDK + 入口 `initTelemetry()`（vendored 副本改动需手动同步，见根 CLAUDE.md 耦合缝表）。
+- ✅ desktop（`apps/desktop`）与 license（`services/license`）已 vendored SDK + `initTelemetry()`；改 SDK 后同步这两份。
+- ⏸ `apps/mobile` 副本冻结，不再同步或部署。
 - ⬜ 管理中心 Hub（`services/hub`）未接；统一看板待做。

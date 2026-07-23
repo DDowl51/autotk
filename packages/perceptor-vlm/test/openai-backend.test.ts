@@ -46,12 +46,12 @@ describe("OpenAI 兼容后端", () => {
     expect(content[1].image_url!.url).toBe(`data:image/png;base64,${Buffer.from(IMG).toString("base64")}`);
   });
 
-  it("max_tokens:调用级 > 构造级 > 默认 64;temperature 默认 0", async () => {
+  it("max_tokens:调用级 > 构造级 > 默认 64;temperature 默认 0.7", async () => {
     queue.push({}, {}, {});
     const b = createOpenAiBackend({ baseUrl: "http://gpu:8000", model: "m" });
     await b.infer(IMG, "i");
     expect(calls[0].body.max_tokens).toBe(64);
-    expect(calls[0].body.temperature).toBe(0);
+    expect(calls[0].body.temperature).toBe(0.7);
     const b2 = createOpenAiBackend({ baseUrl: "http://gpu:8000", model: "m", maxTokens: 128 });
     await b2.infer(IMG, "i");
     expect(calls[1].body.max_tokens).toBe(128);

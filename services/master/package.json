@@ -7,6 +7,7 @@
   "scripts": {
     "start": "tsx src/run.ts",
     "smoke": "tsx src/smoke.ts",
+    "workflow:test": "tsx src/workflow-test.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

@@ -1,4 +1,6 @@
-# update-server —— 自建 autotk OTA 热更服务
+# update-server —— 旧 autotk OTA 热更服务（已无当前服务对象）
+
+> **状态（2026-07-20）**：`apps/mobile` 已彻底退役，autotk 2.0 的手机侧只保留 WDA 与收视频端 `apps/receiver`，二者都不消费本服务。因此 **当前部署不需要启动 update-server**；下面内容只保留给历史包维护或未来重新接入 expo-updates 时参考，不能当作 autotk 2.0 部署步骤。当前主线部署见 [`../../docs/真机部署手册.md`](../../docs/真机部署手册.md)。
 
 实现 **expo-updates 协议（protocol v1）** 的最小自建更新服务器：手机端 autotk（Release 包，
 已烤进 expo-updates）启动时来这里问「有没有新 JS」，有就后台下载、下次启动生效。
@@ -96,5 +98,4 @@ app.json 的 `updates.url` 现为 `https://updates.你的域名.com/api/manifest
 pnpm --filter @autotk/update-server test   # 9 测：hash/manifest/签名纯逻辑 + 服务端 multipart+验签+下发+穿越防护
 ```
 
-> ⚠️ 自动化测试覆盖了**服务端产出的 manifest 格式与签名自洽**，但「真机 expo-updates 客户端
-> 能否吃下这份 manifest 并成功热更」只能用**真机 Release 包**验（见 docs/交付/远程更新方案.md）。
+> ⚠️ 自动化测试只覆盖**服务端产出的 manifest 格式与签名自洽**。仓库当前没有仍在使用 expo-updates 的真机客户端，因此没有 autotk 2.0 的端到端 OTA 验收项；若未来重新启用，必须先确定新的消费端，再为它单独补 Release 包真机验收。
