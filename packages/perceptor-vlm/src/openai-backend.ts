@@ -9,7 +9,7 @@ export interface OpenAiBackendOpts {
   model: string;
   apiKey?: string;
   maxTokens?: number; // 单框输出很短,默认 64
-  temperature?: number;
+  temperature?: number; // 默认 0.7，与 services/perception 生产基线一致
   timeoutMs?: number; // 默认 30s
   imageMime?: string; // 默认 image/png
 }
@@ -25,7 +25,7 @@ export function createOpenAiBackend(o: OpenAiBackendOpts): PerceptorBackend {
       const body = {
         model: o.model,
         max_tokens: opts?.maxTokens ?? o.maxTokens ?? 64,
-        temperature: o.temperature ?? 0,
+        temperature: o.temperature ?? 0.7,
         messages: [
           {
             role: "user",

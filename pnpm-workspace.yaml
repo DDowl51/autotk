@@ -1,23 +1,17 @@
 packages:
   - apps/*
-  # apps/mobile (autotk, RN/Expo) is intentionally NOT a root workspace member yet:
-  # Metro/native autolinking needs dedicated monorepo config + on-device verification.
-  # It keeps its own self-contained install (apps/mobile/pnpm-workspace.yaml) until that
-  # "phase 4" integration. Re-include it (drop this exclusion) once Metro config is added.
-  - "!apps/mobile"
-  # apps/receiver（2.0 收视频端,RN/Expo）同样排除:自带安装,只能 Mac 构建。
-  # 纯逻辑(agent/downloader)测试借已装 vitest 的包跑:
-  #   pnpm --filter @mc/master exec vitest run --root apps/receiver
-  - "!apps/receiver"
+  - '!apps/mobile'
+  - '!apps/receiver'
   - services/*
   - packages/*
 
-# Native binaries that need their install scripts to run (approve once via `pnpm approve-builds`).
 onlyBuiltDependencies:
+  - '@nestjs/core'
+  - '@prisma/client'
+  - '@prisma/engines'
   - edgedriver
-  - geckodriver
-  - tesseract.js
-  - esbuild
   - electron
-  - "@prisma/client"
+  - esbuild
+  - geckodriver
   - prisma
+  - tesseract.js

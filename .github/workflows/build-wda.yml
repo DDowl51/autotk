@@ -17,8 +17,10 @@ jobs:
           sudo xcode-select -s /Applications/Xcode_14.3.1.app
           xcodebuild -version
 
-      - name: 拉取 WebDriverAgent 源码
-        run: git clone --depth 1 https://github.com/appium/WebDriverAgent.git wda
+      - name: 拉取固定版 WebDriverAgent 源码
+        run: |
+          git clone --branch v15.1.3 --depth 1 https://github.com/appium/WebDriverAgent.git wda
+          git -C wda rev-parse HEAD
 
       - name: 编译 WebDriverAgentRunner（不签名）
         working-directory: wda

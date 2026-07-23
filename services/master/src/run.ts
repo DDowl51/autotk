@@ -22,6 +22,7 @@ import { applyConfigPatch } from "./hub/configInbox";
 import { createReceiverHub, type ReceiverHub } from "./receiver/receiverServer";
 import { createPublishOrchestrator } from "./publish/orchestrator";
 import { loggingDriver } from "./loggingDriver";
+import { createDeviceLogSink } from "./deviceLog";
 
 const configHooks = { defaultParams: tiktokPlugin.defaultParams, validateParams: tiktokPlugin.validateParams };
 
@@ -110,11 +111,19 @@ async function main(): Promise<void> {
   }
   if (discover) {
     console.log(`自动发现:扫 ${subnets.map((s) => `${s}.1-254`).join(" / ")} 的 :8100(WDA)…`);
-    raw.devices = mergeDiscoveredEntries(raw.devices ?? [], await scanSubnets(subnets));
+    const found = await scanSubnets(subnets);
+    // 稳定状态行：desktop/electron/master-status.cjs 据此更新“发现数/上次扫描时间”。
+    console.log(`自动发现:扫描完成,发现 ${found.length} 台`);
+    raw.devices = mergeDiscoveredEntries(raw.devices ?? [], found);
     console.log(`自动发现:合并配置后共 ${raw.devices.length} 台`);
   }
   const config = parseConfig(raw, configHooks);
   console.log(`配置 ${path}:${config.devices.length} 台;VLM ${config.vlm.url} (${config.vlm.model})`);
+
+  let hub: HubClient | undefined;
+  const deviceLogs = createDeviceLogSink({
+    report: (deviceId, line) => hub?.reportLog(deviceId, [line]),
+  });
 
   // —— 感知 + Fleet(设备集**动态**:先建空壳,再逐台 addDevice 上线;持续发现新机自动加入)——
   const deps: FleetDeps = {
@@ -128,8 +137,8 @@ async function main(): Promise<void> {
     daySeconds,
     todayKey: () => defaultTodayKey(),
     sleep,
-    log: (id, m) => console.log(`[${id}] ${m}`),
-    onEvent: (id, evt, data) => console.log(`[${id}] «${evt}»`, data ?? ""),
+    log: (id, m) => deviceLogs.log(id, m),
+    onEvent: (id, evt, data) => deviceLogs.event(id, evt, data),
   };
   const fleet = createFleet(deps);
 
@@ -141,7 +150,6 @@ async function main(): Promise<void> {
 
   // ——— 管理中心对接 + 发布链路(设 HUB_URL 才启用)———
   const hubUrl = process.env.HUB_URL;
-  let hub: HubClient | undefined;
   let receiver: ReceiverHub | undefined;
   let statusTimer: ReturnType<typeof setInterval> | undefined;
   if (hubUrl) {
@@ -200,7 +208,9 @@ async function main(): Promise<void> {
   async function addDevice(rd: ResolvedDevice): Promise<boolean> {
     const host = hostOf(rd.wdaUrl);
     if (activeIds.has(rd.id) || activeHosts.has(host)) return false;
-    const drv = loggingDriver(createIosWdaDriver(rd.wdaUrl, { timeoutMs: config.wdaTimeoutMs }), (m) => console.log(`[${rd.id}] ${m}`));
+    const drv = loggingDriver(createIosWdaDriver(rd.wdaUrl, { timeoutMs: config.wdaTimeoutMs }), (m) =>
+      deviceLogs.log(rd.id, m),
+    );
     let size = rd.size;
     try {
       await drv.ensureHealthy();
@@ -229,10 +239,13 @@ async function main(): Promise<void> {
   // 持续发现:定时重扫子网,新上线的手机**即时**加入 Fleet + 注册 Hub(常驻,进程不因 0 台而退)。
   if (discover) {
     const rescanMs = Math.max(5000, Number(process.env.MASTER_RESCAN_MS ?? 20000));
+    let rescanRunning = false;
     const rescan = async (): Promise<void> => {
-      if (stopping) return;
+      if (stopping || rescanRunning) return; // 慢扫描不叠跑，避免同一手机被两轮并发装配。
+      rescanRunning = true;
       try {
-        for (const f of await scanSubnets(subnets, true)) {
+        const found = await scanSubnets(subnets, true);
+        for (const f of found) {
           if (activeHosts.has(f.host)) continue;
           try {
             const rd = parseConfig({ ...raw, devices: mergeDiscoveredEntries([], [f]) }, configHooks).devices[0];
@@ -241,8 +254,12 @@ async function main(): Promise<void> {
             console.log(`发现 ${f.host} 装配失败:${e instanceof Error ? e.message : e}`);
           }
         }
+        // 即使 0 台/没有新机也输出，desktop 才能确认这一轮确实完成。
+        console.log(`自动发现:重扫完成,发现 ${found.length} 台`);
       } catch (e) {
         console.log(`重扫失败:${e instanceof Error ? e.message : e}`);
+      } finally {
+        rescanRunning = false;
       }
     };
     setInterval(() => void rescan(), rescanMs);

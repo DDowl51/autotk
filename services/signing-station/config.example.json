@@ -8,15 +8,9 @@
     "wda": {
       "bundleId": "com.ddowl.WebDriverAgentRunner.xctrunner",
       "title": "WebDriverAgent",
-      "version": "5.15.5",
+      "version": "15.1.3",
       "motherIpaPath": "apps/wda.ipa",
       "requiresXctest": true
-    },
-    "autotk": {
-      "bundleId": "com.ddowl.autotk",
-      "title": "autotk",
-      "version": "1.0.0",
-      "motherIpaPath": "apps/autotk.ipa"
     }
   },
   "accounts": [
@@ -34,8 +28,7 @@
         "p12Password": "你的p12密码"
       },
       "bundleIds": {
-        "wda": "com.ddowl.WebDriverAgentRunner.xctrunner",
-        "autotk": "com.ddowl.autotk"
+        "wda": "com.ddowl.WebDriverAgentRunner.xctrunner"
       }
     }
   ]

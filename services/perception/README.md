@@ -5,16 +5,17 @@
 ## 为什么不用 vLLM
 LocateAnything 自定义架构(MoonViT + Parallel Box Decoding + 自定义 `generate`、只支持 batch=1),vLLM 未必认。本服务薄薄一层 transformers + FastAPI,最稳。
 
-## 在 GPU 机上跑(你 bench 那台 Linux)
+## 在 GPU 机上跑
+
+从零安装、固定版本、systemd 与防火墙步骤以 [`../../docs/真机部署手册.md`](../../docs/真机部署手册.md) 为准。已有 benchmark venv 时可按下面的最短路径复用。
 
 ```bash
 # 1) 进 bench 的 venv(torch/transformers/decord/lmdb/torchvision 已装),补三个包
 source la3b/bin/activate           # 或你 bench 用的那个 venv
 pip install -r requirements.txt
 
-# 2) 起服务(模型路径同 bench;640/0.8 是默认值,写出来只为显式)
-python server.py --model ./LocateAnything-3B --attn sdpa --max-side 640 --temperature 0.8 --host 0.0.0.0 --port 8000
-#   显存紧/想提速:加 --fp8(务必之后用冒烟工具复核坐标没塌)
+# 2) 起服务(640/0.7 是当前生产基线)
+python server.py --model ./LocateAnything-3B --attn sdpa --max-side 640 --temperature 0.7 --host 0.0.0.0 --port 8000
 ```
 
 ## 自检
@@ -41,5 +42,6 @@ curl -s http://localhost:8000/v1/chat/completions -H 'Content-Type: application/
 
 ## 注意
 - `--max-side 640`:2026-07-20 拍板的生产分辨率(`docs/决策记录-2026-07-20.md` D6)。精度实测仅覆盖 768(十张全准)/512(miss shop 小 ✕);640 靠真机逐目标验收顺带实测,**小目标不稳就回 `--max-side 768`**。
-- FP8 只量化 LLM 解码层、排除视觉塔(否则坐标崩)——与 bench 同纪律。启用后**必复核坐标**。
-- 采样温度默认 0.8(拍板「稍调高」,P1/P2;请求体 `temperature` 可逐次覆盖)。**bench 全部精度数据在 0.7 下测得**,更高温度坐标 run-to-run 抖动更大——真机验收时对比 0.7/0.8 再锁定;要更稳可后续试 `do_sample=False`(需确认模型 generate 接受)。
+- `--fp8` 仅保留为实验代码路径，不是部署选项；任何实验都必须排除视觉塔并逐图复核坐标，结论不得直接回填生产。
+- 采样温度默认 0.7；`@auto/perceptor-vlm` 未显式配置时也发送 0.7。更高温度曾增加不存在目标的幻觉/抖动，不作为当前部署基线。
+- 当前不启用 FP8/flash-attn；先完成 640 真机验收，小目标不稳再回 768。

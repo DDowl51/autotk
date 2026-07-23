@@ -1,13 +1,15 @@
 # 装机台 signing-station · 1Panel 部署手册
 
-在装了 **1Panel** 的**海外/香港**服务器上部署「扫码即装 WDA / autotk」的装机台。
-和 license/OTA 同一台机也行(各占一个子域)。域名假设 `install.ddowl.tech`。
+在装了 **1Panel** 的**海外/香港**服务器上部署「扫码登记 UDID + 重签 IPA」的装机台。
+和 license 同一台机也行(各占一个子域)。域名假设 `install.ddowl.tech`。
 
 | 组件 | 域名 | 内网端口 |
 |---|---|---|
 | signing-station | `install.ddowl.tech` | 4100 |
 
-> 它做什么:手机扫码 → 装采集描述文件(自动上报 UDID)→ 用 **Apple ASC API** 注册 UDID + 生成 profile → **zsign 重签** IPA → 落地页给 `itms-services` 安装链接 → 手机直接装上。WDA 和 autotk 各一个入口 `/ota/wda`、`/ota/autotk`。
+> 它做什么:手机扫码 → 装采集描述文件(自动上报 UDID)→ 用 **Apple ASC API** 注册 UDID + 生成 profile → **zsign 重签** IPA → 落地页给 `itms-services` 安装链接 → 手机直接装上。
+>
+> **当前接入边界（2026-07-20）**：现有配置与路由仍是 WDA + 已退役 `apps/mobile` 的 `autotk` 槽位。autotk 2.0 只可直接复用 **WDA** 分发；主线还需要 `apps/receiver`，但装机台尚未提供或验证 receiver 的量产签名/分发接线。不要把旧 `autotk` 槽位直接当成 receiver 流程；当前真机部署按 [`../真机部署手册.md`](../真机部署手册.md) 执行。
 
 ---
 
@@ -16,7 +18,7 @@
 1. **必须有 Apple 开发者账号**($99/年)。装机台是把「自动注册 UDID + 重签」自动化,但**证书/密钥是你在 Apple 侧办的**,程序办不了。
 2. **个人账号 ad-hoc/development：每账号 100 台/年**。多账号池横向扩容(config 里 `accounts` 加条目)。不是企业证书那种免注册。
 3. **itms-services 要求受信任 HTTPS** → 用 1Panel 的 Let's Encrypt(和别的站一样)。
-4. 扫码省的是「下载+安装」;首次仍需买家**信任开发者证书** + 开**开发者模式**(iOS 强制,谁都免不了)。WDA 装完还要 `go-ios image auto` 挂镜像才能跑;autotk 装完直接能开。
+4. 扫码省的是「下载+安装」;首次仍需买家**信任开发者证书** + 开**开发者模式**(iOS 强制,谁都免不了)。WDA 装完还要按目标 iOS 版本准备镜像/tunnel，并由 `go-ios runwda` 真正拉起。
 
 ---
 
@@ -28,7 +30,7 @@
 |---|---|
 | **ASC API 密钥** `.p8` + `issuerId` + `keyId` | App Store Connect → 用户与访问 → 集成/密钥 → 生成 App Manager 权限的 API Key（下载 `.p8` **只给一次**，issuerId/keyId 在页面上） |
 | **签名证书 `.p12` + 密码** | 开发者后台 Certificates 生成 **iOS Development 证书** → 钥匙串导出为 `.p12`（含私钥、设个密码）。**推荐 Development**（体检 preflight 只校验它，见 §10）；坚持 ad-hoc 就用 Distribution 证书 + `profileType: IOS_APP_ADHOC` |
-| **注册 Bundle ID** | 开发者后台 Identifiers 注册 `com.ddowl.autotk` 和 `com.ddowl.WebDriverAgentRunner.xctrunner`（ASC 生成 profile 时要能定位到它们） |
+| **注册 Bundle ID** | 开发者后台 Identifiers 注册 WDA 的真实 runner bundleId，例如 `com.ddowl.WebDriverAgentRunner.xctrunner` |
 
 > `.p8` 和 `.p12` 都是**凭据**，只放服务器 `data/secrets/`，**勿提交、勿外发**。
 
@@ -37,14 +39,13 @@
 - `ddowl.tech` 解析加一条 A 记录：`install` → 服务器公网 IP。
 - 安全组只开 `22/80/443`；**别对公网开 4100**（compose 已绑 `127.0.0.1`）。
 
-## 3. 母包就位(两个 IPA)
+## 3. 母包就位（当前可复用 WDA；autotk 槽位已退役）
 
-代码已在服务器 `/opt/autotk`（前面 git clone 过）。把两个母包放进 `services/signing-station/apps/`：
+代码已在服务器 `/opt/autotk`（前面 git clone 过）。现有配置期望母包放进 `services/signing-station/apps/`：
 
-- `apps/autotk.ipa` ← 你 Mac 上 `expo prebuild` 出的那个未签名母包（见《部署清单-完整.md》第 4 步）。
 - `apps/wda.ipa` ← WebDriverAgent 云编译产物（`.github/workflows/build-wda.yml`，Xcode 14.3.1）。⚠️ 下载解压后 Artifact 叫 `WebDriverAgent.ipa`，**重命名为 `wda.ipa`** 再放入。母包**必须含 XCTest 框架**（否则装上点不开），preflight 会校验。
 
-用 1Panel「文件」上传，或 scp 到 `/opt/autotk/services/signing-station/apps/`。
+WDA 可用 1Panel「文件」上传，或 scp 到 `/opt/autotk/services/signing-station/apps/`。receiver 的安装方式遵循当前部署手册；本手册不虚构尚未落地的装机台接线。
 
 ## 4. 填 config.json
 
@@ -62,8 +63,7 @@ cp config.example.json config.json
   "port": 4100,
   // 不要加 mobileconfigSigner（签名会弄断 UDID 回传，见 §11）；collectorUrl 有遥测才加
   "apps": {
-    "wda":    { "bundleId": "com.ddowl.WebDriverAgentRunner.xctrunner", "title": "WebDriverAgent", "version": "5.15.5", "motherIpaPath": "apps/wda.ipa", "requiresXctest": true },
-    "autotk": { "bundleId": "com.ddowl.autotk",                          "title": "autotk",         "version": "1.0.0",  "motherIpaPath": "apps/autotk.ipa" }
+    "wda": { "bundleId": "com.ddowl.WebDriverAgentRunner.xctrunner", "title": "WebDriverAgent", "version": "15.1.3", "motherIpaPath": "apps/wda.ipa", "requiresXctest": true }
   },
   "accounts": [
     {
@@ -76,7 +76,7 @@ cp config.example.json config.json
         "profileType": "IOS_APP_DEVELOPMENT"   // 推荐用这个（体检只认 Development 证书；ad-hoc 见 §10）
       },
       "signing": { "p12Path": "data/secrets/acct1.p12", "p12Password": "你的p12密码" },
-      "bundleIds": { "wda": "com.ddowl.WebDriverAgentRunner.xctrunner", "autotk": "com.ddowl.autotk" }
+      "bundleIds": { "wda": "com.ddowl.WebDriverAgentRunner.xctrunner" }
     }
   ]
 }
@@ -129,10 +129,10 @@ curl -s http://127.0.0.1:4100/ -o /dev/null -w "%{http_code}\n"   # 有响应(20
 ## 8. 验证(真机)
 
 ```bash
-curl -sI https://install.ddowl.tech/ota/autotk | head -1   # 200；根路径 / 无路由、返回 404 是正常的（别以为反代坏了）
+curl -sI https://install.ddowl.tech/ota/wda | head -1   # 200；根路径 / 无路由、返回 404 是正常的（别以为反代坏了）
 ```
 拿一台**真 iPhone**：
-1. Safari 开 `https://install.ddowl.tech/ota/autotk`（或 `/ota/wda`）。
+1. Safari 开 `https://install.ddowl.tech/ota/wda`。
 2. 装采集描述文件 → 设置里「已下载描述文件」→ 安装：
    - 提示「未验证」→ 点**仍然安装**（未签名，正常）；
    - 装完弹「描述文件安装失败 / 无效的描述文件」→ **这是正常的，点掉即可，不是失败**。这类采集 UDID 的描述文件本就如此：手机先把 UDID POST 给服务器（这一步已采到），再因服务器不回下一个描述文件而弹「无效」。别被它吓到。
@@ -142,7 +142,7 @@ curl -sI https://install.ddowl.tech/ota/autotk | head -1   # 200；根路径 / �
 
 ## 9. 运维
 
-- **换母包**（出了新 autotk/WDA 版本）：覆盖 `apps/autotk.ipa` 或 `apps/wda.ipa` → **必须重启**（签名产物缓存在内存，不重启继续发旧包）：
+- **换 WDA 母包**：覆盖 `apps/wda.ipa` → **必须重启**（签名产物缓存在内存，不重启继续发旧包）：
   ```bash
   docker compose restart signing-station && docker compose run --rm signing-station npx tsx src/preflight.ts
   ```
@@ -153,7 +153,7 @@ curl -sI https://install.ddowl.tech/ota/autotk | head -1   # 200；根路径 / �
 
 - **preflight 报 ASC 失败**：issuerId/keyId/.p8 不匹配，或 API Key 权限不足（要 App Manager）、或 bundleId 没在开发者后台注册。
 - **preflight 报「开发证书 0 张」但你用的是 ad-hoc/Distribution 证书**：体检目前**只校验 Development 证书**，用 ad-hoc 会在这项显示 ✗——**可忽略**（真正签名时没有 Development 证书会自动退回用全部证书、能签成功）。省心就直接用 `IOS_APP_DEVELOPMENT` + Development 证书（默认、体检也过）。
-- **母包体检失败**：`wda.ipa` 没重命名 / 不含 XCTest；`autotk.ipa` 结构不对（重出）。
+- **母包体检失败**：`wda.ipa` 没重命名或不含 XCTest，需重新构建/上传。
 - **描述文件显示「未验证」**：正常——装机台**故意不签名**（签名会弄断 UDID 回传，见 §11）。不影响登记/装 App。
 - **装描述文件弹「无效的描述文件 / 安装失败」**：**正常、不是失败**（见 §8 第 2 步）——UDID 在弹错前已采到，回落地页按钮会亮。若按钮就是不亮，看 `data/work/ota-devices.json` 有没有新 UDID、或 1Panel 站点访问日志有没有 `POST /ota/enroll-callback`。
 - **装 App 报「无法安装/证书不受信」**：itms 链接必须 HTTPS 且证书受信（Let's Encrypt 已满足）；或设备 UDID 没成功注册进 profile（看 preflight/日志）。

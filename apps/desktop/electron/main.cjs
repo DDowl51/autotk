@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog, shell } = require("electron");
 const path = require("node:path");
 const os = require("node:os");
 const fss = require("node:fs");
@@ -11,6 +11,7 @@ const publisher = require("@mc/publisher");
 // P1：内嵌 Hub（需先构建 @mc/shared 与 @mc/hub 的 CJS dist）。
 const { startHub } = require("@mc/hub");
 const { pickLanIPv4, encodeBeacon, DISCOVERY_PORT, HUB_PORTS } = require("./netutil.cjs");
+const { createMasterStatusTracker } = require("./master-status.cjs");
 const logger = require("./logger.cjs");
 
 // 全局兜底：一处游离错误 / 未处理拒绝不静默崩、也不带崩内嵌 Hub；记本地日志。
@@ -136,8 +137,20 @@ function stopHub() {
 // ——— 自动拉起 master（一台机=一个桌面端就够：desktop 起内嵌 Hub 后顺带把 master 跑起来，
 // master 自动发现局域网 :8100 的手机 → 注册到本 Hub → 设备页就出现，无需手动起 master、无需手填 IP）———
 let masterProc = null;
-// 仓库根（dev：electron 从源码跑）。打包后无 master 源码 → spawn 会失败，已 try/catch 兜底不影响桌面。
+let masterStoppingProc = null;
+let appQuitting = false;
+// 仓库根（dev：electron 从源码跑）；打包后优先使用与 main.cjs 同级的 master.cjs。
 const repoRoot = () => path.join(__dirname, "..", "..", "..");
+const broadcastMasterStatus = (status) => {
+  try {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) win.webContents.send("master:status", status);
+    }
+  } catch {
+    /* app 正在退出/窗口尚未创建 → 渲染层挂载后会主动 getStatus */
+  }
+};
+const masterStatus = createMasterStatusTracker({ onChange: broadcastMasterStatus });
 
 // 后台（master）设置：GPU 识别服务地址 + 扫描网段。存 userData，渲染层「设置」页可改，改完重启 master 生效。
 // 打包版遇到多网卡/远端 GPU 时，靠这里零命令配置（不用改环境变量）。
@@ -160,73 +173,194 @@ async function saveMasterSettings(s) {
   }
   return masterSettings;
 }
-function restartMaster() {
-  stopMaster();
-  // 等旧进程被 taskkill 收掉，再用新设置起（避免两份同时扫/注册）。
-  setTimeout(() => {
-    if (hub) startMaster(hub.port);
-  }, 1500);
+
+function effectiveMasterRuntime() {
+  return {
+    vlmUrl: masterSettings.vlmUrl || process.env.VLM_URL || process.env.MASTER_VLM_URL || "http://localhost:8000",
+    subnets: masterSettings.subnet || process.env.MASTER_SUBNET || "",
+  };
 }
 
-function startMaster(hubPort) {
-  if (process.env.MASTER_AUTOSTART === "0") return; // 想单独手动起 master 时可关
-  if (masterProc) return;
-  // VLM 地址优先级：设置页填的 > 环境变量 > 默认本机 :8000（desktop 与 perception 同机的常见部署）。
-  const vlmUrl = masterSettings.vlmUrl || process.env.VLM_URL || process.env.MASTER_VLM_URL || "http://localhost:8000";
+function signalMaster(child, force = false) {
+  const pid = child.pid;
+  if (!pid) return;
+  try {
+    // Windows 的 pnpm→node 是进程树，taskkill 必须 /T /F 才不会在关窗/重启后留下旧 master。
+    if (process.platform === "win32") {
+      const killer = spawn("taskkill", ["/pid", String(pid), "/T", "/F"]);
+      killer.on("error", (e) => logger.error("taskkill master 失败", e));
+    } else {
+      const signal = force ? "SIGKILL" : "SIGINT";
+      try {
+        process.kill(-pid, signal); // detached 子进程组：dev 的 pnpm→tsx→master 一起停。
+      } catch {
+        child.kill(signal);
+      }
+    }
+  } catch {
+    /* 进程可能已自行退出 */
+  }
+}
+
+async function restartMasterOnce() {
+  const runtime = effectiveMasterRuntime();
+  masterStatus.beginStart(runtime);
+  try {
+    if (appQuitting) throw new Error("应用正在退出，已取消 master 重启");
+    await stopMaster({ wait: true, updateStatus: false });
+    if (appQuitting) throw new Error("应用正在退出，已取消 master 重启");
+    if (!hub) throw new Error("控制中心未运行，无法启动 master");
+    return await startMaster(hub.port, { force: true });
+  } catch (e) {
+    masterStatus.markFailed(e);
+    throw e;
+  }
+}
+
+// 所有 IPC 重启串行排队：禁止“保存并重启”与“重启后台”并发拉起两份 master。
+let masterRestartQueue = Promise.resolve();
+function restartMaster() {
+  const operation = masterRestartQueue.catch(() => {}).then(restartMasterOnce);
+  masterRestartQueue = operation;
+  return operation;
+}
+
+async function startMaster(hubPort, { force = false } = {}) {
+  const runtime = effectiveMasterRuntime();
+  if (process.env.MASTER_AUTOSTART === "0" && !force) {
+    masterStatus.beginStart(runtime);
+    masterStatus.markStopped({ intentional: true });
+    return masterStatus.snapshot(); // 自动拉起可关；用户显式点“重启”仍可启动一次。
+  }
+  if (masterProc) return masterStatus.snapshot();
+  if (masterStoppingProc) {
+    const error = new Error("旧 master 尚未确认退出，已禁止启动新实例");
+    masterStatus.markFailed(error);
+    throw error;
+  }
+  masterStatus.beginStart(runtime);
   const env = {
     ...process.env,
     HUB_URL: `http://localhost:${hubPort}`, // 连本机内嵌 Hub
     MASTER_DISCOVER: "1", // 自动发现局域网手机
-    MASTER_VLM_URL: vlmUrl, // 无 devices.json 时用它合成最小配置
+    MASTER_VLM_URL: runtime.vlmUrl, // 无 devices.json 时用它合成最小配置
   };
-  const subnet = masterSettings.subnet || process.env.MASTER_SUBNET; // 设置页填的网段优先
-  if (subnet) env.MASTER_SUBNET = subnet;
+  if (runtime.subnets) env.MASTER_SUBNET = runtime.subnets; // 设置页填的网段优先
   // 打包后 master 被 esbuild 打成 build/master.cjs（与 main.cjs 同级);有它就用 electron 自带 node 跑,
   // 不依赖外部 pnpm/node → 真·一个软件搞定。dev 从源码跑时没有它 → 退回 pnpm 起 master。
   const bundled = path.join(__dirname, "master.cjs");
+  let child = null;
   try {
     if (fss.existsSync(bundled)) {
       env.ELECTRON_RUN_AS_NODE = "1"; // 让 electron 二进制以纯 node 模式跑 bundle
-      masterProc = spawn(process.execPath, [bundled], { cwd: app.getPath("userData"), env });
+      child = spawn(process.execPath, [bundled], {
+        cwd: app.getPath("userData"),
+        env,
+        detached: process.platform !== "win32",
+      });
     } else {
-      // shell:true → Windows 上能找到 pnpm(.cmd)。cwd=仓库根;pnpm --filter 会切到 services/master 跑其 start。
-      masterProc = spawn("pnpm", ["--filter", "@mc/master", "start"], { cwd: repoRoot(), env, shell: true });
+      // Windows 用 shell 才能找到 pnpm.cmd；macOS/Linux 直接 spawn，SIGINT 可准确送给 pnpm 进程。
+      child = spawn("pnpm", ["--filter", "@mc/master", "start"], {
+        cwd: repoRoot(),
+        env,
+        shell: process.platform === "win32",
+        detached: process.platform !== "win32",
+      });
     }
-    logger.info(`自动拉起 master（pid ${masterProc.pid}）VLM=${vlmUrl}，自动发现开;${fss.existsSync(bundled) ? "打包版(bundle)" : "dev(pnpm)"}`);
-    const fwd = (buf) => {
+    masterProc = child;
+    let resolveStart;
+    let rejectStart;
+    const started = new Promise((resolve, reject) => {
+      resolveStart = resolve;
+      rejectStart = reject;
+    });
+    child.once("spawn", () => {
+      if (masterProc !== child) {
+        rejectStart(new Error("master 启动已取消"));
+        return;
+      }
+      masterStatus.markRunning(child.pid);
+      logger.info(`自动拉起 master（pid ${child.pid}）VLM=${runtime.vlmUrl}，自动发现开;${fss.existsSync(bundled) ? "打包版(bundle)" : "dev(pnpm)"}`);
+      resolveStart(masterStatus.snapshot());
+    });
+    const fwd = (stream) => (buf) => {
+      if (masterProc !== child) return; // 已进入重启/退出，忽略旧进程迟到的输出。
+      masterStatus.ingest(stream, buf.toString());
       const s = buf.toString().trimEnd();
       if (s) {
         console.log(s); // dev 终端可见
         logger.info("[master] " + s);
       }
     };
-    masterProc.stdout && masterProc.stdout.on("data", fwd);
-    masterProc.stderr && masterProc.stderr.on("data", fwd);
-    masterProc.on("exit", (code) => {
-      logger.info(`master 退出（code ${code}）`);
+    child.stdout && child.stdout.setEncoding("utf8"); // StringDecoder 保证中文不会在 Buffer 边界被截坏。
+    child.stderr && child.stderr.setEncoding("utf8");
+    child.stdout && child.stdout.on("data", fwd("stdout"));
+    child.stderr && child.stderr.on("data", fwd("stderr"));
+    child.on("close", (code, signal) => {
+      logger.info(`master 退出（code ${code}${signal ? `，signal ${signal}` : ""}）`);
+      if (masterStoppingProc === child) masterStoppingProc = null;
+      if (masterProc !== child) return;
       masterProc = null;
+      masterStatus.markStopped({ code, signal });
+      rejectStart(new Error(`master 启动后立即退出（code ${code ?? "unknown"}）`));
     });
-    masterProc.on("error", (e) => {
+    child.on("error", (e) => {
       logger.error("拉起 master 失败", e);
-      masterProc = null;
+      if (masterProc === child) {
+        masterProc = null;
+        masterStatus.markFailed(e);
+      }
+      rejectStart(e);
     });
+    return await started;
   } catch (e) {
     logger.error("拉起 master 失败", e);
-    masterProc = null;
+    if (!child || masterProc === child) masterProc = null;
+    masterStatus.markFailed(e);
+    throw e;
   }
 }
 
-function stopMaster() {
-  if (!masterProc) return;
-  const pid = masterProc.pid;
-  try {
-    // Windows：pnpm→node 是进程树,taskkill /T 连子进程一起收(否则 master 会残留占着手机会话)。
-    if (process.platform === "win32") spawn("taskkill", ["/pid", String(pid), "/T", "/F"]);
-    else masterProc.kill("SIGINT");
-  } catch {
-    /* ignore */
+function stopMaster({ wait = false, updateStatus = true } = {}) {
+  if (wait && masterStoppingProc) {
+    return Promise.reject(new Error("旧 master 仍在停止中，暂不允许启动第二个实例"));
   }
+  const child = masterProc;
   masterProc = null;
+  if (updateStatus) masterStatus.markStopped({ intentional: true });
+  if (!child) return Promise.resolve();
+  masterStoppingProc = child;
+
+  if (!wait) {
+    signalMaster(child);
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let forceTimer;
+    let failTimer;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(forceTimer);
+      clearTimeout(failTimer);
+      if (masterStoppingProc === child) masterStoppingProc = null;
+      resolve();
+    };
+    child.once("close", finish);
+    signalMaster(child);
+    // 优雅停止会等当前批；重启不能无限卡住，5s 后强杀，但必须等 close 确认旧实例已退。
+    forceTimer = setTimeout(() => {
+      signalMaster(child, true);
+    }, 5000);
+    failTimer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      child.removeListener("close", finish);
+      reject(new Error("旧 master 在强制停止后仍未退出，已取消重启以避免双实例"));
+    }, 8000);
+  });
 }
 
 // ——— 发布代理（懒启动）———
@@ -291,9 +425,17 @@ handle("hub:lanIp", async () => pickLanIPv4(os.networkInterfaces()));
 
 // 后台设置（GPU 识别地址 + 扫描网段）：读/存；存后用新设置重启 master。
 handle("master:getSettings", async () => masterSettings);
+handle("master:getStatus", async () => masterStatus.snapshot());
+handle("master:restart", async () => restartMaster());
+handle("master:openLogs", async () => {
+  const logDir = logger.logDir();
+  const error = await shell.openPath(logDir);
+  if (error) throw new Error(`打开日志目录失败: ${error}`);
+  return logDir;
+});
 handle("master:saveSettings", async (_e, s) => {
   const saved = await saveMasterSettings(s);
-  restartMaster();
+  await restartMaster();
   return saved;
 });
 
@@ -338,7 +480,7 @@ app.whenReady().then(async () => {
     // 故 LAN 服务必须先于「渲染层打开发布页」就绪并恢复旧 token，否则重启后这些任务下载必 404。
     await ensureLan();
     await loadMasterSettings(); // 读设置页保存的 GPU 地址/网段(供 startMaster 使用)
-    if (hub) startMaster(hub.port); // 顺带把 master 跑起来（自动发现手机 → 注册回本 Hub）
+    if (hub) void startMaster(hub.port).catch(() => {}); // 顺带把 master 跑起来（失败已记状态/日志，不带崩 Hub）
   } catch (e) {
     logger.error("内嵌 Hub 启动失败", e);
     try {
@@ -367,8 +509,11 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
 
-// 兜底：进程退出前一定收掉 master（避免残留占着手机 WDA 会话）。
-app.on("before-quit", stopMaster);
+// 兜底：进程退出前一定收掉 master（避免残留占着手机 WDA 会话），并阻止排队中的重启再拉新实例。
+app.on("before-quit", () => {
+  appQuitting = true;
+  void stopMaster();
+});
 
 app.on("activate", () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();
